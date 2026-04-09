@@ -58,10 +58,18 @@ function unlinkCollection(channelNumber: number, plexType: string): Promise<void
 }
 
 function testConnection(tunarr_url: string): Promise<{
-  ok: boolean; latency_ms?: number; url?: string; version?: string; channels?: number
+  ok: boolean
+  latency_ms?: number
+  url?: string
+  version?: string
+  channels?: number
 }> {
   return post<{
-    ok: boolean; latency_ms?: number; url?: string; version?: string; channels?: number
+    ok: boolean
+    latency_ms?: number
+    url?: string
+    version?: string
+    channels?: number
   }>('/api/tunarr/test', { url: tunarr_url })
 }
 

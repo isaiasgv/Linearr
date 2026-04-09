@@ -90,12 +90,20 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
         {link ? (
           <div className="space-y-3">
             <div className="flex items-center gap-3 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5">
-              <svg className="w-4 h-4 text-emerald-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-4 h-4 text-emerald-400 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M9 12l2 2 4-4" />
                 <circle cx="12" cy="12" r="10" />
               </svg>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-100 truncate">{link.tunarr_name ?? link.tunarr_id}</p>
+                <p className="text-sm font-medium text-slate-100 truncate">
+                  {link.tunarr_name ?? link.tunarr_id}
+                </p>
                 {link.tunarr_number != null && (
                   <p className="text-xs text-slate-500">CH {link.tunarr_number}</p>
                 )}
@@ -169,7 +177,9 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
                   disabled={createTunarrChannel.isPending || linkChannel.isPending}
                   className="flex items-center gap-2 px-3 py-2 bg-emerald-800/40 hover:bg-emerald-800/60 disabled:opacity-60 border border-emerald-700/50 text-emerald-300 rounded-lg text-sm font-medium transition-colors w-full justify-center"
                 >
-                  {(createTunarrChannel.isPending || linkChannel.isPending) && <Spinner size="sm" />}
+                  {(createTunarrChannel.isPending || linkChannel.isPending) && (
+                    <Spinner size="sm" />
+                  )}
                   Create New Tunarr Channel
                 </button>
               </>
@@ -188,7 +198,8 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
               <span className="text-xs text-slate-400 w-12">Movies</span>
               {movieCollectionLink ? (
                 <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded truncate max-w-[200px]">
-                  {movieCollectionLink.tunarr_collection_name ?? movieCollectionLink.tunarr_collection_id}
+                  {movieCollectionLink.tunarr_collection_name ??
+                    movieCollectionLink.tunarr_collection_id}
                 </span>
               ) : (
                 <span className="text-xs text-slate-500 italic">Not linked</span>
@@ -196,9 +207,7 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
             </div>
             {movieCollectionLink ? (
               <button
-                onClick={() =>
-                  unlinkCollection.mutate({ channelNumber, plexType: 'movie' })
-                }
+                onClick={() => unlinkCollection.mutate({ channelNumber, plexType: 'movie' })}
                 disabled={unlinkCollection.isPending}
                 className="text-xs text-red-400 hover:text-red-300 disabled:opacity-60 transition-colors shrink-0"
               >
@@ -209,7 +218,13 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
                 onClick={() => handleLinkCollection('movie')}
                 className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors shrink-0"
               >
-                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <svg
+                  className="w-3 h-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
                   <path d="M12 5v14M5 12h14" />
                 </svg>
                 Link Collection
@@ -223,7 +238,8 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
               <span className="text-xs text-slate-400 w-12">Shows</span>
               {showCollectionLink ? (
                 <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded truncate max-w-[200px]">
-                  {showCollectionLink.tunarr_collection_name ?? showCollectionLink.tunarr_collection_id}
+                  {showCollectionLink.tunarr_collection_name ??
+                    showCollectionLink.tunarr_collection_id}
                 </span>
               ) : (
                 <span className="text-xs text-slate-500 italic">Not linked</span>
@@ -231,9 +247,7 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
             </div>
             {showCollectionLink ? (
               <button
-                onClick={() =>
-                  unlinkCollection.mutate({ channelNumber, plexType: 'show' })
-                }
+                onClick={() => unlinkCollection.mutate({ channelNumber, plexType: 'show' })}
                 disabled={unlinkCollection.isPending}
                 className="text-xs text-red-400 hover:text-red-300 disabled:opacity-60 transition-colors shrink-0"
               >
@@ -244,7 +258,13 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
                 onClick={() => handleLinkCollection('show')}
                 className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors shrink-0"
               >
-                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <svg
+                  className="w-3 h-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
                   <path d="M12 5v14M5 12h14" />
                 </svg>
                 Link Collection

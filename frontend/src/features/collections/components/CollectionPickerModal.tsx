@@ -35,11 +35,7 @@ export function CollectionPickerModal() {
   }
 
   return (
-    <ModalWrapper
-      open={open}
-      onClose={() => closeModal('collectionPicker')}
-      maxWidth="max-w-lg"
-    >
+    <ModalWrapper open={open} onClose={() => closeModal('collectionPicker')} maxWidth="max-w-lg">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
         <div>
@@ -54,7 +50,13 @@ export function CollectionPickerModal() {
           onClick={() => closeModal('collectionPicker')}
           className="text-slate-500 hover:text-slate-300 transition-colors"
         >
-          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg
+            className="w-5 h-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </button>

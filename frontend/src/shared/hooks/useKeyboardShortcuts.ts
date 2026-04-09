@@ -3,21 +3,16 @@ import { useUIStore } from '@/shared/store/ui.store'
 import { useChannels } from '@/features/channels/hooks'
 
 export function useKeyboardShortcuts() {
-  const {
-    closeAllModals,
-    modals,
-    selectedChannel,
-    selectChannel,
-    activeView,
-    setSidebarOpen,
-  } = useUIStore()
+  const { closeAllModals, modals, selectedChannel, selectChannel, activeView, setSidebarOpen } =
+    useUIStore()
 
   const { data: channels = [] } = useChannels()
 
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       const target = e.target as HTMLElement
-      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+      const isInput =
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
 
       // Esc — close any open modal, or close sidebar
       if (e.key === 'Escape') {
@@ -39,9 +34,7 @@ export function useKeyboardShortcuts() {
         const idx = selectedChannel
           ? channels.findIndex((c) => c.number === selectedChannel.number)
           : -1
-        const next = e.key === 'j'
-          ? Math.min(idx + 1, channels.length - 1)
-          : Math.max(idx - 1, 0)
+        const next = e.key === 'j' ? Math.min(idx + 1, channels.length - 1) : Math.max(idx - 1, 0)
         selectChannel(channels[next])
       }
     }

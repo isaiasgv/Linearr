@@ -3,9 +3,7 @@ interface SkeletonProps {
 }
 
 export function Skeleton({ className = '' }: SkeletonProps) {
-  return (
-    <div className={`animate-pulse bg-slate-700/50 rounded ${className}`} />
-  )
+  return <div className={`animate-pulse bg-slate-700/50 rounded ${className}`} />
 }
 
 export function ChannelSkeleton() {

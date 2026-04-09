@@ -7,11 +7,7 @@ import {
   useApplyBlock,
   useBlockSlots,
 } from '@/features/blocks/hooks'
-import {
-  blockTimeColor,
-  to12h,
-  blockFillHours,
-} from '@/features/blocks/utils'
+import { blockTimeColor, to12h, blockFillHours } from '@/features/blocks/utils'
 import type { Block } from '@/shared/types'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { HourGrid } from './HourGrid'
@@ -87,11 +83,11 @@ export function BlockCard({ block }: BlockCardProps) {
               {to12h(block.start_time)} – {to12h(block.end_time)}
             </span>
             {block.days.length > 0 && (
-              <span className="text-xs text-slate-500">
-                {block.days.join(', ')}
-              </span>
+              <span className="text-xs text-slate-500">{block.days.join(', ')}</span>
             )}
-            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CONTENT_TYPE_COLOR[block.content_type]}`}>
+            <span
+              className={`text-xs px-1.5 py-0.5 rounded font-medium ${CONTENT_TYPE_COLOR[block.content_type]}`}
+            >
               {CONTENT_TYPE_LABEL[block.content_type]}
             </span>
           </div>
@@ -130,7 +126,13 @@ export function BlockCard({ block }: BlockCardProps) {
             {aiAutofill.isPending ? (
               <Spinner size="sm" />
             ) : (
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
               </svg>
             )}
@@ -141,7 +143,13 @@ export function BlockCard({ block }: BlockCardProps) {
             title="Edit block"
             className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded transition-colors"
           >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
               <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
@@ -156,7 +164,13 @@ export function BlockCard({ block }: BlockCardProps) {
             {clearSlots.isPending ? (
               <Spinner size="sm" />
             ) : (
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
                 <path d="M10 11v6M14 11v6" />
               </svg>
@@ -172,7 +186,13 @@ export function BlockCard({ block }: BlockCardProps) {
             {deleteBlock.isPending ? (
               <Spinner size="sm" />
             ) : (
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <polyline points="3 6 5 6 21 6" />
                 <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
                 <path d="M10 11v6M14 11v6M9 6V4h6v2" />
@@ -201,23 +221,30 @@ export function BlockCard({ block }: BlockCardProps) {
       {/* Slot thumbnail preview (collapsed) */}
       {!isExpanded && slots && slots.length > 0 && (
         <div className="px-4 py-2 border-t border-slate-700/50 flex gap-1 overflow-hidden">
-          {slots.filter(s => s.plex_thumb).slice(0, 10).map((s) => (
-            <div
-              key={s.id}
-              className="w-8 h-12 shrink-0 rounded overflow-hidden bg-slate-700 relative"
-              title={`${to12h(s.slot_time)} — ${s.plex_title}`}
-            >
-              <img
-                src={`/api/plex/thumb?path=${encodeURIComponent(s.plex_thumb!)}`}
-                alt={s.plex_title}
-                loading="lazy"
-                className="absolute inset-0 w-full h-full object-cover"
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-            </div>
-          ))}
+          {slots
+            .filter((s) => s.plex_thumb)
+            .slice(0, 10)
+            .map((s) => (
+              <div
+                key={s.id}
+                className="w-8 h-12 shrink-0 rounded overflow-hidden bg-slate-700 relative"
+                title={`${to12h(s.slot_time)} — ${s.plex_title}`}
+              >
+                <img
+                  src={`/api/plex/thumb?path=${encodeURIComponent(s.plex_thumb!)}`}
+                  alt={s.plex_title}
+                  loading="lazy"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none'
+                  }}
+                />
+              </div>
+            ))}
           {slots.length > 10 && (
-            <span className="flex items-center text-xs text-slate-600 shrink-0 pl-1">+{slots.length - 10}</span>
+            <span className="flex items-center text-xs text-slate-600 shrink-0 pl-1">
+              +{slots.length - 10}
+            </span>
           )}
         </div>
       )}

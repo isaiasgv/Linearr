@@ -39,8 +39,7 @@ export const useBlockStore = create<BlockEditorState>((set) => ({
   startAddingSlot: (blockId, hour) =>
     set({ addingSlotForBlockId: blockId, slotTargetHour: hour, slotSearch: '' }),
 
-  cancelAddingSlot: () =>
-    set({ addingSlotForBlockId: null, slotTargetHour: null, slotSearch: '' }),
+  cancelAddingSlot: () => set({ addingSlotForBlockId: null, slotTargetHour: null, slotSearch: '' }),
 
   setSlotSearch: (slotSearch) => set({ slotSearch }),
   setDraggingSlot: (draggingSlot) => set({ draggingSlot }),

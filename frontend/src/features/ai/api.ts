@@ -14,20 +14,14 @@ function getAiContentSuggestions(
   channelNumber: number,
   body?: { model?: string },
 ): Promise<AiContentAdvisorResult> {
-  return post<AiContentAdvisorResult>(
-    `/api/channels/${channelNumber}/ai-content-suggestions`,
-    body,
-  )
+  return post<AiContentAdvisorResult>(`/api/channels/${channelNumber}/ai-content-suggestions`, body)
 }
 
 function getNetworkAdvisor(body?: { model?: string }): Promise<NetworkAdvisorResult> {
   return post<NetworkAdvisorResult>('/api/network/ai-advisor', body)
 }
 
-function getAiGenerateDayPreview(
-  channelNumber: number,
-  style: string = 'cable',
-): Promise<unknown> {
+function getAiGenerateDayPreview(channelNumber: number, style: string = 'cable'): Promise<unknown> {
   return post<unknown>('/api/blocks/ai-generate-day', {
     channel_number: channelNumber,
     style,

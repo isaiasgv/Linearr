@@ -42,9 +42,7 @@ export function useCreateBlock() {
     mutationFn: (data: Partial<Block>) => blocksApi.create(data),
     onSuccess: (block) => {
       if (block.channel_number) {
-        qc.setQueryData<Block[]>(['blocks', block.channel_number], (old = []) =>
-          [...old, block]
-        )
+        qc.setQueryData<Block[]>(['blocks', block.channel_number], (old = []) => [...old, block])
       } else {
         qc.setQueryData<Block[]>(['blocks', 'generic'], (old = []) => [...old, block])
       }
@@ -59,14 +57,13 @@ export function useUpdateBlock() {
   const addToast = useToastStore((s) => s.addToast)
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<Block> }) =>
-      blocksApi.update(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Partial<Block> }) => blocksApi.update(id, data),
     onSuccess: (updated) => {
       const key: unknown[] = updated.channel_number
         ? ['blocks', updated.channel_number]
         : ['blocks', 'generic']
       qc.setQueryData<Block[]>(key, (old = []) =>
-        old.map((b) => (b.id === updated.id ? updated : b))
+        old.map((b) => (b.id === updated.id ? updated : b)),
       )
       addToast('Block updated')
     },
@@ -100,9 +97,7 @@ export function useApplyBlock() {
     mutationFn: ({ blockId, channelNumber }: { blockId: number; channelNumber: number }) =>
       blocksApi.applyToChannel(blockId, channelNumber),
     onSuccess: (block) => {
-      qc.setQueryData<Block[]>(['blocks', block.channel_number], (old = []) =>
-        [...old, block]
-      )
+      qc.setQueryData<Block[]>(['blocks', block.channel_number], (old = []) => [...old, block])
       addToast('Block applied to channel')
     },
     onError: (err: Error) => addToast(err.message, true),
@@ -117,9 +112,7 @@ export function useAddSlot() {
     mutationFn: ({ blockId, data }: { blockId: number; data: Partial<BlockSlot> }) =>
       blocksApi.addSlot(blockId, data),
     onSuccess: (slot) => {
-      qc.setQueryData<BlockSlot[]>(['block-slots', slot.block_id], (old = []) =>
-        [...old, slot]
-      )
+      qc.setQueryData<BlockSlot[]>(['block-slots', slot.block_id], (old = []) => [...old, slot])
     },
     onError: (err: Error) => addToast(err.message, true),
   })
@@ -134,7 +127,7 @@ export function useRemoveSlot() {
       blocksApi.removeSlot(blockId, slotId),
     onSuccess: (_, { blockId, slotId }) => {
       qc.setQueryData<BlockSlot[]>(['block-slots', blockId], (old = []) =>
-        old.filter((s) => s.id !== slotId)
+        old.filter((s) => s.id !== slotId),
       )
     },
     onError: (err: Error) => addToast(err.message, true),
@@ -185,7 +178,7 @@ export function useUpdateSlot() {
       blocksApi.updateSlot(slotId, data),
     onSuccess: (updated) => {
       qc.setQueryData<BlockSlot[]>(['block-slots', updated.block_id], (old = []) =>
-        old.map((s) => (s.id === updated.id ? updated : s))
+        old.map((s) => (s.id === updated.id ? updated : s)),
       )
     },
     onError: (err: Error) => addToast(err.message, true),

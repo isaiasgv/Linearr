@@ -33,9 +33,10 @@ interface ProgramBarProps {
 function ProgramBar({ title, episode, startMs, durationMs, timelineStart }: ProgramBarProps) {
   const left = ((startMs - timelineStart) / (30 * 60 * 1000)) * SLOT_WIDTH
   const width = Math.max((durationMs / (30 * 60 * 1000)) * SLOT_WIDTH, 40)
-  const epLabel = episode?.season != null && episode?.episode != null
-    ? `S${episode.season}E${episode.episode}`
-    : ''
+  const epLabel =
+    episode?.season != null && episode?.episode != null
+      ? `S${episode.season}E${episode.episode}`
+      : ''
 
   return (
     <div
@@ -77,11 +78,22 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
       <div className="px-5 py-3 border-b border-slate-800 flex items-center justify-between shrink-0">
         <div>
           <h2 className="text-base font-bold text-slate-100">Program Guide</h2>
-          <p className="text-xs text-slate-500">{channels.length} channel{channels.length !== 1 ? 's' : ''} linked to Tunarr</p>
+          <p className="text-xs text-slate-500">
+            {channels.length} channel{channels.length !== 1 ? 's' : ''} linked to Tunarr
+          </p>
         </div>
         {onClose && (
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-colors">
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
@@ -89,19 +101,26 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
       </div>
 
       {isLoading ? (
-        <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
+        <div className="flex-1 flex items-center justify-center">
+          <Spinner size="lg" />
+        </div>
       ) : isError ? (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-red-400">Failed to load guide. Is Tunarr connected?</p>
         </div>
       ) : channels.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-slate-500">No channels linked to Tunarr. Link channels first.</p>
+          <p className="text-sm text-slate-500">
+            No channels linked to Tunarr. Link channels first.
+          </p>
         </div>
       ) : (
         <div className="flex-1 flex overflow-hidden">
           {/* Channel names column (fixed) */}
-          <div className="shrink-0 border-r border-slate-800 overflow-hidden" style={{ width: CHANNEL_COL_WIDTH }}>
+          <div
+            className="shrink-0 border-r border-slate-800 overflow-hidden"
+            style={{ width: CHANNEL_COL_WIDTH }}
+          >
             {/* Time header spacer */}
             <div className="h-8 border-b border-slate-800 bg-slate-900/50 flex items-center px-3">
               <span className="text-xs text-slate-500 font-medium">Channel</span>
@@ -117,7 +136,9 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
                   <span className="text-xs font-mono bg-slate-800 text-slate-400 rounded px-1.5 py-0.5 shrink-0">
                     {ch.tunarr_number ?? ch.channel_number}
                   </span>
-                  <span className="text-sm text-slate-200 truncate">{ch.tunarr_name || `Ch ${ch.channel_number}`}</span>
+                  <span className="text-sm text-slate-200 truncate">
+                    {ch.tunarr_name || `Ch ${ch.channel_number}`}
+                  </span>
                 </div>
               ))}
             </div>
@@ -126,7 +147,10 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
           {/* Scrollable timeline */}
           <div ref={scrollRef} className="flex-1 overflow-auto" style={{ scrollbarWidth: 'thin' }}>
             {/* Time header */}
-            <div className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-sm border-b border-slate-800 flex" style={{ width: totalWidth, height: 32 }}>
+            <div
+              className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-sm border-b border-slate-800 flex"
+              style={{ width: totalWidth, height: 32 }}
+            >
               {timeSlots.map((ts) => (
                 <div
                   key={ts}
@@ -148,12 +172,19 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
                 {/* Background grid lines */}
                 <div className="absolute inset-0 flex">
                   {timeSlots.map((ts) => (
-                    <div key={ts} className="shrink-0 border-r border-slate-800/20" style={{ width: SLOT_WIDTH }} />
+                    <div
+                      key={ts}
+                      className="shrink-0 border-r border-slate-800/20"
+                      style={{ width: SLOT_WIDTH }}
+                    />
                   ))}
                 </div>
                 {/* Programs */}
                 {ch.schedule.map((item, idx) => {
-                  const startMs = typeof item.startTime === 'number' ? item.startTime : new Date(item.startTime).getTime()
+                  const startMs =
+                    typeof item.startTime === 'number'
+                      ? item.startTime
+                      : new Date(item.startTime).getTime()
                   const durationMs = item.duration
                   if (isNaN(startMs) || startMs + durationMs < timelineStart) return null
                   if (startMs > timelineStart + timeSlots.length * 30 * 60 * 1000) return null
@@ -174,7 +205,9 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
             {/* Current time indicator */}
             <div
               className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20 pointer-events-none"
-              style={{ left: `${CHANNEL_COL_WIDTH + ((Date.now() - timelineStart) / (30 * 60 * 1000)) * SLOT_WIDTH}px` }}
+              style={{
+                left: `${CHANNEL_COL_WIDTH + ((Date.now() - timelineStart) / (30 * 60 * 1000)) * SLOT_WIDTH}px`,
+              }}
             />
           </div>
         </div>

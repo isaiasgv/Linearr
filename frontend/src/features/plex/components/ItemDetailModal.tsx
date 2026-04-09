@@ -33,9 +33,7 @@ function EpisodeList({ seasonKey }: { seasonKey: string }) {
           <div className="flex-1 min-w-0">
             <p className="text-xs text-slate-200 truncate">{ep.title}</p>
             {ep.duration_minutes != null && ep.duration_minutes > 0 && (
-              <p className="text-xs text-slate-600">
-                {ep.duration_minutes}m
-              </p>
+              <p className="text-xs text-slate-600">{ep.duration_minutes}m</p>
             )}
           </div>
         </li>
@@ -82,8 +80,7 @@ export function ItemDetailModal() {
   const { data: channelAssignments = [] } = useChannelAssignments(selectedChannel?.number ?? 0)
   const assign = useAssign()
 
-  const isAssigned =
-    item && channelAssignments.some((a) => a.plex_rating_key === item.rating_key)
+  const isAssigned = item && channelAssignments.some((a) => a.plex_rating_key === item.rating_key)
 
   function handleAssign() {
     if (!item || !selectedChannel) return
@@ -98,11 +95,7 @@ export function ItemDetailModal() {
   }
 
   return (
-    <ModalWrapper
-      open={open}
-      onClose={() => closeModal('itemDetail')}
-      maxWidth="max-w-2xl"
-    >
+    <ModalWrapper open={open} onClose={() => closeModal('itemDetail')} maxWidth="max-w-2xl">
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
           <Spinner size="lg" />
@@ -129,9 +122,7 @@ export function ItemDetailModal() {
                     {item.title}
                   </h2>
                   <div className="flex items-center gap-2 mt-1">
-                    {item.year && (
-                      <span className="text-sm text-slate-400">{item.year}</span>
-                    )}
+                    {item.year && <span className="text-sm text-slate-400">{item.year}</span>}
                     <span
                       className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                         item.type === 'show'
@@ -152,7 +143,13 @@ export function ItemDetailModal() {
                   onClick={() => closeModal('itemDetail')}
                   className="shrink-0 text-slate-500 hover:text-slate-300 transition-colors"
                 >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <svg
+                    className="w-5 h-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
                     <path d="M18 6L6 18M6 6l12 12" />
                   </svg>
                 </button>
@@ -166,7 +163,13 @@ export function ItemDetailModal() {
                 <div className="mt-3">
                   {isAssigned ? (
                     <span className="inline-flex items-center gap-1 text-xs text-emerald-400 bg-emerald-900/30 border border-emerald-800 px-2.5 py-1 rounded-lg">
-                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+                      <svg
+                        className="w-3 h-3"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
                         <path d="M5 13l4 4L19 7" />
                       </svg>
                       Assigned to Ch. {selectedChannel.number}
@@ -195,9 +198,7 @@ export function ItemDetailModal() {
               ) : seasons.length === 0 ? (
                 <p className="text-sm text-slate-500 text-center py-6">No seasons found</p>
               ) : (
-                seasons.map((season) => (
-                  <SeasonRow key={season.rating_key} season={season} />
-                ))
+                seasons.map((season) => <SeasonRow key={season.rating_key} season={season} />)
               )}
             </div>
           )}

@@ -78,7 +78,12 @@ export const useUIStore = create<UIState>((set) => ({
 
   // Close sidebar on mobile when navigating
   selectChannel: (channel) =>
-    set({ selectedChannel: channel, activeView: 'channel', activeChannelTab: 'content', sidebarOpen: false }),
+    set({
+      selectedChannel: channel,
+      activeView: 'channel',
+      activeChannelTab: 'content',
+      sidebarOpen: false,
+    }),
 
   setActiveView: (activeView) => set({ activeView, sidebarOpen: false }),
   setActiveChannelTab: (activeChannelTab) => set({ activeChannelTab }),
@@ -91,8 +96,7 @@ export const useUIStore = create<UIState>((set) => ({
       ...data,
     })),
 
-  closeModal: (name) =>
-    set((s) => ({ modals: { ...s.modals, [name]: false } })),
+  closeModal: (name) => set((s) => ({ modals: { ...s.modals, [name]: false } })),
 
   closeAllModals: () => set({ modals: { ...defaultModals } }),
 }))

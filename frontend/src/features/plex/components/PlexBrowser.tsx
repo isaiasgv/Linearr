@@ -2,11 +2,7 @@ import { useState, useMemo } from 'react'
 import { useDebounce } from '@/shared/hooks/useDebounce'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useAssignments, useAssign, useUnassign } from '@/features/assignments/hooks'
-import {
-  usePlexLibraries,
-  usePlexLibraryItems,
-  usePlexSearch,
-} from '@/features/plex/hooks'
+import { usePlexLibraries, usePlexLibraryItems, usePlexSearch } from '@/features/plex/hooks'
 import { PosterGrid } from './PosterGrid'
 import type { PlexItem } from '@/shared/types'
 
@@ -53,7 +49,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
 
   const rawItems: PlexItem[] = isSearching ? searchResults : loadLibrary ? libraryItems : []
   const filteredItems = useMemo(
-    () => typeFilter === 'all' ? rawItems : rawItems.filter((i) => i.type === typeFilter),
+    () => (typeFilter === 'all' ? rawItems : rawItems.filter((i) => i.type === typeFilter)),
     [rawItems, typeFilter],
   )
 
@@ -133,7 +129,13 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
               onClick={() => setSearchInput('')}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>
@@ -162,7 +164,13 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
       <div className="flex-1 overflow-y-auto">
         {!isSearching && !loadLibrary ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-500 text-sm gap-2">
-            <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+            <svg
+              className="w-8 h-8"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
               <circle cx="11" cy="11" r="8" />
               <path d="M21 21l-4.35-4.35" />
             </svg>

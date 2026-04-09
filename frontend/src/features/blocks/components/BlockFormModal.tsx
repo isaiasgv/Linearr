@@ -84,10 +84,7 @@ export function BlockFormModal() {
     }
 
     if (editingBlock) {
-      updateBlock.mutate(
-        { id: editingBlock.id, data: payload },
-        { onSuccess: () => handleClose() },
-      )
+      updateBlock.mutate({ id: editingBlock.id, data: payload }, { onSuccess: () => handleClose() })
     } else {
       createBlock.mutate(payload, { onSuccess: () => handleClose() })
     }
@@ -108,7 +105,13 @@ export function BlockFormModal() {
             onClick={handleClose}
             className="p-1.5 text-slate-400 hover:text-slate-200 rounded transition-colors"
           >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
@@ -117,7 +120,9 @@ export function BlockFormModal() {
         <div className="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
           {/* Preset chips */}
           <div>
-            <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">Presets</p>
+            <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">
+              Presets
+            </p>
             <div className="flex flex-wrap gap-1.5">
               {BLOCK_PRESETS.map((preset) => (
                 <button

@@ -36,10 +36,7 @@ function linkCollection(
   return post<ChannelCollection>(`/api/channel-collections/${channelNumber}`, body)
 }
 
-function unlinkCollection(
-  channelNumber: number,
-  plexType: 'movie' | 'show',
-): Promise<void> {
+function unlinkCollection(channelNumber: number, plexType: 'movie' | 'show'): Promise<void> {
   return del<void>(`/api/channel-collections/${channelNumber}/${plexType}`)
 }
 

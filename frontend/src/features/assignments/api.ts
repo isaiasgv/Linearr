@@ -13,7 +13,10 @@ export const assignmentsApi = {
     plex_year: number | null
   }) => post<Assignment>('/api/assignments', data),
 
-  bulkAssign: (channel_number: number, items: Omit<Assignment, 'id' | 'channel_number' | 'assigned_at'>[]) =>
+  bulkAssign: (
+    channel_number: number,
+    items: Omit<Assignment, 'id' | 'channel_number' | 'assigned_at'>[],
+  ) =>
     post<{ added: number; skipped: number }>('/api/assignments/bulk', {
       channel_number,
       items,

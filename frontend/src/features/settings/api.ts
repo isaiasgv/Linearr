@@ -15,8 +15,13 @@ interface AiTestBody {
   openai_model: string
 }
 
-function testAi(body: AiTestBody): Promise<{ ok: boolean; model: string; reply: string; duration_ms: number }> {
-  return post<{ ok: boolean; model: string; reply: string; duration_ms: number }>('/api/ai-test', body)
+function testAi(
+  body: AiTestBody,
+): Promise<{ ok: boolean; model: string; reply: string; duration_ms: number }> {
+  return post<{ ok: boolean; model: string; reply: string; duration_ms: number }>(
+    '/api/ai-test',
+    body,
+  )
 }
 
 interface AiModelsBody {

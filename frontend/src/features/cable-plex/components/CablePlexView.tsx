@@ -44,23 +44,36 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
                   alt=""
                   loading="lazy"
                   className="absolute inset-0 w-full h-full object-cover"
-                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none'
+                  }}
                 />
               </div>
             ))}
           </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-slate-800">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" /></svg>
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1}
+                d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"
+              />
+            </svg>
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent" />
         {/* Channel badge overlaid */}
         <div className="absolute bottom-1.5 left-2 flex items-center gap-1.5">
-          <span className={`text-xs font-mono font-bold rounded px-1 py-0.5 shadow ${tierColor(channel.tier)}`}>
+          <span
+            className={`text-xs font-mono font-bold rounded px-1 py-0.5 shadow ${tierColor(channel.tier)}`}
+          >
             {channel.number}
           </span>
-          <span className="text-xs font-bold text-white truncate drop-shadow-lg">{channel.name}</span>
+          <span className="text-xs font-bold text-white truncate drop-shadow-lg">
+            {channel.name}
+          </span>
         </div>
         {/* Stats top-right */}
         <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
@@ -78,9 +91,7 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
       </div>
       {/* Show titles */}
       <div className="px-2.5 py-2 flex-1">
-        {channel.vibe && (
-          <p className="text-xs text-slate-500 truncate mb-1">{channel.vibe}</p>
-        )}
+        {channel.vibe && <p className="text-xs text-slate-500 truncate mb-1">{channel.vibe}</p>}
         {shows.length > 0 ? (
           <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">
             {shows.map((a) => a.plex_title).join(' \u00B7 ')}
@@ -101,7 +112,13 @@ interface ChannelCardExpandedProps {
   onClick: () => void
 }
 
-function ChannelCardExpanded({ channel, assignments: items, posterSize, thumbFilter, onClick }: ChannelCardExpandedProps) {
+function ChannelCardExpanded({
+  channel,
+  assignments: items,
+  posterSize,
+  thumbFilter,
+  onClick,
+}: ChannelCardExpandedProps) {
   const shows = items.filter((a) => a.plex_type === 'show')
   const movies = items.filter((a) => a.plex_type === 'movie')
   const maxThumbs = posterSize === 'large' ? 6 : posterSize === 'medium' ? 8 : 12
@@ -116,15 +133,25 @@ function ChannelCardExpanded({ channel, assignments: items, posterSize, thumbFil
       <div className="flex items-stretch">
         {/* Channel info */}
         <div className="p-3 flex items-center gap-3 shrink-0 w-56">
-          <span className={`text-sm font-mono font-bold rounded-lg w-11 h-10 flex items-center justify-center shrink-0 ${tierColor(channel.tier)}`}>
+          <span
+            className={`text-sm font-mono font-bold rounded-lg w-11 h-10 flex items-center justify-center shrink-0 ${tierColor(channel.tier)}`}
+          >
             {channel.number}
           </span>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-100 truncate">{channel.name}</p>
             <p className="text-xs text-slate-500 truncate">{channel.vibe || ''}</p>
             <div className="flex items-center gap-1.5 mt-0.5">
-              {shows.length > 0 && <span className="text-xs bg-blue-900/40 text-blue-300 rounded-full px-1.5 py-0">{shows.length} TV</span>}
-              {movies.length > 0 && <span className="text-xs bg-yellow-900/40 text-yellow-300 rounded-full px-1.5 py-0">{movies.length} Mov</span>}
+              {shows.length > 0 && (
+                <span className="text-xs bg-blue-900/40 text-blue-300 rounded-full px-1.5 py-0">
+                  {shows.length} TV
+                </span>
+              )}
+              {movies.length > 0 && (
+                <span className="text-xs bg-yellow-900/40 text-yellow-300 rounded-full px-1.5 py-0">
+                  {movies.length} Mov
+                </span>
+              )}
               {items.length === 0 && <span className="text-xs text-slate-600">Empty</span>}
             </div>
           </div>
@@ -132,26 +159,36 @@ function ChannelCardExpanded({ channel, assignments: items, posterSize, thumbFil
         {/* Poster strip */}
         <div className="flex-1 flex gap-1 overflow-hidden items-center px-2">
           {thumbItems.map((a, i) => (
-            <div key={i} className={`${POSTER_SIZES[posterSize]} shrink-0 rounded overflow-hidden bg-slate-800 relative`}>
+            <div
+              key={i}
+              className={`${POSTER_SIZES[posterSize]} shrink-0 rounded overflow-hidden bg-slate-800 relative`}
+            >
               <img
                 src={`/api/plex/thumb?path=${encodeURIComponent(a.plex_thumb!)}`}
                 alt={a.plex_title}
                 title={a.plex_title}
                 loading="lazy"
                 className="absolute inset-0 w-full h-full object-cover"
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
               />
             </div>
           ))}
           {filteredItems.length > maxThumbs && (
-            <span className="text-xs text-slate-600 shrink-0 pl-1">+{filteredItems.length - maxThumbs}</span>
+            <span className="text-xs text-slate-600 shrink-0 pl-1">
+              +{filteredItems.length - maxThumbs}
+            </span>
           )}
         </div>
         {/* Show titles */}
         <div className="w-64 shrink-0 p-3 border-l border-slate-800 flex items-center">
           {shows.length > 0 ? (
             <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
-              {shows.map((a) => a.plex_title).slice(0, 10).join(', ')}
+              {shows
+                .map((a) => a.plex_title)
+                .slice(0, 10)
+                .join(', ')}
               {shows.length > 10 ? '...' : ''}
             </p>
           ) : (
@@ -234,7 +271,13 @@ export function CablePlexView() {
                   : 'text-slate-400 hover:text-slate-100'
               }`}
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <rect x="3" y="3" width="7" height="7" rx="1" />
                 <rect x="14" y="3" width="7" height="7" rx="1" />
                 <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -250,7 +293,13 @@ export function CablePlexView() {
                   : 'text-slate-400 hover:text-slate-100'
               }`}
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
               </svg>
               Expanded
@@ -262,16 +311,18 @@ export function CablePlexView() {
             <>
               {/* Content type filter */}
               <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
-                {([
+                {[
                   { v: 'all' as const, l: 'All' },
                   { v: 'shows' as const, l: 'Shows' },
                   { v: 'movies' as const, l: 'Movies' },
-                ]).map(({ v, l }) => (
+                ].map(({ v, l }) => (
                   <button
                     key={v}
                     onClick={() => setThumbFilter(v)}
                     className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                      thumbFilter === v ? 'bg-slate-600 text-white' : 'text-slate-500 hover:text-slate-300'
+                      thumbFilter === v
+                        ? 'bg-slate-600 text-white'
+                        : 'text-slate-500 hover:text-slate-300'
                     }`}
                   >
                     {l}
@@ -286,7 +337,9 @@ export function CablePlexView() {
                     onClick={() => setPosterSize(s)}
                     title={s.charAt(0).toUpperCase() + s.slice(1)}
                     className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                      posterSize === s ? 'bg-slate-600 text-white' : 'text-slate-500 hover:text-slate-300'
+                      posterSize === s
+                        ? 'bg-slate-600 text-white'
+                        : 'text-slate-500 hover:text-slate-300'
                     }`}
                   >
                     {s.charAt(0).toUpperCase()}
@@ -313,13 +366,25 @@ export function CablePlexView() {
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition-colors"
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
             </svg>
             Export Lineup
           </button>
           <label className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition-colors cursor-pointer">
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
             </svg>
             Import Lineup
@@ -332,7 +397,9 @@ export function CablePlexView() {
                 if (!file) return
                 const text = await file.text()
                 const data = JSON.parse(text)
-                const mode = confirm('Replace entire lineup? (OK = Replace, Cancel = Merge)') ? 'replace' : 'merge'
+                const mode = confirm('Replace entire lineup? (OK = Replace, Cancel = Merge)')
+                  ? 'replace'
+                  : 'merge'
                 const res = await fetch('/api/import/lineup', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -340,7 +407,9 @@ export function CablePlexView() {
                 })
                 if (res.ok) {
                   const result = await res.json()
-                  alert(`Import done (${mode}): ${result.stats.channels_added} channels, ${result.stats.assignments_added} assignments, ${result.stats.blocks_added} blocks`)
+                  alert(
+                    `Import done (${mode}): ${result.stats.channels_added} channels, ${result.stats.assignments_added} assignments, ${result.stats.blocks_added} blocks`,
+                  )
                   window.location.reload()
                 } else {
                   alert('Import failed')

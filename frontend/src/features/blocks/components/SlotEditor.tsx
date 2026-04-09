@@ -34,7 +34,9 @@ function ItemThumb({ thumb, title }: { thumb: string | null; title: string }) {
       alt={title}
       loading="lazy"
       className="w-7 h-10 flex-shrink-0 object-cover rounded"
-      onError={(e) => { e.currentTarget.style.display = 'none' }}
+      onError={(e) => {
+        e.currentTarget.style.display = 'none'
+      }}
     />
   )
 }
@@ -102,9 +104,7 @@ export function SlotEditor({ blockId, targetHour }: SlotEditorProps) {
     <div className="bg-slate-900 border border-slate-700 rounded-lg overflow-hidden">
       {/* Header */}
       <div className="px-3 py-2 border-b border-slate-700 flex items-center justify-between">
-        <span className="text-xs font-medium text-slate-300">
-          Add slot at {targetHour}
-        </span>
+        <span className="text-xs font-medium text-slate-300">Add slot at {targetHour}</span>
         <button
           onClick={cancelAddingSlot}
           className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
@@ -152,7 +152,9 @@ export function SlotEditor({ blockId, targetHour }: SlotEditorProps) {
         )}
 
         {!isLoading && debouncedQuery && items.length === 0 && (
-          <p className="text-xs text-slate-500 text-center py-4">No results for "{debouncedQuery}"</p>
+          <p className="text-xs text-slate-500 text-center py-4">
+            No results for "{debouncedQuery}"
+          </p>
         )}
 
         {/* Search results */}
@@ -168,11 +170,13 @@ export function SlotEditor({ blockId, targetHour }: SlotEditorProps) {
               <p className="text-sm text-slate-100 truncate">{item.title}</p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 {item.year && <span className="text-xs text-slate-500">{item.year}</span>}
-                <span className={`text-xs px-1 py-0.5 rounded ${
-                  item.type === 'show'
-                    ? 'bg-blue-900/50 text-blue-400'
-                    : 'bg-purple-900/50 text-purple-400'
-                }`}>
+                <span
+                  className={`text-xs px-1 py-0.5 rounded ${
+                    item.type === 'show'
+                      ? 'bg-blue-900/50 text-blue-400'
+                      : 'bg-purple-900/50 text-purple-400'
+                  }`}
+                >
                   {item.type === 'show' ? 'TV' : 'Movie'}
                 </span>
               </div>
@@ -198,12 +202,16 @@ export function SlotEditor({ blockId, targetHour }: SlotEditorProps) {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-slate-100 truncate">{item.plex_title}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    {item.plex_year && <span className="text-xs text-slate-500">{item.plex_year}</span>}
-                    <span className={`text-xs px-1 py-0.5 rounded ${
-                      item.plex_type === 'show'
-                        ? 'bg-blue-900/50 text-blue-400'
-                        : 'bg-purple-900/50 text-purple-400'
-                    }`}>
+                    {item.plex_year && (
+                      <span className="text-xs text-slate-500">{item.plex_year}</span>
+                    )}
+                    <span
+                      className={`text-xs px-1 py-0.5 rounded ${
+                        item.plex_type === 'show'
+                          ? 'bg-blue-900/50 text-blue-400'
+                          : 'bg-purple-900/50 text-purple-400'
+                      }`}
+                    >
                       {item.plex_type === 'show' ? 'TV' : 'Movie'}
                     </span>
                   </div>

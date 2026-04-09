@@ -35,19 +35,29 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
         {/* Movie collection */}
         {movieCollection ? (
           <div className="flex items-center gap-1.5 text-xs bg-purple-900/30 border border-purple-800 text-purple-300 rounded-lg px-2.5 py-1">
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <rect x="2" y="7" width="20" height="15" rx="2" />
               <circle cx="12" cy="14" r="2" />
             </svg>
-            <span className="truncate max-w-32">
-              {movieCollection.collection_title}
-            </span>
+            <span className="truncate max-w-32">{movieCollection.collection_title}</span>
             <button
               onClick={() => unlinkCollection.mutate({ channelNumber, plexType: 'movie' })}
               className="ml-1 text-purple-400 hover:text-purple-200 transition-colors"
               title="Unlink movie collection"
             >
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <svg
+                className="w-3 h-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>
@@ -57,7 +67,13 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
             onClick={() => openModal('collectionPicker', { collectionPickerType: 'movie' })}
             className="flex items-center gap-1.5 text-xs border border-dashed border-slate-600 hover:border-purple-600 text-slate-500 hover:text-purple-400 rounded-lg px-2.5 py-1 transition-colors"
           >
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M12 5v14M5 12h14" />
             </svg>
             Link Movie Collection
@@ -67,19 +83,29 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
         {/* Show collection */}
         {showCollection ? (
           <div className="flex items-center gap-1.5 text-xs bg-blue-900/30 border border-blue-800 text-blue-300 rounded-lg px-2.5 py-1">
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <rect x="2" y="3" width="20" height="18" rx="2" />
               <path d="M8 10h8M8 14h5" />
             </svg>
-            <span className="truncate max-w-32">
-              {showCollection.collection_title}
-            </span>
+            <span className="truncate max-w-32">{showCollection.collection_title}</span>
             <button
               onClick={() => unlinkCollection.mutate({ channelNumber, plexType: 'show' })}
               className="ml-1 text-blue-400 hover:text-blue-200 transition-colors"
               title="Unlink show collection"
             >
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <svg
+                className="w-3 h-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>
@@ -89,7 +115,13 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
             onClick={() => openModal('collectionPicker', { collectionPickerType: 'show' })}
             className="flex items-center gap-1.5 text-xs border border-dashed border-slate-600 hover:border-blue-600 text-slate-500 hover:text-blue-400 rounded-lg px-2.5 py-1 transition-colors"
           >
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M12 5v14M5 12h14" />
             </svg>
             Link Show Collection
@@ -105,7 +137,13 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
           {generateCollections.isPending ? (
             <Spinner size="sm" />
           ) : (
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           )}

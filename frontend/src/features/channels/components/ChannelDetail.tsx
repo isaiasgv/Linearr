@@ -78,7 +78,11 @@ export function ChannelDetail() {
 
           <div className="flex-shrink-0 flex items-center gap-2">
             {ch.icon && (
-              <img src={ch.icon} alt="" className="w-8 h-8 rounded-lg object-cover border border-slate-700" />
+              <img
+                src={ch.icon}
+                alt=""
+                className="w-8 h-8 rounded-lg object-cover border border-slate-700"
+              />
             )}
             <button
               onClick={() => openModal('iconEditor')}

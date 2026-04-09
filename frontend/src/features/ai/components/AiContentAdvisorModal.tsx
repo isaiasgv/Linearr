@@ -9,13 +9,7 @@ import type { AiContentAdvisorResult } from '@/features/ai/types'
 
 type ContentTab = 'shows' | 'movies'
 
-function PosterCard({
-  item,
-  channelNumber,
-}: {
-  item: PlexItem
-  channelNumber: number
-}) {
+function PosterCard({ item, channelNumber }: { item: PlexItem; channelNumber: number }) {
   const assign = useAssign()
 
   const handleAdd = () => {
@@ -41,7 +35,13 @@ function PosterCard({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-600">
-            <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+            <svg
+              className="w-8 h-8"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
               <rect x="2" y="7" width="20" height="15" rx="2" />
               <path d="M17 2l-5 5-5-5" />
             </svg>
@@ -111,7 +111,13 @@ export function AiContentAdvisorModal() {
             onClick={handleClose}
             className="text-slate-400 hover:text-slate-100 transition-colors"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
@@ -122,13 +128,20 @@ export function AiContentAdvisorModal() {
           {!result && !advisor.isPending && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-indigo-900/30 border border-indigo-700/50 flex items-center justify-center mb-4">
-                <svg className="w-8 h-8 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <svg
+                  className="w-8 h-8 text-indigo-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
                   <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z" />
                   <path d="M12 16v-4M12 8h.01" />
                 </svg>
               </div>
               <p className="text-slate-400 text-sm mb-6">
-                Get AI-powered content recommendations tailored to this channel's vibe and programming style.
+                Get AI-powered content recommendations tailored to this channel's vibe and
+                programming style.
               </p>
               <button
                 onClick={handleGetRecommendations}

@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from 'react'
 import { Spinner } from '@/shared/components/ui/Spinner'
 
-const TunarrGuide = lazy(() => import('./TunarrGuide').then(m => ({ default: m.TunarrGuide })))
+const TunarrGuide = lazy(() => import('./TunarrGuide').then((m) => ({ default: m.TunarrGuide })))
 import {
   useTunarrChannels,
   useTunarrLinks,
@@ -15,11 +15,19 @@ import {
 import { use247Suggestions, useAiSuggestChannels } from '@/features/ai/hooks'
 import { useCreateChannel } from '@/features/channels/hooks'
 import { useSettings } from '@/features/settings/hooks'
-import type { SmartCollection, Suggestion247, AiChannelSuggestion, AiPackageSuggestion, TunarrScheduleItem } from '@/shared/types'
+import type {
+  SmartCollection,
+  Suggestion247,
+  AiChannelSuggestion,
+  AiPackageSuggestion,
+  TunarrScheduleItem,
+} from '@/shared/types'
 
 // ── SmartCollectionRow ────────────────────────────────────────────────────────
 
-interface SmartCollectionRowProps { collection: SmartCollection }
+interface SmartCollectionRowProps {
+  collection: SmartCollection
+}
 
 function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
   const [editing, setEditing] = useState(false)
@@ -41,25 +49,49 @@ function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
       <div className="bg-slate-800 border border-indigo-700/50 rounded-xl p-4 space-y-3">
         <div>
           <label className="block text-xs text-slate-400 mb-1">Name</label>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500" />
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+          />
         </div>
         <div>
           <label className="block text-xs text-slate-400 mb-1">Filter String</label>
-          <input type="text" value={filterString} onChange={(e) => setFilterString(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-mono focus:outline-none focus:border-indigo-500" />
+          <input
+            type="text"
+            value={filterString}
+            onChange={(e) => setFilterString(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-mono focus:outline-none focus:border-indigo-500"
+          />
         </div>
         <div>
           <label className="block text-xs text-slate-400 mb-1">Keywords</label>
-          <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)}
+          <input
+            type="text"
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
             placeholder="comma-separated keywords"
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+          />
         </div>
         <div className="flex gap-2 justify-end">
-          <button onClick={() => { setName(collection.name); setFilterString(collection.filterString); setKeywords(collection.keywords); setEditing(false) }}
-            className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-100 transition-colors">Cancel</button>
-          <button onClick={handleSave} disabled={updateSmartCollection.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-lg text-xs font-medium transition-colors">
+          <button
+            onClick={() => {
+              setName(collection.name)
+              setFilterString(collection.filterString)
+              setKeywords(collection.keywords)
+              setEditing(false)
+            }}
+            className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-100 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={updateSmartCollection.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-lg text-xs font-medium transition-colors"
+          >
             {updateSmartCollection.isPending && <Spinner size="sm" />}Save
           </button>
         </div>
@@ -72,13 +104,29 @@ function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-slate-100">{collection.name}</p>
-          {collection.filterString && <p className="text-xs font-mono text-slate-400 mt-1 truncate">{collection.filterString}</p>}
-          {collection.keywords && <p className="text-xs text-slate-500 mt-1">Keywords: {collection.keywords}</p>}
+          {collection.filterString && (
+            <p className="text-xs font-mono text-slate-400 mt-1 truncate">
+              {collection.filterString}
+            </p>
+          )}
+          {collection.keywords && (
+            <p className="text-xs text-slate-500 mt-1">Keywords: {collection.keywords}</p>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => setEditing(true)} className="text-xs text-slate-400 hover:text-slate-100 transition-colors">Edit</button>
-          <button onClick={() => deleteSmartCollection.mutate(collection.uuid)} disabled={deleteSmartCollection.isPending}
-            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-60 transition-colors">Delete</button>
+          <button
+            onClick={() => setEditing(true)}
+            className="text-xs text-slate-400 hover:text-slate-100 transition-colors"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => deleteSmartCollection.mutate(collection.uuid)}
+            disabled={deleteSmartCollection.isPending}
+            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-60 transition-colors"
+          >
+            Delete
+          </button>
         </div>
       </div>
     </div>
@@ -116,7 +164,11 @@ function TunarrChannelCard({ channel, linkedGalaxyName }: TunarrChannelCardProps
     <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 flex flex-col gap-2">
       <div className="flex items-center gap-3">
         {channel.icon?.path ? (
-          <img src={channel.icon.path} alt={channel.name} className="w-8 h-8 rounded object-cover shrink-0" />
+          <img
+            src={channel.icon.path}
+            alt={channel.name}
+            className="w-8 h-8 rounded object-cover shrink-0"
+          />
         ) : (
           <div className="w-8 h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
             <span className="text-xs font-mono text-slate-400">{channel.number}</span>
@@ -144,7 +196,10 @@ function TunarrChannelCard({ channel, linkedGalaxyName }: TunarrChannelCardProps
       {showSchedule && (
         <div className="border-t border-slate-800 pt-2">
           {scheduleLoading ? (
-            <div className="flex items-center gap-2 text-slate-500 text-xs py-1"><Spinner size="sm" />Loading…</div>
+            <div className="flex items-center gap-2 text-slate-500 text-xs py-1">
+              <Spinner size="sm" />
+              Loading…
+            </div>
           ) : playing ? (
             <p className="text-xs text-emerald-400 truncate">▶ {playing}</p>
           ) : schedule && schedule.length > 0 ? (
@@ -152,7 +207,10 @@ function TunarrChannelCard({ channel, linkedGalaxyName }: TunarrChannelCardProps
               {schedule.slice(0, 8).map((item, i) => (
                 <div key={i} className="flex items-center gap-2 text-xs">
                   <span className="text-slate-500 w-14 shrink-0 tabular-nums">
-                    {new Date(item.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(item.startTime).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </span>
                   <span className="text-slate-300 truncate">
                     {item.episode?.title ? `${item.title} — ${item.episode.title}` : item.title}
@@ -198,15 +256,25 @@ function ChannelBuilder247() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-100">24/7 Channel Builder</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Channels based on your Plex library content</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Channels based on your Plex library content
+          </p>
         </div>
         <button
           onClick={() => suggest247.mutate()}
           disabled={suggest247.isPending}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 border border-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-colors"
         >
-          {suggest247.isPending ? <Spinner size="sm" /> : (
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          {suggest247.isPending ? (
+            <Spinner size="sm" />
+          ) : (
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
             </svg>
           )}
@@ -216,19 +284,24 @@ function ChannelBuilder247() {
 
       {suggest247.isPending && (
         <div className="flex items-center gap-2 text-slate-400 text-sm py-6 justify-center">
-          <Spinner />Scanning Plex library…
+          <Spinner />
+          Scanning Plex library…
         </div>
       )}
 
       {!suggest247.isPending && suggestions.length === 0 && !suggest247.data && (
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
-          <p className="text-slate-500 text-sm">Click "Scan Plex Library" to find 24/7 channel candidates</p>
+          <p className="text-slate-500 text-sm">
+            Click "Scan Plex Library" to find 24/7 channel candidates
+          </p>
         </div>
       )}
 
       {!suggest247.isPending && suggestions.length === 0 && suggest247.data && (
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
-          <p className="text-slate-500 text-sm">No new 24/7 channel candidates found — all eligible content already has channels</p>
+          <p className="text-slate-500 text-sm">
+            No new 24/7 channel candidates found — all eligible content already has channels
+          </p>
         </div>
       )}
 
@@ -237,14 +310,19 @@ function ChannelBuilder247() {
           {suggestions.map((s) => {
             const done = created.has(s.suggested_number)
             return (
-              <div key={s.rating_key} className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+              <div
+                key={s.rating_key}
+                className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden"
+              >
                 <div className="flex gap-3 p-3">
                   {s.thumb ? (
                     <img
                       src={`/api/plex/thumb?path=${encodeURIComponent(s.thumb)}`}
                       alt={s.title}
                       className="w-12 h-16 object-cover rounded shrink-0"
-                      onError={(e) => { e.currentTarget.style.display = 'none' }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
                     />
                   ) : (
                     <div className="w-12 h-16 bg-slate-800 rounded shrink-0 flex items-center justify-center">
@@ -252,13 +330,19 @@ function ChannelBuilder247() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-100 truncate">{s.channel_name}</p>
+                    <p className="text-sm font-semibold text-slate-100 truncate">
+                      {s.channel_name}
+                    </p>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${s.type === 'shows' ? 'bg-blue-900/50 text-blue-400' : 'bg-purple-900/50 text-purple-400'}`}>
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded ${s.type === 'shows' ? 'bg-blue-900/50 text-blue-400' : 'bg-purple-900/50 text-purple-400'}`}
+                      >
                         {s.type === 'shows' ? 'TV' : 'Movies'}
                       </span>
                       <span className="text-xs text-slate-500">
-                        {s.type === 'shows' ? `${s.episodes} ep · ${s.hours}h` : `${s.episodes} films · ${s.hours}h`}
+                        {s.type === 'shows'
+                          ? `${s.episodes} ep · ${s.hours}h`
+                          : `${s.episodes} films · ${s.hours}h`}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-1 line-clamp-2">{s.description}</p>
@@ -324,15 +408,25 @@ function AiChannelSuggestions() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-100">AI Channel Suggestions</h2>
-          <p className="text-xs text-slate-500 mt-0.5">AI-powered lineup recommendations based on your library</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            AI-powered lineup recommendations based on your library
+          </p>
         </div>
         <button
           onClick={() => aiSuggest.mutate()}
           disabled={aiSuggest.isPending}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/30 hover:bg-emerald-900/50 disabled:opacity-60 border border-emerald-700/50 text-emerald-300 rounded-lg text-xs font-medium transition-colors"
         >
-          {aiSuggest.isPending ? <Spinner size="sm" /> : (
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          {aiSuggest.isPending ? (
+            <Spinner size="sm" />
+          ) : (
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
             </svg>
           )}
@@ -342,13 +436,16 @@ function AiChannelSuggestions() {
 
       {aiSuggest.isPending && (
         <div className="flex items-center gap-2 text-slate-400 text-sm py-6 justify-center">
-          <Spinner />AI is analyzing your library…
+          <Spinner />
+          AI is analyzing your library…
         </div>
       )}
 
       {!aiSuggest.isPending && !aiSuggest.data && (
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
-          <p className="text-slate-500 text-sm">Click "Generate Suggestions" to get AI channel recommendations</p>
+          <p className="text-slate-500 text-sm">
+            Click "Generate Suggestions" to get AI channel recommendations
+          </p>
           <p className="text-xs text-slate-600 mt-1">Requires AI API key in Settings</p>
         </div>
       )}
@@ -359,24 +456,36 @@ function AiChannelSuggestions() {
             {channels.map((s) => {
               const done = created.has(s.number)
               return (
-                <div key={s.number} className="bg-slate-900 border border-slate-700 rounded-xl p-3 flex flex-col gap-2">
+                <div
+                  key={s.number}
+                  className="bg-slate-900 border border-slate-700 rounded-xl p-3 flex flex-col gap-2"
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                        <span className={`text-xs px-1.5 py-0.5 rounded border ${tierColor(s.tier)}`}>
+                        <span
+                          className={`text-xs px-1.5 py-0.5 rounded border ${tierColor(s.tier)}`}
+                        >
                           CH {s.number}
                         </span>
                         <span className="text-xs text-slate-500">{s.tier}</span>
                       </div>
                       <p className="text-sm font-semibold text-slate-100">{s.name}</p>
                       {s.vibe && <p className="text-xs text-slate-400 italic mt-0.5">{s.vibe}</p>}
-                      {s.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{s.description}</p>}
+                      {s.description && (
+                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{s.description}</p>
+                      )}
                     </div>
                   </div>
                   {s.suggested_content && s.suggested_content.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {s.suggested_content.slice(0, 4).map((c) => (
-                        <span key={c} className="text-xs bg-slate-800 text-slate-400 rounded px-1.5 py-0.5">{c}</span>
+                        <span
+                          key={c}
+                          className="text-xs bg-slate-800 text-slate-400 rounded px-1.5 py-0.5"
+                        >
+                          {c}
+                        </span>
                       ))}
                     </div>
                   )}
@@ -399,18 +508,25 @@ function AiChannelSuggestions() {
 
           {packages.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Suggested Packages</h3>
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                Suggested Packages
+              </h3>
               {packages.map((pkg, i) => (
                 <div key={i} className="bg-slate-900 border border-slate-700 rounded-xl p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-slate-100">{pkg.name}</p>
                       <p className="text-xs text-slate-400 mt-0.5">{pkg.description}</p>
-                      {pkg.highlights && <p className="text-xs text-slate-500 mt-1 italic">{pkg.highlights}</p>}
+                      {pkg.highlights && (
+                        <p className="text-xs text-slate-500 mt-1 italic">{pkg.highlights}</p>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-1 shrink-0">
                       {pkg.channel_numbers.map((n) => (
-                        <span key={n} className="text-xs bg-slate-800 border border-slate-700 text-slate-400 rounded px-1.5 py-0.5">
+                        <span
+                          key={n}
+                          className="text-xs bg-slate-800 border border-slate-700 text-slate-400 rounded px-1.5 py-0.5"
+                        >
                           {n}
                         </span>
                       ))}
@@ -439,7 +555,13 @@ export function TunarrView() {
 
   if (showGuide) {
     return (
-      <Suspense fallback={<div className="flex-1 flex items-center justify-center"><Spinner /></div>}>
+      <Suspense
+        fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <Spinner />
+          </div>
+        }
+      >
         <TunarrGuide onClose={() => setShowGuide(false)} />
       </Suspense>
     )
@@ -447,7 +569,7 @@ export function TunarrView() {
 
   // Build a map from tunarr_id → Galaxy channel name for display
   const tunarrIdToGalaxy = Object.fromEntries(
-    links.map((l) => [l.tunarr_id, `CH ${l.channel_number}${l.tunarr_name ? '' : ''}`])
+    links.map((l) => [l.tunarr_id, `CH ${l.channel_number}${l.tunarr_name ? '' : ''}`]),
   )
 
   return (
@@ -465,7 +587,13 @@ export function TunarrView() {
             onClick={() => setShowGuide(true)}
             className="flex items-center gap-2 px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 border border-emerald-700 text-emerald-100 rounded-lg text-xs font-medium transition-colors"
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <rect x="3" y="3" width="18" height="18" rx="2" />
               <path d="M3 9h18M9 3v18" />
             </svg>
@@ -484,7 +612,6 @@ export function TunarrView() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-8">
-
         {/* Tunarr Channels */}
         <section>
           <div className="flex items-center justify-between mb-3">
@@ -500,9 +627,18 @@ export function TunarrView() {
                 disabled={scanLibraries.isPending}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 border border-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-colors"
               >
-                {scanLibraries.isPending ? <Spinner size="sm" /> : (
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path d="M4 4v6h6M20 20v-6h-6" /><path d="M20 10A8 8 0 0 0 6.93 6.93M4 14a8 8 0 0 0 13.07 3.07" />
+                {scanLibraries.isPending ? (
+                  <Spinner size="sm" />
+                ) : (
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path d="M4 4v6h6M20 20v-6h-6" />
+                    <path d="M20 10A8 8 0 0 0 6.93 6.93M4 14a8 8 0 0 0 13.07 3.07" />
                   </svg>
                 )}
                 Scan Libraries
@@ -512,9 +648,18 @@ export function TunarrView() {
                 disabled={refreshGuide.isPending}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 border border-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-colors"
               >
-                {refreshGuide.isPending ? <Spinner size="sm" /> : (
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path d="M4 4v6h6M20 20v-6h-6" /><path d="M20 10A8 8 0 0 0 6.93 6.93M4 14a8 8 0 0 0 13.07 3.07" />
+                {refreshGuide.isPending ? (
+                  <Spinner size="sm" />
+                ) : (
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path d="M4 4v6h6M20 20v-6h-6" />
+                    <path d="M20 10A8 8 0 0 0 6.93 6.93M4 14a8 8 0 0 0 13.07 3.07" />
                   </svg>
                 )}
                 Refresh Guide
@@ -523,11 +668,16 @@ export function TunarrView() {
           </div>
 
           {loadingChannels ? (
-            <div className="flex items-center gap-2 text-slate-400 text-sm py-4"><Spinner size="sm" />Loading channels…</div>
+            <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
+              <Spinner size="sm" />
+              Loading channels…
+            </div>
           ) : tunarrChannels.length === 0 ? (
             <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
               <p className="text-slate-500 text-sm">No Tunarr channels found</p>
-              <p className="text-xs text-slate-600 mt-1">Check your Tunarr connection in Settings</p>
+              <p className="text-xs text-slate-600 mt-1">
+                Check your Tunarr connection in Settings
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -560,7 +710,10 @@ export function TunarrView() {
           </div>
 
           {loadingCollections ? (
-            <div className="flex items-center gap-2 text-slate-400 text-sm py-4"><Spinner size="sm" />Loading…</div>
+            <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
+              <Spinner size="sm" />
+              Loading…
+            </div>
           ) : smartCollections.length === 0 ? (
             <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
               <p className="text-slate-500 text-sm">No smart collections configured</p>

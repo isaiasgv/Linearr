@@ -31,7 +31,9 @@ export function ModalWrapper({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className={`relative w-full ${maxWidth} mx-4 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl`}>
+      <div
+        className={`relative w-full ${maxWidth} mx-4 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl`}
+      >
         {children}
       </div>
     </div>

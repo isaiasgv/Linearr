@@ -27,14 +27,25 @@ export function TemplatesLibraryModal() {
 
   const createBlock = useCreateBlock()
 
-  const { data: templates = [], isLoading, isError } = useQuery<ScheduleTemplate[]>({
+  const {
+    data: templates = [],
+    isLoading,
+    isError,
+  } = useQuery<ScheduleTemplate[]>({
     queryKey: ['schedule-templates'],
     queryFn: async () => {
-      const res = await get<{ version?: number; categories?: Array<{ id: string; label: string; templates: Array<Omit<ScheduleTemplate, 'category'>> }> }>('/api/schedule-templates')
+      const res = await get<{
+        version?: number
+        categories?: Array<{
+          id: string
+          label: string
+          templates: Array<Omit<ScheduleTemplate, 'category'>>
+        }>
+      }>('/api/schedule-templates')
       // Backend returns { version, categories: [{ id, label, templates }] } — flatten to ScheduleTemplate[]
       if (res && Array.isArray(res.categories)) {
         return res.categories.flatMap((cat) =>
-          (cat.templates || []).map((t) => ({ ...t, category: cat.label }))
+          (cat.templates || []).map((t) => ({ ...t, category: cat.label })),
         )
       }
       // Fallback: if somehow it's already a flat array
@@ -80,7 +91,13 @@ export function TemplatesLibraryModal() {
           onClick={handleClose}
           className="p-1.5 text-slate-400 hover:text-slate-200 rounded transition-colors"
         >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg
+            className="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </button>
@@ -142,17 +159,18 @@ export function TemplatesLibraryModal() {
                         <span className="text-xs text-slate-400">
                           {to12h(template.start_time)} – {to12h(template.end_time)}
                         </span>
-                        <span className="text-xs text-slate-500">
-                          {template.days.join(', ')}
-                        </span>
-                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                          template.content_type === 'shows'
-                            ? 'bg-blue-900/50 text-blue-300'
-                            : template.content_type === 'movies'
-                              ? 'bg-purple-900/50 text-purple-300'
-                              : 'bg-slate-700 text-slate-300'
-                        }`}>
-                          {template.content_type.charAt(0).toUpperCase() + template.content_type.slice(1)}
+                        <span className="text-xs text-slate-500">{template.days.join(', ')}</span>
+                        <span
+                          className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                            template.content_type === 'shows'
+                              ? 'bg-blue-900/50 text-blue-300'
+                              : template.content_type === 'movies'
+                                ? 'bg-purple-900/50 text-purple-300'
+                                : 'bg-slate-700 text-slate-300'
+                          }`}
+                        >
+                          {template.content_type.charAt(0).toUpperCase() +
+                            template.content_type.slice(1)}
                         </span>
                       </div>
                       {template.notes && (

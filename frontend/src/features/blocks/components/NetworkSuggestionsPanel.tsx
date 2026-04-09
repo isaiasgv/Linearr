@@ -67,7 +67,13 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
       {/* Toggle header */}
       <div className="px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg
+            className="w-4 h-4 text-slate-400"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
             <circle cx="12" cy="12" r="10" />
             <path d="M12 8v4l3 3" />
           </svg>
@@ -85,7 +91,13 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
             </>
           ) : (
             <>
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
               </svg>
               Show Network Suggestions
@@ -122,11 +134,13 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
             <>
               {/* Filter tabs */}
               <div className="px-4 py-2 border-b border-slate-700 flex items-center gap-1">
-                {([
-                  { value: 'all', label: 'All' },
-                  { value: 'unassigned', label: 'Unassigned' },
-                  { value: 'by-channel', label: 'By Channel' },
-                ] as { value: FilterTab; label: string }[]).map((tab) => (
+                {(
+                  [
+                    { value: 'all', label: 'All' },
+                    { value: 'unassigned', label: 'Unassigned' },
+                    { value: 'by-channel', label: 'By Channel' },
+                  ] as { value: FilterTab; label: string }[]
+                ).map((tab) => (
                   <button
                     key={tab.value}
                     onClick={() => setActiveTab(tab.value)}
@@ -143,7 +157,9 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
                 {activeTab === 'by-channel' && (
                   <select
                     value={selectedChannel ?? ''}
-                    onChange={(e) => setSelectedChannel(e.target.value ? Number(e.target.value) : null)}
+                    onChange={(e) =>
+                      setSelectedChannel(e.target.value ? Number(e.target.value) : null)
+                    }
                     className="ml-2 bg-slate-700 border border-slate-600 rounded px-2 py-0.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
                   >
                     <option value="">All channels</option>
@@ -151,7 +167,8 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
                       const s = suggestions.find((x) => x.channel_number === n)
                       return (
                         <option key={n} value={n}>
-                          Ch {n}{s ? ` – ${s.channel_name}` : ''}
+                          Ch {n}
+                          {s ? ` – ${s.channel_name}` : ''}
                         </option>
                       )
                     })}
@@ -206,7 +223,13 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
                         {bulkAssign.isPending ? (
                           <Spinner size="sm" />
                         ) : (
-                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <svg
+                            className="w-3.5 h-3.5"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
                             <path d="M12 5v14M5 12h14" />
                           </svg>
                         )}

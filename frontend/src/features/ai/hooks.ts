@@ -78,11 +78,7 @@ export function useNetworkAdvisor() {
   })
 }
 
-export function useAiGenerateDayPreview(
-  channelNumber: number,
-  style: string,
-  enabled: boolean,
-) {
+export function useAiGenerateDayPreview(channelNumber: number, style: string, enabled: boolean) {
   return useQuery({
     queryKey: ['ai-generate-day-preview', channelNumber, style],
     queryFn: () => aiApi.getAiGenerateDayPreview(channelNumber, style),
@@ -128,6 +124,7 @@ export function useAiSuggestChannels() {
   const addToast = useToastStore((s) => s.addToast)
   return useMutation({
     mutationFn: () => aiApi.aiSuggestChannels(),
-    onError: (error: Error) => addToast(error.message || 'Failed to get AI channel suggestions', true),
+    onError: (error: Error) =>
+      addToast(error.message || 'Failed to get AI channel suggestions', true),
   })
 }

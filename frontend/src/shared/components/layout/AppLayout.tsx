@@ -18,7 +18,6 @@ export function AppLayout({ sidebar, children }: AppLayoutProps) {
 
       {/* Body below topbar */}
       <div className="flex flex-1 overflow-hidden relative">
-
         {/* Mobile backdrop — tapping it closes the drawer */}
         {sidebarOpen && (
           <div

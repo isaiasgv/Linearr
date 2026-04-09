@@ -8,7 +8,7 @@ const TIERS: Channel['tier'][] = ['Galaxy Main', 'Classics', 'Galaxy Premium']
 const MODES = ['Shuffle', 'Flex', 'Sequential']
 const TIER_COLORS: Record<string, string> = {
   'Galaxy Main': 'blue',
-  'Classics': 'amber',
+  Classics: 'amber',
   'Galaxy Premium': 'purple',
 }
 
@@ -69,10 +69,7 @@ export function ChannelFormModal() {
     }
 
     if (isEditing) {
-      updateChannel.mutate(
-        { number: editingChannel!.number, data },
-        { onSuccess: handleClose },
-      )
+      updateChannel.mutate({ number: editingChannel!.number, data }, { onSuccess: handleClose })
     } else {
       createChannel.mutate(data, { onSuccess: handleClose })
     }
@@ -92,7 +89,13 @@ export function ChannelFormModal() {
             onClick={handleClose}
             className="text-slate-500 hover:text-slate-300 transition-colors"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
@@ -150,7 +153,9 @@ export function ChannelFormModal() {
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
               >
                 {TIERS.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
                 ))}
               </select>
             </div>
@@ -164,7 +169,9 @@ export function ChannelFormModal() {
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
               >
                 {MODES.map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
                 ))}
               </select>
             </div>
@@ -234,7 +241,14 @@ export function ChannelFormModal() {
           >
             {isPending && (
               <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
               </svg>
             )}

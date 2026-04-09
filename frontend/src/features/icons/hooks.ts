@@ -39,8 +39,9 @@ export function useSeedIconPack() {
   const qc = useQueryClient()
   const addToast = useToastStore((s) => s.addToast)
   return useMutation({
-    mutationFn: (pack: { icons: Array<{ name: string; category: string; data: string; channel?: string | null }> }) =>
-      iconsApi.seedPack(pack),
+    mutationFn: (pack: {
+      icons: Array<{ name: string; category: string; data: string; channel?: string | null }>
+    }) => iconsApi.seedPack(pack),
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ['icons', 'library'] })
       void qc.invalidateQueries({ queryKey: ['channels'] })

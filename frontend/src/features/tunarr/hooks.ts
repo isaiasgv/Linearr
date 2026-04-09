@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToastStore } from '@/shared/store/toast.store'
-import type { SmartCollection, TunarrChannel, TunarrChannelLink, TunarrCollectionLink } from '@/shared/types'
+import type {
+  SmartCollection,
+  TunarrChannel,
+  TunarrChannelLink,
+  TunarrCollectionLink,
+} from '@/shared/types'
 import { tunarrApi } from './api'
 
 export function useTunarrChannels() {
@@ -60,10 +65,10 @@ export function useCreateTunarrChannel() {
   return useMutation({
     mutationFn: (body: CreateChannelVars) => tunarrApi.createChannel(body),
     onSuccess: (data) => {
-      queryClient.setQueryData(
-        ['tunarr', 'channels'],
-        (prev: TunarrChannel[] | undefined) => [...(prev ?? []), data],
-      )
+      queryClient.setQueryData(['tunarr', 'channels'], (prev: TunarrChannel[] | undefined) => [
+        ...(prev ?? []),
+        data,
+      ])
       addToast(`Channel "${data.name}" created in Tunarr`)
     },
     onError: (error: Error) => {
@@ -100,10 +105,8 @@ export function useUnlinkTunarrChannel() {
   return useMutation({
     mutationFn: (channelNumber: number) => tunarrApi.unlinkChannel(channelNumber),
     onSuccess: (_data, channelNumber) => {
-      queryClient.setQueryData(
-        ['tunarr', 'links'],
-        (prev: TunarrChannelLink[] | undefined) =>
-          (prev ?? []).filter((l) => l.channel_number !== channelNumber),
+      queryClient.setQueryData(['tunarr', 'links'], (prev: TunarrChannelLink[] | undefined) =>
+        (prev ?? []).filter((l) => l.channel_number !== channelNumber),
       )
       addToast('Channel unlinked from Tunarr')
     },
@@ -196,7 +199,9 @@ export function useSyncCollections() {
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['tunarr', 'collection-links'] })
       void queryClient.invalidateQueries({ queryKey: ['tunarr', 'smart-collections'] })
-      addToast(`Synced collections: ${data.created?.length ?? 0} created, ${data.updated?.length ?? 0} updated`)
+      addToast(
+        `Synced collections: ${data.created?.length ?? 0} created, ${data.updated?.length ?? 0} updated`,
+      )
     },
     onError: (error: Error) => {
       addToast(error.message || 'Failed to sync collections', true)
@@ -265,8 +270,7 @@ export function useDeleteSmartCollection() {
     onSuccess: (_data, uuid) => {
       queryClient.setQueryData(
         ['tunarr', 'smart-collections'],
-        (prev: SmartCollection[] | undefined) =>
-          (prev ?? []).filter((c) => c.uuid !== uuid),
+        (prev: SmartCollection[] | undefined) => (prev ?? []).filter((c) => c.uuid !== uuid),
       )
       addToast('Smart collection deleted')
     },

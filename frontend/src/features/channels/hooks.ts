@@ -19,7 +19,7 @@ export function useCreateChannel() {
     mutationFn: (data: Partial<Channel>) => channelsApi.create(data),
     onSuccess: (ch) => {
       qc.setQueryData<Channel[]>(['channels'], (old = []) =>
-        [...old, ch].sort((a, b) => a.number - b.number)
+        [...old, ch].sort((a, b) => a.number - b.number),
       )
       addToast(`Channel ${ch.number} created`)
     },
@@ -36,7 +36,7 @@ export function useUpdateChannel() {
       channelsApi.update(number, data),
     onSuccess: (updated) => {
       qc.setQueryData<Channel[]>(['channels'], (old = []) =>
-        old.map((c) => (c.number === updated.number ? updated : c))
+        old.map((c) => (c.number === updated.number ? updated : c)),
       )
       addToast(`Channel ${updated.number} updated`)
     },
@@ -51,9 +51,7 @@ export function useDeleteChannel() {
   return useMutation({
     mutationFn: (number: number) => channelsApi.remove(number),
     onSuccess: (_, number) => {
-      qc.setQueryData<Channel[]>(['channels'], (old = []) =>
-        old.filter((c) => c.number !== number)
-      )
+      qc.setQueryData<Channel[]>(['channels'], (old = []) => old.filter((c) => c.number !== number))
       qc.removeQueries({ queryKey: ['blocks', number] })
       qc.removeQueries({ queryKey: ['channel-collections', number] })
       qc.removeQueries({ queryKey: ['collection-status', number] })

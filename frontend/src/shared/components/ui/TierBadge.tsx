@@ -16,9 +16,5 @@ interface TierBadgeProps {
 }
 
 export function TierBadge({ tier }: TierBadgeProps) {
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded border ${tierColor(tier)}`}>
-      {tier}
-    </span>
-  )
+  return <span className={`text-xs px-2 py-0.5 rounded border ${tierColor(tier)}`}>{tier}</span>
 }
