@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Linearr</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#6366f1" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Linearr" />
+
+    <!-- Favicon: SVG for modern browsers, ICO fallback for legacy -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+
+    <!-- SEO / meta -->
+    <meta name="description" content="TV channel schedule manager for Plex and Tunarr" />
+    <meta name="application-name" content="Linearr" />
+    <script type="module" crossorigin src="/assets/index-C8aGpl0r.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BF2MMJwC.css">
+  </head>
+  <body class="bg-slate-900 text-slate-100 antialiased">
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {})
+        })
+      }
+    </script>
+  </body>
+</html>

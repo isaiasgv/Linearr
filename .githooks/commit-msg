@@ -1,0 +1,28 @@
+#!/bin/sh
+# Enforce Conventional Commits + block AI tool references
+
+MSG=$(cat "$1")
+
+# Strip comments (lines starting with #)
+STRIPPED=$(echo "$MSG" | grep -v '^#')
+
+# Must follow conventional commits: <type>(<scope>)!: <description>
+if ! echo "$STRIPPED" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9/_-]+\))?(!)?: .{1,}'; then
+  echo ""
+  echo "  [commit-msg] Rejected: message must follow Conventional Commits format."
+  echo ""
+  echo "  Format:  <type>(<scope>): <description>"
+  echo "  Types:   feat  fix  docs  style  refactor  perf  test  build  ci  chore  revert"
+  echo "  Example: feat(linearr): add dark mode toggle"
+  echo ""
+  exit 1
+fi
+
+# Block Claude / AI tool references in commit message
+if echo "$STRIPPED" | grep -qiE \
+    'co-authored-by[[:space:]]*:[[:space:]]*claude|generated with \[?claude|claude (code|sonnet|opus|haiku)|🤖.*claude'; then
+  echo ""
+  echo "  [commit-msg] Rejected: Claude/AI tool references are not allowed in commit messages."
+  echo ""
+  exit 1
+fi

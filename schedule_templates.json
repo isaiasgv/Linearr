@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "id": "adult-swim",
+      "label": "Adult Swim",
+      "templates": [
+        {
+          "id": "adult-swim-weekday",
+          "name": "Adult Swim Weekday",
+          "start_time": "21:00",
+          "end_time": "05:00",
+          "days": ["mon","tue","wed","thu","fri"],
+          "content_type": "shows",
+          "notes": "Classic weekday Adult Swim. Anchor shows (Family Guy, Futurama, Bob's Burgers, American Dad) 9–11PM, original shorts + anime overnight."
+        },
+        {
+          "id": "adult-swim-weekend",
+          "name": "Adult Swim Weekend",
+          "start_time": "21:00",
+          "end_time": "05:00",
+          "days": ["sat","sun"],
+          "content_type": "shows",
+          "notes": "Weekend Adult Swim. Lead with anime (Naruto, DBZ, One Piece) 9PM–1AM, then adult animation through 5AM."
+        },
+        {
+          "id": "toonami-saturday",
+          "name": "Toonami Block",
+          "start_time": "20:00",
+          "end_time": "00:00",
+          "days": ["sat"],
+          "content_type": "shows",
+          "notes": "Saturday night Toonami — action anime back to back (Dragon Ball, Naruto, One Piece, Attack on Titan). 1-hour slots, 8PM–midnight."
+        },
+        {
+          "id": "adult-swim-late",
+          "name": "Adult Swim Late Night",
+          "start_time": "01:00",
+          "end_time": "06:00",
+          "days": ["mon","tue","wed","thu","fri","sat","sun"],
+          "content_type": "shows",
+          "notes": "Deep late-night AS block — anime (Ghost in the Shell, Inuyasha, Cowboy Bebop) and weird original shorts (Aqua Teen, Robot Chicken)."
+        }
+      ]
+    },
+    {
+      "id": "cartoon-network",
+      "label": "Cartoon Network",
+      "templates": [
+        {
+          "id": "cn-saturday-morning",
+          "name": "CN Saturday Morning",
+          "start_time": "07:00",
+          "end_time": "12:00",
+          "days": ["sat"],
+          "content_type": "shows",
+          "notes": "Weekend morning cartoons — lighter fare, shorter episodes (Dexter's Lab, Ed Edd n Eddy, Powerpuff Girls, Looney Tunes)."
+        },
+        {
+          "id": "cn-after-school",
+          "name": "CN After School",
+          "start_time": "14:00",
+          "end_time": "18:00",
+          "days": ["mon","tue","wed","thu","fri"],
+          "content_type": "shows",
+          "notes": "Weekday after-school action block — Ben 10, Teen Titans, Samurai Jack, Code Lyoko. 30-min episodes back to back."
+        },
+        {
+          "id": "cn-primetime",
+          "name": "CN Primetime",
+          "start_time": "18:00",
+          "end_time": "21:00",
+          "days": ["mon","tue","wed","thu","fri","sat","sun"],
+          "content_type": "shows",
+          "notes": "Daily CN primetime — flagship series (Adventure Time, Regular Show, Steven Universe, Gravity Falls). Best episodes."
+        },
+        {
+          "id": "cn-transition",
+          "name": "CN Evening Transition",
+          "start_time": "19:00",
+          "end_time": "23:00",
+          "days": ["mon","tue","wed","thu","fri"],
+          "content_type": "shows",
+          "notes": "CN-to-Adult-Swim transition block. Older-skewing CN (Dragon Ball Z, Static Shock, Teen Titans) bridging to 11PM Adult Swim start."
+        }
+      ]
+    },
+    {
+      "id": "nickelodeon",
+      "label": "Nickelodeon",
+      "templates": [
+        {
+          "id": "nick-jr-morning",
+          "name": "Nick Jr. Morning",
+          "start_time": "07:00",
+          "end_time": "12:00",
+          "days": ["mon","tue","wed","thu","fri","sat","sun"],
+          "content_type": "shows",
+          "notes": "Nick Jr. preschool morning — Blue's Clues, Dora the Explorer, Bluey, Doc McStuffins. Gentle, colorful, 30-min slots."
+        },
+        {
+          "id": "nicktoons-midday",
+          "name": "Nicktoons Midday",
+          "start_time": "12:00",
+          "end_time": "17:00",
+          "days": ["mon","tue","wed","thu","fri"],
+          "content_type": "shows",
+          "notes": "Classic Nicktoons marathon — SpongeBob, Fairly OddParents, Danny Phantom, Rugrats, Hey Arnold!. Deep catalog rotation."
+        },
+        {
+          "id": "nick-liveaction",
+          "name": "Nick Live-Action Block",
+          "start_time": "16:00",
+          "end_time": "19:00",
+          "days": ["mon","tue","wed","thu","fri"],
+          "content_type": "shows",
+          "notes": "Weekday after-school live-action — iCarly, Drake & Josh, Victorious, Zoey 101, Kenan & Kel. Snappy 30-min episodes."
+        },
+        {
+          "id": "nick-primetime",
+          "name": "Nick Primetime",
+          "start_time": "19:00",
+          "end_time": "22:00",
+          "days": ["mon","tue","wed","thu","fri","sat","sun"],
+          "content_type": "both",
+          "notes": "Daily Nick primetime — top animated + live-action best-of. Nick movies (DCOMs-adjacent) on Friday and Saturday."
+        },
+        {
+          "id": "nick-late",
+          "name": "Nick Late Night (Avatar Block)",
+          "start_time": "22:00",
+          "end_time": "01:00",
+          "days": ["mon","tue","wed","thu","fri"],
+          "content_type": "shows",
+          "notes": "Older-skewing Nick late block — Avatar: The Last Airbender, Legend of Korra, Are You Afraid of the Dark?, Invader Zim."
+        }
+      ]
+    },
+    {
+      "id": "disney",
+      "label": "Disney Channel",
+      "templates": [
+        {
+          "id": "disney-junior-morning",
+          "name": "Disney Junior Morning",
+          "start_time": "07:00",
+          "end_time": "12:00",
+          "days": ["mon","tue","wed","thu","fri","sat","sun"],
+          "content_type": "shows",
+          "notes": "Disney Junior preschool morning — Bluey, Doc McStuffins, Sofia the First. Gentle and colorful, 30-min slots."
+        },
+        {
+          "id": "disney-xd-afternoon",
+          "name": "Disney XD Afternoon",
+          "start_time": "14:00",
+          "end_time": "18:00",
+          "days": ["mon","tue","wed","thu","fri"],
+          "content_type": "shows",
+          "notes": "Action-adventure afternoon in the Disney XD vein — Gravity Falls, DuckTales, Star Wars Rebels, Big Hero 6 series, Tron: Uprising."
+        },
+        {
+          "id": "disney-afternoon-series",
+          "name": "Disney Afternoon Series",
+          "start_time": "15:00",
+          "end_time": "19:00",
+          "days": ["mon","tue","wed","thu","fri"],
+          "content_type": "shows",
+          "notes": "Classic Disney Channel sitcoms and animated series — Phineas & Ferb, Amphibia, The Owl House, Jessie, Good Luck Charlie."
+        },
+        {
+          "id": "disney-dcom-night",
+          "name": "DCOM Movie Night",
+          "start_time": "19:00",
+          "end_time": "23:00",
+          "days": ["fri","sat"],
+          "content_type": "movies",
+          "notes": "Friday/Saturday Disney Channel Original Movie night — Halloweentown, High School Musical, Descendants, Camp Rock."
+        }
+      ]
+    },
+    {
+      "id": "movies",
+      "label": "Movie Blocks",
+      "templates": [
+        {
+          "id": "movies-morning",
+          "name": "Morning Movie",
+          "start_time": "10:00",
+          "end_time": "13:00",
+          "days": ["sat","sun"],
+          "content_type": "movies",
+          "notes": "Weekend morning feel-good feature — comedies, family films, crowd-pleasers."
+        },
+        {
+          "id": "movies-afternoon-single",
+          "name": "Afternoon Movie",
+          "start_time": "13:00",
+          "end_time": "17:00",
+          "days": ["mon","tue","wed","thu","fri","sat","sun"],
+          "content_type": "movies",
+          "notes": "Single afternoon feature — light action, comedies, and accessible hits."
+        },
+        {
+          "id": "movies-double-feature",
+          "name": "Weekend Double Feature",
+          "start_time": "13:00",
+          "end_time": "20:00",
+          "days": ["sat","sun"],
+          "content_type": "movies",
+          "notes": "Back-to-back weekend movies — pair thematically by director, franchise, genre, or decade."
+        },
+        {
+          "id": "movies-primetime",
+          "name": "Primetime Feature",
+          "start_time": "20:00",
+          "end_time": "23:00",
+          "days": ["mon","tue","wed","thu","fri","sat","sun"],
+          "content_type": "movies",
+          "notes": "Nightly primetime movie — the flagship slot. Your biggest/best available film. 2-3 hour window."
+        },
+        {
+          "id": "movies-late-night",
+          "name": "Late Night Movie",
+          "start_time": "22:00",
+          "end_time": "01:00",
+          "days": ["fri","sat"],
+          "content_type": "movies",
+          "notes": "Friday/Saturday late night feature — thrillers, horror, cult films, and unrated picks."
+        }
+      ]
+    },
+    {
+      "id": "classic-tv",
+      "label": "Classic TV",
+      "templates": [
+        {
+          "id": "sitcom-evenings",
+          "name": "Sitcom Evenings",
+          "start_time": "18:00",
+          "end_time": "21:00",
+          "days": ["mon","tue","wed","thu","fri"],
+          "content_type": "shows",
+          "notes": "Weekday evening sitcom block — 30-min episodes back to back (The Office, Seinfeld, Friends, Parks & Rec, Brooklyn Nine-Nine)."
+        },
+        {
+          "id": "crime-drama-nights",
+          "name": "Crime Drama Nights",
+          "start_time": "21:00",
+          "end_time": "23:00",
+          "days": ["mon","tue","wed","thu"],
+          "content_type": "shows",
+          "notes": "Weeknight crime drama lineup — procedurals, detective, true crime (NCIS, Law & Order, Criminal Minds, Mindhunter)."
+        },
+        {
+          "id": "saturday-morning-classic",
+          "name": "Saturday Morning Block",
+          "start_time": "07:00",
+          "end_time": "12:00",
+          "days": ["sat"],
+          "content_type": "shows",
+          "notes": "Classic Saturday morning cartoon experience — Looney Tunes, Hanna-Barbera, or your best animated lineup."
+        },
+        {
+          "id": "overnight-reruns",
+          "name": "Overnight Reruns",
+          "start_time": "02:00",
+          "end_time": "06:00",
+          "days": ["mon","tue","wed","thu","fri","sat","sun"],
+          "content_type": "both",
+          "notes": "Overnight encore block — replay earlier primetime content. Keeps the channel 'on air' 24/7."
+        }
+      ]
+    }
+  ]
+}

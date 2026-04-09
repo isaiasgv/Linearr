@@ -1,0 +1,16 @@
+services:
+  channel-manager:
+    build: .
+    container_name: channel-manager
+    ports:
+      - "8777:8888"
+    volumes:
+      - ./data:/app/data
+    env_file: .env
+    networks:
+      - plex_default
+    restart: unless-stopped
+
+networks:
+  plex_default:
+    external: true
