@@ -73,6 +73,17 @@ function testConnection(tunarr_url: string): Promise<{
   }>('/api/tunarr/test', { url: tunarr_url })
 }
 
+interface VersionCheck {
+  version: string | null
+  supported_version: string
+  is_supported: boolean | null
+  tunarr_url: string
+}
+
+function getVersionCheck(): Promise<VersionCheck> {
+  return get<VersionCheck>('/api/tunarr/version-check')
+}
+
 function getChannelSchedule(tunarrId: string): Promise<TunarrScheduleItem[]> {
   return get<TunarrScheduleItem[]>(`/api/tunarr/channels/${encodeURIComponent(tunarrId)}/schedule`)
 }
@@ -151,6 +162,7 @@ export const tunarrApi = {
   linkCollection,
   unlinkCollection,
   testConnection,
+  getVersionCheck,
   getChannelSchedule,
   getChannelDetail,
   runUpdateXmlTvTask,
@@ -164,4 +176,4 @@ export const tunarrApi = {
   getGuide,
 }
 
-export type { GuideChannel }
+export type { GuideChannel, VersionCheck }

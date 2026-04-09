@@ -2858,6 +2858,16 @@ def clear_app_logs():
 
 # ── Tunarr Integration ────────────────────────────────────────────────────────
 
+TUNARR_SUPPORTED_VERSION = "1.2.10"
+
+def _parse_version(v: str) -> tuple[int, ...]:
+    """Parse a version string like '1.2.10' or 'v1.2.10' into a tuple of ints."""
+    v = v.lstrip("v").split("-")[0]  # strip 'v' prefix and any pre-release suffix
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except (ValueError, AttributeError):
+        return (0,)
+
 def get_tunarr_url() -> str:
     with get_db() as conn:
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
@@ -2900,6 +2910,25 @@ async def tunarr_test(body: TunarrTestIn | None = None):
         except Exception:
             continue
     raise HTTPException(503, f"Cannot reach Tunarr at {url} — check the URL in Settings. If running in Docker use http://tunarr:8000 (not localhost)")
+
+@app.get("/api/tunarr/version-check")
+async def tunarr_version_check():
+    url = get_tunarr_url()
+    version = ""
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            vr = await client.get(f"{url}/api/version")
+            if vr.status_code == 200:
+                data = vr.json()
+                version = data.get("tunarr", data.get("version", ""))
+    except Exception:
+        pass
+    if not version:
+        return {"version": None, "supported_version": TUNARR_SUPPORTED_VERSION,
+                "is_supported": None, "tunarr_url": url}
+    is_supported = _parse_version(version) <= _parse_version(TUNARR_SUPPORTED_VERSION)
+    return {"version": version, "supported_version": TUNARR_SUPPORTED_VERSION,
+            "is_supported": is_supported, "tunarr_url": url}
 
 @app.get("/api/tunarr/channels")
 async def tunarr_list_channels():

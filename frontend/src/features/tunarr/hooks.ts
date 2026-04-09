@@ -8,6 +8,15 @@ import type {
 } from '@/shared/types'
 import { tunarrApi } from './api'
 
+export function useTunarrVersionCheck() {
+  return useQuery({
+    queryKey: ['tunarr', 'version-check'],
+    queryFn: () => tunarrApi.getVersionCheck(),
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export function useTunarrChannels() {
   return useQuery({
     queryKey: ['tunarr', 'channels'],

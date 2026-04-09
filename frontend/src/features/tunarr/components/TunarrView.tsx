@@ -9,6 +9,7 @@ import {
   useTunarrSchedule,
   useTunarrTasks,
   useTestTunarr,
+  useTunarrVersionCheck,
   useUpdateSmartCollection,
   useDeleteSmartCollection,
 } from '@/features/tunarr/hooks'
@@ -552,6 +553,7 @@ export function TunarrView() {
   const { data: settings } = useSettings()
   const { refreshGuide, scanLibraries } = useTunarrTasks()
   const testTunarr = useTestTunarr()
+  const { data: versionCheck } = useTunarrVersionCheck()
 
   if (showGuide) {
     return (
@@ -579,9 +581,16 @@ export function TunarrView() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-slate-100">Tunarr Integration</h1>
-            {settings?.tunarr_url && (
-              <p className="text-xs text-slate-500 mt-0.5">{settings.tunarr_url}</p>
-            )}
+            <div className="flex items-center gap-2 mt-0.5">
+              {settings?.tunarr_url && (
+                <span className="text-xs text-slate-500">{settings.tunarr_url}</span>
+              )}
+              {versionCheck?.version && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                  v{versionCheck.version}
+                </span>
+              )}
+            </div>
           </div>
           <button
             onClick={() => setShowGuide(true)}
@@ -609,6 +618,31 @@ export function TunarrView() {
           </button>
         </div>
       </div>
+
+      {/* Version warning */}
+      {versionCheck?.is_supported === false && (
+        <div className="mx-6 mt-4 flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-950/50 border border-amber-700/50">
+          <svg
+            className="w-5 h-5 text-amber-400 shrink-0 mt-0.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <div>
+            <p className="text-sm font-medium text-amber-200">Unsupported Tunarr Version</p>
+            <p className="text-xs text-amber-300/70 mt-0.5">
+              Tunarr <strong>v{versionCheck.version}</strong> is newer than the supported version{' '}
+              <strong>v{versionCheck.supported_version}</strong>. Some features may not work
+              correctly. Update Linearr to the latest version for full compatibility.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-8">
