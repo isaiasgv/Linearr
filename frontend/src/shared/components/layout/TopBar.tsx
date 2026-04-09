@@ -32,12 +32,19 @@ export function TopBar() {
           </svg>
         </button>
 
-        <Logo size={28} />
-
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-base md:text-lg font-semibold tracking-wide">Linearr</span>
-          <span className="text-xs text-slate-600">v{__APP_VERSION__}</span>
-        </div>
+        <button
+          onClick={() => {
+            useUIStore.getState().selectChannel(null)
+            useUIStore.getState().setActiveView('channel')
+          }}
+          className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+        >
+          <Logo size={28} />
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-base md:text-lg font-semibold tracking-wide">Linearr</span>
+            <span className="text-xs text-slate-600">v{__APP_VERSION__}</span>
+          </div>
+        </button>
 
         {/* Stats — hidden on small screens */}
         <span className="hidden sm:inline text-xs text-slate-500 ml-1">
