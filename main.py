@@ -3076,16 +3076,30 @@ async def tunarr_get_channel_detail(tunarr_id: str):
         raise HTTPException(r.status_code, "Tunarr error")
     return r.json()
 
+def _extract_schedule_items(data) -> list[dict]:
+    """Extract schedule items from Tunarr response (may be list or dict)."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        # Tunarr may return { "items": [...] }, { "programs": [...] }, or { "slots": [...] }
+        for key in ("items", "programs", "slots", "lineup"):
+            if key in data and isinstance(data[key], list):
+                return data[key]
+        # If it has schedule-like fields directly (startTime, duration), wrap it
+        if "startTime" in data or "start_time" in data:
+            return [data]
+    return []
+
 @app.get("/api/tunarr/channels/{tunarr_id}/schedule")
 async def tunarr_get_schedule(tunarr_id: str):
     url = get_tunarr_url()
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
     if r.status_code == 404:
-        return None
+        return []
     if r.status_code != 200:
         raise HTTPException(r.status_code, "Tunarr error")
-    return r.json()
+    return _extract_schedule_items(r.json())
 
 @app.get("/api/tunarr/channels/{tunarr_id}/shows")
 async def tunarr_get_channel_shows(tunarr_id: str):
@@ -3112,12 +3126,12 @@ async def tunarr_guide(hours: int = Query(24)):
             tunarr_id = link["tunarr_id"]
             try:
                 r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
-                schedule = r.json() if r.status_code == 200 else []
+                schedule = _extract_schedule_items(r.json()) if r.status_code == 200 else []
             except Exception:
                 schedule = []
             # Normalize schedule items
             items = []
-            for item in (schedule if isinstance(schedule, list) else []):
+            for item in schedule:
                 items.append({
                     "startTime": item.get("startTime") or item.get("start_time") or "",
                     "duration": item.get("duration", 0),
