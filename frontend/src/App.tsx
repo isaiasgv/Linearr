@@ -28,9 +28,9 @@ const TemplatesLibraryModal = lazy(() =>
     default: m.TemplatesLibraryModal,
   })),
 )
-const SettingsModal = lazy(() =>
-  import('@/features/settings/components/SettingsModal').then((m) => ({
-    default: m.SettingsModal,
+const SettingsView = lazy(() =>
+  import('@/features/settings/components/SettingsView').then((m) => ({
+    default: m.SettingsView,
   })),
 )
 const CollectionPickerModal = lazy(() =>
@@ -133,12 +133,12 @@ export default function App() {
         {activeView === 'cableplex' && <CablePlexView />}
         {activeView === 'plex' && <PlexView />}
         {activeView === 'icons' && <IconLibraryView />}
+        {activeView === 'settings' && <SettingsView />}
 
         {/* Modals — lazy-loaded, only fetched when first opened */}
         <ChannelFormModal />
         <BlockFormModal />
         <TemplatesLibraryModal />
-        <SettingsModal />
         <CollectionPickerModal />
         <ItemDetailModal />
         <AiContentAdvisorModal />

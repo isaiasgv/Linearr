@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Channel, Block, ModalName } from '@/shared/types'
 
-export type ActiveView = 'channel' | 'generic' | 'tunarr' | 'cableplex' | 'plex' | 'icons'
+export type ActiveView = 'channel' | 'generic' | 'tunarr' | 'cableplex' | 'plex' | 'icons' | 'settings'
 export type ActiveChannelTab = 'content' | 'blocks' | 'tunarr'
 export type TierFilter = 'All' | 'Galaxy Main' | 'Classics' | 'Galaxy Premium'
 export type AssignedTypeFilter = 'all' | 'tv' | 'movies'

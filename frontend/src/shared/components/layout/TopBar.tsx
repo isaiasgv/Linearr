@@ -5,7 +5,7 @@ import { useLogout } from '@/features/auth/hooks'
 import { Logo } from '@/shared/components/ui/Logo'
 
 export function TopBar() {
-  const openModal = useUIStore((s) => s.openModal)
+  const setActiveView = useUIStore((s) => s.setActiveView)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const { data: channels = [] } = useChannels()
   const { data: assignments = {} } = useAssignments()
@@ -55,7 +55,7 @@ export function TopBar() {
       <div className="flex items-center gap-1">
         {/* Settings */}
         <button
-          onClick={() => openModal('settings')}
+          onClick={() => setActiveView('settings')}
           title="Settings"
           className="flex items-center gap-2 px-2 md:px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition text-sm"
         >
