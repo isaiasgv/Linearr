@@ -1,7 +1,6 @@
 services:
   linearr:
     image: ghcr.io/isaiasgv/linearr:latest
-    # build: .  # uncomment to build locally instead of pulling from GHCR
     container_name: linearr
     ports:
       - "8777:8888"

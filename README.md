@@ -208,6 +208,14 @@ npm run dev
 | `npm run release` | Bump version + generate CHANGELOG |
 | `npm run setup` | Configure git hooks |
 
+### Docker (local build)
+
+To build and run the Docker image from source instead of pulling from GHCR:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
+```
+
 ---
 
 ## API Documentation

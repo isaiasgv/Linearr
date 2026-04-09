@@ -1,0 +1,4 @@
+services:
+  linearr:
+    build: .
+    image: linearr:dev
