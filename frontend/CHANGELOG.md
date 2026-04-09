@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.6](https://github.com/isaiasgv/Linearr/compare/linearr-v0.0.5...linearr-v0.0.6) (2026-04-09)
+
+
+### Features
+
+* add docker-compose.dev.yml for local builds during development ([458a802](https://github.com/isaiasgv/Linearr/commit/458a8025e148a9e9bbd185c37b5794ea82d98d66))
+
 ### [0.0.5](https://github.com/isaiasgv/Linearr/compare/linearr-v0.0.4...linearr-v0.0.5) (2026-04-09)
 
 ### [0.0.4](https://github.com/isaiasgv/Linearr/compare/linearr-v0.0.3...linearr-v0.0.4) (2026-04-09)
