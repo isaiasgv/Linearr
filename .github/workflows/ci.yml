@@ -72,7 +72,7 @@ jobs:
         id: version
         working-directory: frontend
         run: |
-          npx standard-version
+          npx standard-version --release-as patch
           VERSION=$(node -p "require('./package.json').version")
           TAG="linearr-v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
