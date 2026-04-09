@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.11](https://github.com/isaiasgv/Linearr/compare/linearr-v0.0.10...linearr-v0.0.11) (2026-04-09)
+
+
+### Bug Fixes
+
+* use network-first strategy for HTML in service worker ([0cdaaf6](https://github.com/isaiasgv/Linearr/commit/0cdaaf684e50c9c481e81c4c0917ca3d4700fa6c))
+
 ### [0.0.10](https://github.com/isaiasgv/Linearr/compare/linearr-v0.0.9...linearr-v0.0.10) (2026-04-09)
 
 
