@@ -379,7 +379,7 @@ def list_channels():
     return CHANNELS
 
 @app.post("/api/channels", status_code=201)
-def create_channel(body: ChannelIn):
+async def create_channel(body: ChannelIn):
     with get_db() as conn:
         try:
             conn.execute(
@@ -389,10 +389,85 @@ def create_channel(body: ChannelIn):
         except sqlite3.IntegrityError:
             raise HTTPException(409, f"Channel {body.number} already exists")
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
-    return dict(row)
+    result = dict(row)
+    # Auto-create in Tunarr
+    sync = await _sync_channel_to_tunarr(body.number)
+    result["tunarr_sync"] = sync
+    return result
+
+async def _sync_channel_to_tunarr(channel_number: int):
+    """Sync Cable Plex channel metadata to linked Tunarr channel.
+    If no link exists, creates a new Tunarr channel and links it.
+    Returns {"synced": True/False, "action": "updated"|"created"|"error", ...}"""
+    with get_db() as conn:
+        ch = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
+        link = conn.execute("SELECT * FROM tunarr_channel_links WHERE channel_number=?", (channel_number,)).fetchone()
+    if not ch:
+        return {"synced": False, "action": "error", "message": "Channel not found"}
+    ch = dict(ch)
+    url = get_tunarr_url()
+    if not url:
+        return {"synced": False, "action": "error", "message": "Tunarr not configured"}
+
+    # Build metadata payload for Tunarr
+    update_data = {
+        "name": ch.get("name", ""),
+        "number": ch.get("number", 0),
+        "groupTitle": ch.get("tier", "Linearr"),
+    }
+    # Sync icon if present
+    icon_data = ch.get("icon")
+    if icon_data and icon_data.startswith("data:"):
+        update_data["icon"] = {"path": icon_data, "duration": 0, "width": 0, "position": "bottom-right"}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            if link:
+                # Update existing Tunarr channel
+                tunarr_id = link["tunarr_id"]
+                r = await client.put(f"{url}/api/channels/{tunarr_id}", json=update_data)
+                if r.status_code in (200, 204):
+                    # Update cached name/number in link
+                    with get_db() as conn:
+                        conn.execute(
+                            "UPDATE tunarr_channel_links SET tunarr_name=?, tunarr_number=? WHERE channel_number=?",
+                            (ch.get("name"), ch.get("number"), channel_number)
+                        )
+                    return {"synced": True, "action": "updated", "tunarr_id": tunarr_id}
+                return {"synced": False, "action": "error", "message": f"Tunarr {r.status_code}"}
+            else:
+                # Create new Tunarr channel
+                ffmpeg_r = await client.get(f"{url}/api/ffmpeg-settings")
+                transcode_id = None
+                if ffmpeg_r.status_code == 200:
+                    transcode_id = ffmpeg_r.json().get("defaultTranscodeConfigId") or ffmpeg_r.json().get("configId")
+                payload = {
+                    **update_data,
+                    "transcoding": {"targetResolution": "1920x1080"},
+                    "offline": {"mode": "pic"},
+                    "stealth": False,
+                    "disableFillerOverlay": True,
+                    "guideMinimumDuration": 30000,
+                    "streamMode": "hls",
+                }
+                if transcode_id:
+                    payload["transcodeConfigId"] = transcode_id
+                r = await client.post(f"{url}/api/channels", json=payload)
+                if r.status_code in (200, 201):
+                    new_ch = r.json()
+                    with get_db() as conn:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO tunarr_channel_links VALUES (?,?,?,?)",
+                            (channel_number, new_ch["id"], new_ch.get("name"), new_ch.get("number"))
+                        )
+                    return {"synced": True, "action": "created", "tunarr_id": new_ch["id"]}
+                return {"synced": False, "action": "error", "message": f"Tunarr {r.status_code}"}
+    except Exception as e:
+        log.warning("Tunarr sync failed for CH %s: %s", channel_number, e)
+        return {"synced": False, "action": "error", "message": str(e)}
 
 @app.put("/api/channels/{channel_number}")
-def update_channel(channel_number: int, body: ChannelIn):
+async def update_channel(channel_number: int, body: ChannelIn):
     with get_db() as conn:
         existing = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
         if not existing:
@@ -411,7 +486,19 @@ def update_channel(channel_number: int, body: ChannelIn):
                 except sqlite3.OperationalError:
                     pass
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
-    return dict(row)
+    result = dict(row)
+    # Auto-sync metadata to Tunarr (creates channel if not linked)
+    sync = await _sync_channel_to_tunarr(body.number)
+    result["tunarr_sync"] = sync
+    return result
+
+@app.post("/api/channels/{channel_number}/sync-tunarr")
+async def sync_channel_to_tunarr(channel_number: int):
+    """Manually sync a Cable Plex channel to Tunarr. Creates if not linked."""
+    result = await _sync_channel_to_tunarr(channel_number)
+    if result.get("action") == "error":
+        raise HTTPException(502, result.get("message", "Sync failed"))
+    return result
 
 @app.delete("/api/channels/{channel_number}")
 def delete_channel(channel_number: int):
@@ -432,13 +519,15 @@ async def set_channel_icon(channel_number: int, request: Request):
         cur = conn.execute("UPDATE channels SET icon=? WHERE number=?", (icon_data, channel_number))
     if cur.rowcount == 0:
         raise HTTPException(404, "Channel not found")
-    return {"ok": True}
+    sync = await _sync_channel_to_tunarr(channel_number)
+    return {"ok": True, "tunarr_sync": sync}
 
 @app.delete("/api/channels/{channel_number}/icon")
-def delete_channel_icon(channel_number: int):
+async def delete_channel_icon(channel_number: int):
     """Remove channel icon."""
     with get_db() as conn:
         conn.execute("UPDATE channels SET icon=NULL WHERE number=?", (channel_number,))
+    await _sync_channel_to_tunarr(channel_number)
     return {"ok": True}
 
 @app.get("/api/icons/export")
