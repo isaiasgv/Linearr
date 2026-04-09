@@ -43,25 +43,83 @@ Build, manage, and push programming schedules for your personal TV network — c
 
 **Requirements:** Docker + Docker Compose, a running Plex Media Server, and optionally [Tunarr](https://github.com/chrisbenincasa/tunarr).
 
+### 1. Create a project directory
+
 ```bash
-# 1. Clone
-git clone https://github.com/isaiasgv/linearr.git
-cd linearr
-
-# 2. Configure
-cp .env.example .env
-# Edit .env — set PLEX_TOKEN, APP_PASSWORD, APP_SECRET
-
-# 3. Launch
-docker compose up --build -d
-
-# 4. Open http://localhost:8777
+mkdir linearr && cd linearr
 ```
 
-Or pull a pre-built image:
+### 2. Download the compose file and env template
 
 ```bash
-docker pull ghcr.io/isaiasgv/linearr:latest
+curl -O https://raw.githubusercontent.com/isaiasgv/linearr/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/isaiasgv/linearr/main/.env.example
+```
+
+Or create `docker-compose.yml` manually:
+
+```yaml
+services:
+  linearr:
+    image: ghcr.io/isaiasgv/linearr:latest
+    container_name: linearr
+    ports:
+      - "8777:8888"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - path: .env
+        required: false
+    networks:
+      - plex_default
+    restart: unless-stopped
+
+networks:
+  plex_default:
+    external: true
+```
+
+### 3. Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set at minimum:
+
+```env
+APP_USERNAME=admin
+APP_PASSWORD=your-secure-password
+APP_SECRET=generate-a-random-string-here
+PLEX_URL=http://plex:32400
+PLEX_TOKEN=your-plex-token
+```
+
+> **Note:** Use `http://plex:32400` if Linearr and Plex are on the same Docker network (`plex_default`). Otherwise use your Plex server's IP/hostname.
+
+### 4. Start the container
+
+```bash
+docker compose up -d
+```
+
+### 5. Open the app
+
+Navigate to **http://localhost:8777** and log in with the credentials from your `.env`.
+
+### Updating
+
+Pull the latest image and recreate the container:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+To pin a specific version instead of `latest`:
+
+```yaml
+image: ghcr.io/isaiasgv/linearr:0.0.2
 ```
 
 <details>
@@ -182,11 +240,19 @@ FastAPI auto-generates interactive docs:
 ### Docker Compose (recommended)
 
 ```bash
-docker compose up --build -d
-docker compose logs -f channel-manager
+docker compose up -d
+docker compose logs -f linearr
 ```
 
 The container includes a `HEALTHCHECK` on `/api/health`. Persistent data lives in `./data/`.
+
+To build locally from source instead of pulling from GHCR:
+
+```bash
+git clone https://github.com/isaiasgv/linearr.git
+cd linearr
+docker compose up --build -d
+```
 
 ### Reverse Proxy
 
