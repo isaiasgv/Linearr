@@ -127,14 +127,8 @@ export function ChannelSidebar() {
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent'
           }`}
         >
-          <svg
-            className="w-4 h-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L5 12l7 10 7-10L12 2zm0 3.6L16.2 12 12 18.4 7.8 12 12 5.6z" />
           </svg>
           Plex
         </button>
@@ -193,14 +187,8 @@ export function ChannelSidebar() {
           }`}
         >
           <span className="flex items-center gap-2">
-            <svg
-              className="w-4 h-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path d="M5 12h14M12 5l7 7-7 7" />
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 2v4H5v2h14V6h-2V2h-2v4H9V2H7zm3 8v12h4V10h-4z" />
             </svg>
             Tunarr
           </span>

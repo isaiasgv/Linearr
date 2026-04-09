@@ -31,7 +31,7 @@ export function PlexView() {
             <div className="flex items-center gap-4 mb-4">
               <div className="w-12 h-12 rounded-xl bg-amber-600 flex items-center justify-center shrink-0">
                 <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  <path d="M12 2L5 12l7 10 7-10L12 2zm0 3.6L16.2 12 12 18.4 7.8 12 12 5.6z" />
                 </svg>
               </div>
               <div>
