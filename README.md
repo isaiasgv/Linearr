@@ -11,8 +11,11 @@ Build, manage, and push programming schedules for your personal TV network — c
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/isaiasgv/linearr/ci.yml?label=CI)](https://github.com/isaiasgv/linearr/actions)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker)](https://ghcr.io/isaiasgv/linearr)
+[![Release](https://img.shields.io/github/v/release/isaiasgv/linearr?label=latest)](https://github.com/isaiasgv/linearr/releases)
 
 [Features](#features) &bull; [Quick Start](#-quick-start) &bull; [Screenshots](#-how-it-works) &bull; [Stack](#-stack) &bull; [API Docs](#-api-documentation) &bull; [Contributing](#-contributing)
+
+> **Actively maintained** — Linearr follows a **monthly release cycle**. See the [Releases](https://github.com/isaiasgv/linearr/releases) page for the latest version and changelogs.
 
 </div>
 
@@ -304,6 +307,22 @@ curl -b "session=TOKEN" http://localhost:8777/api/backup -o linearr-backup.db
 
 # Restore
 curl -X POST -b "session=TOKEN" --data-binary @linearr-backup.db http://localhost:8777/api/restore
+```
+
+---
+
+## Release Schedule
+
+Linearr follows a **monthly release cycle**:
+
+- **Stable releases** land on `main` at the start of each month
+- **Release candidates** (`0.x.y-rc.N`) are published from `release/*` branches for testing
+- **Docker tags**: `latest` always points to the most recent stable release; `rc` points to the latest candidate
+
+To test a release candidate before it goes stable:
+
+```yaml
+image: ghcr.io/isaiasgv/linearr:rc
 ```
 
 ---
