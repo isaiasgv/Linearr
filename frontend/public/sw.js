@@ -1,8 +1,6 @@
-const CACHE = 'linearr-v1'
-const APP_SHELL = ['/', '/index.html']
+const CACHE = 'linearr-v2'
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(APP_SHELL)))
+self.addEventListener('install', () => {
   self.skipWaiting()
 })
 
@@ -16,20 +14,35 @@ self.addEventListener('activate', (e) => {
 })
 
 self.addEventListener('fetch', (e) => {
-  // Never intercept API calls or non-GET requests
   if (e.request.method !== 'GET' || e.request.url.includes('/api/')) return
 
-  e.respondWith(
-    caches.match(e.request).then(
-      (cached) =>
-        cached ||
-        fetch(e.request).then((res) => {
+  // Navigation requests (HTML): network-first so deploys are picked up immediately
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request)
+        .then((res) => {
           if (res.ok) {
             const clone = res.clone()
             caches.open(CACHE).then((c) => c.put(e.request, clone))
           }
           return res
-        }),
-    ),
+        })
+        .catch(() => caches.match(e.request)),
+    )
+    return
+  }
+
+  // Assets (JS, CSS, images): stale-while-revalidate
+  e.respondWith(
+    caches.match(e.request).then((cached) => {
+      const fetchPromise = fetch(e.request).then((res) => {
+        if (res.ok) {
+          const clone = res.clone()
+          caches.open(CACHE).then((c) => c.put(e.request, clone))
+        }
+        return res
+      })
+      return cached || fetchPromise
+    }),
   )
 })
