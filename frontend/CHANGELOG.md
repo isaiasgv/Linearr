@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.13](https://github.com/isaiasgv/Linearr/compare/linearr-v0.0.12...linearr-v0.0.13) (2026-04-09)
+
+
+### Bug Fixes
+
+* handle Tunarr schedule responses that return dict instead of list ([6360ab0](https://github.com/isaiasgv/Linearr/commit/6360ab0b3c75bd3adb0254f031d54a14dcca04b4))
+
 ### [0.0.12](https://github.com/isaiasgv/Linearr/compare/linearr-v0.0.11...linearr-v0.0.12) (2026-04-09)
 
 
