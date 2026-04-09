@@ -289,6 +289,49 @@ export function useDeleteSmartCollection() {
   })
 }
 
+export function useImportPreview() {
+  return useMutation({
+    mutationFn: (channelIds?: string[]) => tunarrApi.importPreview(channelIds),
+  })
+}
+
+export function useImportChannels() {
+  const queryClient = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+
+  return useMutation({
+    mutationFn: (actions: Array<{ tunarr_id: string; action: 'link' | 'create' | 'skip'; cable_plex_number?: number }>) =>
+      tunarrApi.importChannels(actions),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ['tunarr', 'links'] })
+      void queryClient.invalidateQueries({ queryKey: ['tunarr', 'channels'] })
+      void queryClient.invalidateQueries({ queryKey: ['channels'] })
+      addToast(`Imported: ${data.linked} linked, ${data.created} created, ${data.skipped} skipped`)
+    },
+    onError: (error: Error) => {
+      addToast(error.message || 'Import failed', true)
+    },
+  })
+}
+
+export function useExportChannels() {
+  const queryClient = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+
+  return useMutation({
+    mutationFn: ({ channelNumbers, syncCollections }: { channelNumbers: number[] | 'all'; syncCollections?: boolean }) =>
+      tunarrApi.exportChannels(channelNumbers, syncCollections),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ['tunarr', 'links'] })
+      void queryClient.invalidateQueries({ queryKey: ['tunarr', 'channels'] })
+      addToast(`Exported: ${data.linked} linked, ${data.created} created, ${data.skipped} skipped`)
+    },
+    onError: (error: Error) => {
+      addToast(error.message || 'Export failed', true)
+    },
+  })
+}
+
 export function useTunarrTasks() {
   const addToast = useToastStore((s) => s.addToast)
 

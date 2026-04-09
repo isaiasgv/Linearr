@@ -3309,6 +3309,221 @@ async def tunarr_guide(hours: int = Query(24)):
             })
     return {"channels": guide_channels}
 
+# ── Tunarr channel import/export ─────────────────────────────────────────────
+
+class TunarrImportAction(BaseModel):
+    tunarr_id: str
+    action: str  # "link", "create", "skip"
+    cable_plex_number: int | None = None
+
+class TunarrImportRequest(BaseModel):
+    actions: list[TunarrImportAction]
+
+@app.post("/api/tunarr/import-channels/preview")
+async def tunarr_import_preview(body: dict | None = None):
+    """Preview how Tunarr channels would map to Cable Plex channels."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(f"{url}/api/channels")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "Could not fetch Tunarr channels")
+    tunarr_channels = r.json() if isinstance(r.json(), list) else []
+
+    # Filter by IDs if provided
+    channel_ids = (body or {}).get("channel_ids")
+    if channel_ids and channel_ids != "all":
+        id_set = set(channel_ids)
+        tunarr_channels = [c for c in tunarr_channels if c.get("id") in id_set]
+
+    # Load Cable Plex channels and existing links
+    with get_db() as conn:
+        cp_rows = conn.execute("SELECT * FROM channels").fetchall()
+        links = conn.execute("SELECT * FROM tunarr_channel_links").fetchall()
+    cp_by_number = {r["number"]: dict(r) for r in cp_rows}
+    cp_by_name = {r["name"].lower(): dict(r) for r in cp_rows}
+    linked_tunarr_ids = {r["tunarr_id"] for r in links}
+    linked_cp_numbers = {r["channel_number"] for r in links}
+
+    # If DB is empty, use static CHANNELS
+    if not cp_by_number:
+        from channels import CHANNELS
+        for ch in CHANNELS:
+            cp_by_number[ch["number"]] = ch
+            cp_by_name[ch["name"].lower()] = ch
+
+    preview = []
+    for tc in tunarr_channels:
+        tid = tc.get("id", "")
+        tnum = tc.get("number", 0)
+        tname = tc.get("name", "")
+
+        if tid in linked_tunarr_ids:
+            match_type = "already_linked"
+            matched_channel = None
+        elif tnum in cp_by_number and tnum not in linked_cp_numbers:
+            match_type = "number"
+            matched_channel = cp_by_number[tnum]
+        elif tname.lower() in cp_by_name:
+            candidate = cp_by_name[tname.lower()]
+            if candidate["number"] not in linked_cp_numbers:
+                match_type = "name"
+                matched_channel = candidate
+            else:
+                match_type = None
+                matched_channel = None
+        else:
+            match_type = None
+            matched_channel = None
+
+        preview.append({
+            "tunarr_id": tid,
+            "tunarr_name": tname,
+            "tunarr_number": tnum,
+            "match": match_type,
+            "cable_plex_channel": {"number": matched_channel["number"], "name": matched_channel["name"]} if matched_channel else None,
+        })
+
+    return {"channels": preview}
+
+@app.post("/api/tunarr/import-channels")
+async def tunarr_import_channels(body: TunarrImportRequest):
+    """Execute channel import from Tunarr into Cable Plex."""
+    url = get_tunarr_url()
+    # Fetch Tunarr channel details for creates
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(f"{url}/api/channels")
+    tunarr_map = {}
+    if r.status_code == 200:
+        for c in (r.json() if isinstance(r.json(), list) else []):
+            tunarr_map[c.get("id", "")] = c
+
+    results = {"linked": 0, "created": 0, "skipped": 0, "details": []}
+
+    with get_db() as conn:
+        for act in body.actions:
+            if act.action == "skip":
+                results["skipped"] += 1
+                results["details"].append({"tunarr_id": act.tunarr_id, "action": "skipped"})
+                continue
+
+            tc = tunarr_map.get(act.tunarr_id, {})
+            tname = tc.get("name", "Channel")
+            tnum = tc.get("number", 0)
+
+            if act.action == "link" and act.cable_plex_number:
+                cp_num = act.cable_plex_number
+            elif act.action == "create":
+                cp_num = tnum or (max((r["number"] for r in conn.execute("SELECT number FROM channels")), default=99) + 1)
+                conn.execute(
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    (cp_num, tname, "Galaxy Main", "", "Shuffle", "", "blue"),
+                )
+                results["created"] += 1
+            else:
+                results["skipped"] += 1
+                continue
+
+            conn.execute(
+                "INSERT OR REPLACE INTO tunarr_channel_links (channel_number, tunarr_id, tunarr_name, tunarr_number) VALUES (?,?,?,?)",
+                (cp_num, act.tunarr_id, tname, tnum),
+            )
+            results["linked"] += 1
+            results["details"].append({"tunarr_id": act.tunarr_id, "action": act.action, "channel_number": cp_num})
+
+    return results
+
+class TunarrExportRequest(BaseModel):
+    channel_numbers: list[int] | str  # list of numbers or "all"
+    sync_collections: bool = False
+
+@app.post("/api/tunarr/export-channels")
+async def tunarr_export_channels(body: TunarrExportRequest):
+    """Export Cable Plex channels to Tunarr (create or link)."""
+    url = get_tunarr_url()
+
+    with get_db() as conn:
+        if body.channel_numbers == "all":
+            cp_channels = [dict(r) for r in conn.execute("SELECT * FROM channels").fetchall()]
+        else:
+            placeholders = ",".join("?" * len(body.channel_numbers))
+            cp_channels = [dict(r) for r in conn.execute(
+                f"SELECT * FROM channels WHERE number IN ({placeholders})", body.channel_numbers
+            ).fetchall()]
+        existing_links = {r["channel_number"]: dict(r) for r in conn.execute("SELECT * FROM tunarr_channel_links").fetchall()}
+
+    # If DB channels empty, use static CHANNELS
+    if not cp_channels:
+        from channels import CHANNELS
+        if body.channel_numbers == "all":
+            cp_channels = CHANNELS
+        else:
+            cp_channels = [c for c in CHANNELS if c["number"] in body.channel_numbers]
+
+    # Fetch existing Tunarr channels for matching
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(f"{url}/api/channels")
+    tunarr_channels = r.json() if r.status_code == 200 and isinstance(r.json(), list) else []
+    tunarr_by_number = {c.get("number"): c for c in tunarr_channels}
+
+    # Get ffmpeg settings for channel creation
+    ffmpeg_r = await httpx.AsyncClient(timeout=5).get(f"{url}/api/ffmpeg-settings")
+    transcode_id = None
+    if ffmpeg_r.status_code == 200:
+        transcode_id = ffmpeg_r.json().get("defaultTranscodeConfigId") or ffmpeg_r.json().get("configId")
+
+    results = {"exported": 0, "linked": 0, "created": 0, "skipped": 0, "details": []}
+
+    for cp in cp_channels:
+        cp_num = cp["number"]
+        if cp_num in existing_links:
+            results["skipped"] += 1
+            results["details"].append({"channel_number": cp_num, "action": "already_linked"})
+            continue
+
+        # Try match by number in Tunarr
+        if cp_num in tunarr_by_number:
+            tc = tunarr_by_number[cp_num]
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO tunarr_channel_links VALUES (?,?,?,?)",
+                    (cp_num, tc["id"], tc.get("name"), tc.get("number")),
+                )
+            results["linked"] += 1
+            results["details"].append({"channel_number": cp_num, "action": "linked", "tunarr_id": tc["id"]})
+        else:
+            # Create new Tunarr channel
+            payload = {
+                "name": cp.get("name", f"Channel {cp_num}"),
+                "number": cp_num,
+                "groupTitle": cp.get("tier", "Linearr"),
+                "transcoding": {"targetResolution": "1920x1080"},
+                "offline": {"mode": "pic"},
+                "stealth": False,
+                "disableFillerOverlay": True,
+                "guideMinimumDuration": 30000,
+                "streamMode": "hls",
+            }
+            if transcode_id:
+                payload["transcodeConfigId"] = transcode_id
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                cr = await client.post(f"{url}/api/channels", json=payload)
+            if cr.status_code in (200, 201):
+                new_ch = cr.json()
+                with get_db() as conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO tunarr_channel_links VALUES (?,?,?,?)",
+                        (cp_num, new_ch["id"], new_ch.get("name"), new_ch.get("number")),
+                    )
+                results["created"] += 1
+                results["details"].append({"channel_number": cp_num, "action": "created", "tunarr_id": new_ch["id"]})
+            else:
+                results["skipped"] += 1
+                results["details"].append({"channel_number": cp_num, "action": "error", "message": cr.text[:200]})
+
+        results["exported"] += 1
+
+    return results
+
 @app.get("/api/tunarr/smart-collections")
 async def tunarr_list_smart_collections():
     url = get_tunarr_url()

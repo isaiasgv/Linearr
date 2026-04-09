@@ -152,6 +152,57 @@ function getGuide(hours = 24): Promise<{ channels: GuideChannel[] }> {
   return get<{ channels: GuideChannel[] }>(`/api/tunarr/guide?hours=${hours}`)
 }
 
+interface ImportPreviewChannel {
+  tunarr_id: string
+  tunarr_name: string
+  tunarr_number: number
+  match: 'number' | 'name' | 'already_linked' | null
+  cable_plex_channel: { number: number; name: string } | null
+}
+
+function importPreview(
+  channelIds?: string[],
+): Promise<{ channels: ImportPreviewChannel[] }> {
+  return post<{ channels: ImportPreviewChannel[] }>('/api/tunarr/import-channels/preview', {
+    channel_ids: channelIds ?? 'all',
+  })
+}
+
+interface ImportAction {
+  tunarr_id: string
+  action: 'link' | 'create' | 'skip'
+  cable_plex_number?: number
+}
+
+interface ImportResult {
+  linked: number
+  created: number
+  skipped: number
+  details: Array<{ tunarr_id: string; action: string; channel_number?: number }>
+}
+
+function importChannels(actions: ImportAction[]): Promise<ImportResult> {
+  return post<ImportResult>('/api/tunarr/import-channels', { actions })
+}
+
+interface ExportResult {
+  exported: number
+  linked: number
+  created: number
+  skipped: number
+  details: Array<{ channel_number: number; action: string; tunarr_id?: string }>
+}
+
+function exportChannels(
+  channelNumbers: number[] | 'all',
+  syncCollections = false,
+): Promise<ExportResult> {
+  return post<ExportResult>('/api/tunarr/export-channels', {
+    channel_numbers: channelNumbers,
+    sync_collections: syncCollections,
+  })
+}
+
 export const tunarrApi = {
   getChannels,
   getChannelLinks,
@@ -174,6 +225,9 @@ export const tunarrApi = {
   syncCollections,
   pushSchedule,
   getGuide,
+  importPreview,
+  importChannels,
+  exportChannels,
 }
 
-export type { GuideChannel, VersionCheck }
+export type { GuideChannel, VersionCheck, ImportPreviewChannel, ImportAction, ImportResult, ExportResult }
