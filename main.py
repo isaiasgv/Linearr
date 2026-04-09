@@ -957,6 +957,68 @@ async def plex_recently_added(limit: int = Query(20)):
     items.sort(key=lambda x: x.get("added_at") or 0, reverse=True)
     return items[:limit]
 
+@app.get("/api/plex/on-deck")
+async def plex_on_deck(limit: int = Query(20)):
+    """Return on-deck (continue watching) items from Plex."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{url}/library/onDeck", headers=hdrs,
+                             params={"X-Plex-Container-Size": str(limit)})
+        if r.status_code != 200:
+            return []
+    items = []
+    for m in r.json().get("MediaContainer", {}).get("Metadata", []) or []:
+        items.append({
+            "rating_key": m.get("ratingKey"),
+            "title": m.get("grandparentTitle") or m.get("title"),
+            "subtitle": m.get("title") if m.get("grandparentTitle") else None,
+            "type": m.get("type", ""),
+            "year": m.get("year"),
+            "thumb": m.get("grandparentThumb") or m.get("thumb"),
+            "added_at": m.get("addedAt"),
+        })
+    return items[:limit]
+
+@app.get("/api/plex/popular")
+async def plex_popular(limit: int = Query(30)):
+    """Return most-watched items across all movie and show libraries."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    items = []
+    async with httpx.AsyncClient(timeout=15) as client:
+        sec_resp = await client.get(f"{url}/library/sections", headers=hdrs)
+        if sec_resp.status_code != 200:
+            return []
+        sections = sec_resp.json().get("MediaContainer", {}).get("Directory", [])
+        for s in sections:
+            if s.get("type") not in ("movie", "show"):
+                continue
+            r = await client.get(
+                f"{url}/library/sections/{s['key']}/all",
+                headers=hdrs,
+                params={"sort": "viewCount:desc", "X-Plex-Container-Size": str(limit)},
+            )
+            if r.status_code == 200:
+                for m in r.json().get("MediaContainer", {}).get("Metadata", []) or []:
+                    vc = m.get("viewCount", 0)
+                    if not vc:
+                        continue
+                    items.append({
+                        "rating_key": m.get("ratingKey"),
+                        "title": m.get("title"),
+                        "type": m.get("type", ""),
+                        "year": m.get("year"),
+                        "thumb": m.get("thumb"),
+                        "view_count": vc,
+                    })
+    items.sort(key=lambda x: x.get("view_count", 0), reverse=True)
+    return items[:limit]
+
 @app.post("/api/plex/auth/start")
 async def plex_auth_start():
     """Request a PIN from plex.tv and return the auth URL for the popup."""

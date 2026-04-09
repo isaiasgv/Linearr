@@ -83,6 +83,33 @@ function recentlyAdded(limit = 20): Promise<PlexRecentItem[]> {
   return get<PlexRecentItem[]>(`/api/plex/recently-added?limit=${limit}`)
 }
 
+interface PlexOnDeckItem {
+  rating_key: string
+  title: string
+  subtitle: string | null
+  type: string
+  year: number | null
+  thumb: string | null
+  added_at: number | null
+}
+
+function onDeck(limit = 20): Promise<PlexOnDeckItem[]> {
+  return get<PlexOnDeckItem[]>(`/api/plex/on-deck?limit=${limit}`)
+}
+
+interface PlexPopularItem {
+  rating_key: string
+  title: string
+  type: string
+  year: number | null
+  thumb: string | null
+  view_count: number
+}
+
+function popular(limit = 30): Promise<PlexPopularItem[]> {
+  return get<PlexPopularItem[]>(`/api/plex/popular?limit=${limit}`)
+}
+
 export const plexApi = {
   libraries,
   libraryItems,
@@ -97,6 +124,8 @@ export const plexApi = {
   serverInfo,
   libraryStats,
   recentlyAdded,
+  onDeck,
+  popular,
 }
 
-export type { PlexServerInfo, PlexLibraryStat, PlexRecentItem }
+export type { PlexServerInfo, PlexLibraryStat, PlexRecentItem, PlexOnDeckItem, PlexPopularItem }

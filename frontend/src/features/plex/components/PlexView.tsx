@@ -1,10 +1,18 @@
-import { usePlexServerInfo, usePlexLibraryStats, usePlexRecentlyAdded } from '@/features/plex/hooks'
+import {
+  usePlexServerInfo,
+  usePlexLibraryStats,
+  usePlexRecentlyAdded,
+  usePlexOnDeck,
+  usePlexPopular,
+} from '@/features/plex/hooks'
 import { Spinner } from '@/shared/components/ui/Spinner'
 
 export function PlexView() {
   const { data: serverInfo, isLoading: loadingServer, isError: serverError } = usePlexServerInfo()
   const { data: libraryStats = [], isLoading: loadingStats } = usePlexLibraryStats()
   const { data: recentItems = [], isLoading: loadingRecent } = usePlexRecentlyAdded(30)
+  const { data: onDeckItems = [], isLoading: loadingOnDeck } = usePlexOnDeck(20)
+  const { data: popularItems = [], isLoading: loadingPopular } = usePlexPopular(30)
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -146,6 +154,126 @@ export function PlexView() {
           ) : (
             <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
               {recentItems.map((item) => (
+                <div key={item.rating_key} className="shrink-0 w-28">
+                  <div
+                    className="relative rounded-lg overflow-hidden bg-slate-800 mb-1.5"
+                    style={{ aspectRatio: '2/3' }}
+                  >
+                    {item.thumb ? (
+                      <img
+                        src={`/api/plex/thumb?path=${encodeURIComponent(item.thumb)}`}
+                        alt={item.title}
+                        loading="lazy"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-slate-600">
+                        <svg
+                          className="w-8 h-8"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          strokeWidth={1}
+                        >
+                          <rect x="2" y="7" width="20" height="15" rx="2" />
+                          <circle cx="12" cy="14" r="3" />
+                        </svg>
+                      </div>
+                    )}
+                    <span
+                      className={`absolute top-1 right-1 text-xs rounded px-1 py-0.5 font-medium shadow ${
+                        item.type === 'movie'
+                          ? 'bg-purple-600/80 text-white'
+                          : 'bg-blue-600/80 text-white'
+                      }`}
+                    >
+                      {item.type === 'movie' ? 'Movie' : 'TV'}
+                    </span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-200 truncate">{item.title}</p>
+                  {item.year && <p className="text-xs text-slate-500">{item.year}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* On Deck */}
+        <div>
+          <h3 className="text-sm font-semibold text-slate-300 mb-3">On Deck</h3>
+          {loadingOnDeck ? (
+            <div className="flex justify-center py-4">
+              <Spinner size="sm" />
+            </div>
+          ) : onDeckItems.length === 0 ? (
+            <p className="text-sm text-slate-500">Nothing on deck</p>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
+              {onDeckItems.map((item) => (
+                <div key={item.rating_key} className="shrink-0 w-28">
+                  <div
+                    className="relative rounded-lg overflow-hidden bg-slate-800 mb-1.5"
+                    style={{ aspectRatio: '2/3' }}
+                  >
+                    {item.thumb ? (
+                      <img
+                        src={`/api/plex/thumb?path=${encodeURIComponent(item.thumb)}`}
+                        alt={item.title}
+                        loading="lazy"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-slate-600">
+                        <svg
+                          className="w-8 h-8"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          strokeWidth={1}
+                        >
+                          <rect x="2" y="7" width="20" height="15" rx="2" />
+                          <circle cx="12" cy="14" r="3" />
+                        </svg>
+                      </div>
+                    )}
+                    <span
+                      className={`absolute top-1 right-1 text-xs rounded px-1 py-0.5 font-medium shadow ${
+                        item.type === 'movie'
+                          ? 'bg-purple-600/80 text-white'
+                          : 'bg-blue-600/80 text-white'
+                      }`}
+                    >
+                      {item.type === 'movie' ? 'Movie' : 'TV'}
+                    </span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-200 truncate">{item.title}</p>
+                  {item.subtitle && (
+                    <p className="text-xs text-slate-500 truncate">{item.subtitle}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Popular in Your Library */}
+        <div>
+          <h3 className="text-sm font-semibold text-slate-300 mb-3">Popular in Your Library</h3>
+          {loadingPopular ? (
+            <div className="flex justify-center py-4">
+              <Spinner size="sm" />
+            </div>
+          ) : popularItems.length === 0 ? (
+            <p className="text-sm text-slate-500">No watch history yet</p>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
+              {popularItems.map((item) => (
                 <div key={item.rating_key} className="shrink-0 w-28">
                   <div
                     className="relative rounded-lg overflow-hidden bg-slate-800 mb-1.5"

@@ -83,3 +83,17 @@ export function usePlexRecentlyAdded(limit = 20) {
     queryFn: () => plexApi.recentlyAdded(limit),
   })
 }
+
+export function usePlexOnDeck(limit = 20) {
+  return useQuery({
+    queryKey: ['plex', 'on-deck', limit],
+    queryFn: () => plexApi.onDeck(limit),
+  })
+}
+
+export function usePlexPopular(limit = 30) {
+  return useQuery({
+    queryKey: ['plex', 'popular', limit],
+    queryFn: () => plexApi.popular(limit),
+  })
+}
