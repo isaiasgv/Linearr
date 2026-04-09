@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.12](https://github.com/isaiasgv/Linearr/compare/linearr-v0.0.11...linearr-v0.0.12) (2026-04-09)
+
+
+### Bug Fixes
+
+* clicking logo/brand navigates back to main channel view ([28e47f3](https://github.com/isaiasgv/Linearr/commit/28e47f35acef9624c4d3d2002daac47e5eecafed))
+
 ### [0.0.11](https://github.com/isaiasgv/Linearr/compare/linearr-v0.0.10...linearr-v0.0.11) (2026-04-09)
 
 
