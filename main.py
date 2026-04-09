@@ -3153,15 +3153,74 @@ def _extract_schedule_items(data) -> list[dict]:
     return []
 
 @app.get("/api/tunarr/channels/{tunarr_id}/schedule")
-async def tunarr_get_schedule(tunarr_id: str):
+async def tunarr_get_schedule(tunarr_id: str, hours: int = Query(6)):
+    """Get materialized lineup for a Tunarr channel (what's actually playing)."""
     url = get_tunarr_url()
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    date_from = now.isoformat()
+    date_to = (now + timedelta(hours=hours)).isoformat()
     async with httpx.AsyncClient(timeout=10.0) as client:
+        # Try the guide API first (returns materialized lineup)
+        r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
+                             params={"dateFrom": date_from, "dateTo": date_to})
+        if r.status_code == 200:
+            data = r.json()
+            programs = data.get("programs", []) if isinstance(data, dict) else []
+            if not programs and isinstance(data, list):
+                programs = data
+            return _normalize_guide_programs(programs)
+        # Fallback: try the lineup API
+        r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
+                             params={"from": date_from, "to": date_to})
+        if r.status_code == 200:
+            items = r.json() if isinstance(r.json(), list) else r.json().get("items", [])
+            return _normalize_guide_programs(items)
+        # Last fallback: schedule config (may not have timestamps)
         r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
-    if r.status_code == 404:
-        return []
-    if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr error")
-    return _extract_schedule_items(r.json())
+        if r.status_code == 200:
+            return _extract_schedule_items(r.json())
+    return []
+
+def _normalize_guide_programs(programs: list) -> list[dict]:
+    """Normalize Tunarr guide/lineup programs to a consistent format."""
+    items = []
+    for p in programs:
+        start = p.get("start") or p.get("startTime") or p.get("start_time") or ""
+        stop = p.get("stop") or p.get("endTime") or p.get("end_time") or ""
+        # Calculate duration from start/stop if not provided directly
+        duration = p.get("duration", 0)
+        if not duration and start and stop:
+            try:
+                from datetime import datetime
+                s = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+                e = datetime.fromisoformat(str(stop).replace("Z", "+00:00"))
+                duration = int((e - s).total_seconds() * 1000)
+            except Exception:
+                pass
+        # Handle numeric timestamps (milliseconds)
+        if isinstance(start, (int, float)):
+            start_val = start
+        elif isinstance(start, str) and start:
+            try:
+                from datetime import datetime
+                start_val = int(datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp() * 1000)
+            except Exception:
+                start_val = start
+        else:
+            start_val = start
+        title = p.get("title") or p.get("programTitle") or "Unknown"
+        episode = p.get("episode")
+        if not episode and p.get("episodeTitle"):
+            episode = {"title": p.get("episodeTitle"), "season": p.get("season"), "episode": p.get("episode_number") or p.get("episodeNumber")}
+        items.append({
+            "startTime": start_val,
+            "duration": duration,
+            "type": p.get("type", ""),
+            "title": title,
+            "episode": episode,
+        })
+    return items
 
 @app.get("/api/tunarr/channels/{tunarr_id}/shows")
 async def tunarr_get_channel_shows(tunarr_id: str):
@@ -3176,31 +3235,71 @@ async def tunarr_get_channel_shows(tunarr_id: str):
 
 @app.get("/api/tunarr/guide")
 async def tunarr_guide(hours: int = Query(24)):
-    """Fetch program guide data for all linked Tunarr channels."""
+    """Fetch materialized EPG data from Tunarr's guide API for all linked channels."""
+    from datetime import datetime, timezone, timedelta
     url = get_tunarr_url()
     with get_db() as conn:
         links = [dict(r) for r in conn.execute("SELECT * FROM tunarr_channel_links").fetchall()]
     if not links:
         return {"channels": []}
+
+    now = datetime.now(timezone.utc)
+    date_from = now.isoformat()
+    date_to = (now + timedelta(hours=hours)).isoformat()
+    link_by_tunarr_id = {l["tunarr_id"]: l for l in links}
+    linked_ids = set(link_by_tunarr_id.keys())
+
     guide_channels = []
     async with httpx.AsyncClient(timeout=15.0) as client:
+        # Try Tunarr's guide API (returns all channels at once)
+        try:
+            r = await client.get(f"{url}/api/guide/channels",
+                                 params={"dateFrom": date_from, "dateTo": date_to})
+            if r.status_code == 200:
+                guide_data = r.json()
+                channels_data = guide_data if isinstance(guide_data, list) else guide_data.get("channels", [])
+                for ch in channels_data:
+                    ch_id = ch.get("id", "")
+                    if ch_id not in linked_ids:
+                        continue
+                    link = link_by_tunarr_id[ch_id]
+                    programs = ch.get("programs", []) if isinstance(ch, dict) else []
+                    guide_channels.append({
+                        "channel_number": link["channel_number"],
+                        "tunarr_id": ch_id,
+                        "tunarr_name": link.get("tunarr_name") or ch.get("name", ""),
+                        "tunarr_number": link.get("tunarr_number") or ch.get("number"),
+                        "schedule": _normalize_guide_programs(programs),
+                    })
+                # Add channels that weren't in guide response (may not have programming)
+                found_ids = {c["tunarr_id"] for c in guide_channels}
+                for link in links:
+                    if link["tunarr_id"] not in found_ids:
+                        guide_channels.append({
+                            "channel_number": link["channel_number"],
+                            "tunarr_id": link["tunarr_id"],
+                            "tunarr_name": link.get("tunarr_name", ""),
+                            "tunarr_number": link.get("tunarr_number"),
+                            "schedule": [],
+                        })
+                return {"channels": guide_channels}
+        except Exception:
+            pass
+
+        # Fallback: fetch per-channel lineup
         for link in links:
             tunarr_id = link["tunarr_id"]
             try:
-                r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
-                schedule = _extract_schedule_items(r.json()) if r.status_code == 200 else []
+                r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
+                                     params={"dateFrom": date_from, "dateTo": date_to})
+                if r.status_code == 200:
+                    data = r.json()
+                    programs = data.get("programs", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                    items = _normalize_guide_programs(programs)
+                else:
+                    items = []
             except Exception:
-                schedule = []
-            # Normalize schedule items
-            items = []
-            for item in schedule:
-                items.append({
-                    "startTime": item.get("startTime") or item.get("start_time") or "",
-                    "duration": item.get("duration", 0),
-                    "type": item.get("type", ""),
-                    "title": item.get("title", "Unknown"),
-                    "episode": item.get("episode"),
-                })
+                items = []
             guide_channels.append({
                 "channel_number": link["channel_number"],
                 "tunarr_id": tunarr_id,
