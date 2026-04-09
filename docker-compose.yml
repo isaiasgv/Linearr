@@ -1,12 +1,14 @@
 services:
-  channel-manager:
+  linearr:
     build: .
-    container_name: channel-manager
+    container_name: linearr
     ports:
       - "8777:8888"
     volumes:
       - ./data:/app/data
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     networks:
       - plex_default
     restart: unless-stopped
