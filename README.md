@@ -8,7 +8,7 @@
 
 Build, manage, and push programming schedules for your personal TV network — complete with an AI advisor, EPG generation, and a real-time schedule editor.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/isaiasgv/linearr/ci.yml?label=CI)](https://github.com/isaiasgv/linearr/actions)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker)](https://ghcr.io/isaiasgv/linearr)
 
@@ -325,7 +325,7 @@ Linearr reads metadata (titles, thumbnails, durations) from your Plex Media Serv
 
 ## License
 
-[MIT](LICENSE) — free for personal and commercial use.
+[GPL-3.0](LICENSE) — free and open source, same as the rest of the *arr stack.
 
 <div align="center">
 <br />
