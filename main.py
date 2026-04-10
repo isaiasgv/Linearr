@@ -443,6 +443,7 @@ async def _sync_channel_to_tunarr(channel_number: int):
                     transcode_id = ffmpeg_r.json().get("defaultTranscodeConfigId") or ffmpeg_r.json().get("configId")
                 payload = {
                     **update_data,
+                    "startTime": _previous_sunday_midnight_ms(),
                     "transcoding": {"targetResolution": "1920x1080"},
                     "offline": {"mode": "pic"},
                     "stealth": False,
@@ -1572,6 +1573,102 @@ async def plex_thumb(path: str = Query(...), w: int = Query(200), h: int = Query
         headers=headers,
     )
 
+@app.get("/api/plex/sessions")
+async def plex_sessions():
+    """Return active Plex streams/sessions."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(f"{url}/status/sessions", headers=hdrs)
+    if resp.status_code != 200:
+        return []
+    items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+    sessions = []
+    for s in items:
+        user = s.get("User", {})
+        player = s.get("Player", {})
+        media = (s.get("Media") or [{}])[0]
+        transcode = s.get("TranscodeSession", {})
+        sessions.append({
+            "title": s.get("grandparentTitle") or s.get("title", ""),
+            "subtitle": s.get("title") if s.get("grandparentTitle") else None,
+            "type": s.get("type", ""),
+            "thumb": s.get("grandparentThumb") or s.get("thumb"),
+            "user": user.get("title", ""),
+            "player": player.get("title", ""),
+            "platform": player.get("platform", ""),
+            "state": player.get("state", ""),
+            "progress_pct": round(int(s.get("viewOffset", 0)) / max(int(s.get("duration", 1)), 1) * 100),
+            "transcode": bool(transcode),
+            "transcode_decision": transcode.get("transcodeHwDecoding", "") if transcode else "",
+            "video_resolution": media.get("videoResolution", ""),
+            "bandwidth_kbps": int(transcode.get("bandwidth", 0)) if transcode else None,
+        })
+    return sessions
+
+@app.get("/api/plex/history")
+async def plex_history(limit: int = Query(50)):
+    """Return recent watch history."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            f"{url}/status/sessions/history/all",
+            headers=hdrs,
+            params={"sort": "viewedAt:desc", "X-Plex-Container-Start": 0, "X-Plex-Container-Size": limit},
+        )
+    if resp.status_code != 200:
+        return []
+    items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+    return [{
+        "rating_key": str(h.get("ratingKey", "")),
+        "title": h.get("grandparentTitle") or h.get("title", ""),
+        "subtitle": h.get("title") if h.get("grandparentTitle") else None,
+        "type": h.get("type", ""),
+        "thumb": h.get("grandparentThumb") or h.get("thumb"),
+        "viewed_at": h.get("viewedAt"),
+        "account_id": h.get("accountID"),
+    } for h in items]
+
+@app.get("/api/plex/playlists")
+async def plex_playlists():
+    """Return all Plex playlists."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(f"{url}/playlists", headers=hdrs)
+    if resp.status_code != 200:
+        return []
+    items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+    return [{
+        "rating_key": str(p.get("ratingKey", "")),
+        "title": p.get("title", ""),
+        "type": p.get("playlistType", ""),
+        "item_count": int(p.get("leafCount", 0)),
+        "duration_ms": int(p.get("duration", 0)),
+        "thumb": p.get("composite") or p.get("thumb"),
+        "smart": bool(p.get("smart")),
+    } for p in items]
+
+@app.post("/api/plex/scan-library/{section_id}")
+async def plex_scan_library(section_id: str):
+    """Trigger a library scan/refresh for a Plex section."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(f"{url}/library/sections/{section_id}/refresh", headers=hdrs)
+    if resp.status_code not in (200, 202):
+        raise HTTPException(resp.status_code, "Failed to trigger library scan")
+    return {"ok": True, "message": f"Library scan triggered for section {section_id}"}
+
 # ── Blocks ────────────────────────────────────────────────────────────────────
 
 import json as _json
@@ -1911,6 +2008,35 @@ def apply_block(block_id: int, channel_number: int):
     result["shows_added"] = shows_added
     return result
 
+# ── AI helpers ────────────────────────────────────────────────────────────────
+
+def _extract_ai_content(resp_json: dict) -> str:
+    """Extract and validate the AI response content. Raises HTTPException on failure."""
+    choice = resp_json.get("choices", [{}])[0]
+    finish = choice.get("finish_reason", "")
+    content = (choice.get("message") or {}).get("content") or ""
+    content = content.strip()
+    if not content:
+        if finish == "length":
+            raise HTTPException(502, "AI response was truncated (token limit reached). Try a simpler request or increase the model's token limit.")
+        if finish == "content_filter":
+            raise HTTPException(502, "AI response was blocked by content filter.")
+        raise HTTPException(502, "AI returned an empty response. The model may be overloaded — try again.")
+    return content
+
+def _parse_ai_json(content: str) -> dict | list:
+    """Strip markdown fences and parse JSON from AI response content."""
+    text = content
+    if "```" in text:
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.split("```")[0]
+    text = text.strip()
+    if not text:
+        raise HTTPException(502, "AI returned empty content after stripping markdown fences.")
+    return _json.loads(text)
+
 # ── AI channel & package suggestions ──────────────────────────────────────────
 
 @app.post("/api/channels/ai-suggest")
@@ -2006,13 +2132,8 @@ Reply with ONLY this JSON (no markdown, no text):
         ms = int((_t.monotonic() - t0) * 1000)
         if r.status_code != 200:
             raise HTTPException(502, f"AI error: {r.text[:200]}")
-        raw = r.json()["choices"][0]["message"]["content"].strip()
-        text = raw
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        data = _json.loads(text)
+        raw = _extract_ai_content(r.json())
+        data = _parse_ai_json(raw)
         return {"suggestions": data, "duration_ms": ms}
     except _json.JSONDecodeError as e:
         raise HTTPException(502, f"AI returned invalid JSON: {str(e)[:100]}")
@@ -2169,14 +2290,8 @@ Reply with ONLY this JSON (no markdown, no text):
         ms = int((_t.monotonic() - t0) * 1000)
         if r.status_code != 200:
             raise HTTPException(502, f"AI error: {r.text[:200]}")
-        raw = r.json()["choices"][0]["message"]["content"].strip()
-        text = raw
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.split("```")[0]
-        data = _json.loads(text.strip())
+        raw = _extract_ai_content(r.json())
+        data = _parse_ai_json(raw)
 
         # Build lookup from available Plex items
         plex_map = {str(p["rating_key"]): p for p in plex_items}
@@ -2351,19 +2466,12 @@ Reply with ONLY this JSON (no markdown):
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.6,
-                "max_completion_tokens": 4096,
             }, headers={"Authorization": f"Bearer {api_key}"})
         ms = int((_t.monotonic() - t0) * 1000)
         if r.status_code != 200:
             raise HTTPException(502, f"AI error: {r.text[:200]}")
-        raw = r.json()["choices"][0]["message"]["content"].strip()
-        text = raw
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.split("```")[0]
-        data = _json.loads(text.strip())
+        raw = _extract_ai_content(r.json())
+        data = _parse_ai_json(raw)
 
         # Enrich suggestions with plex metadata
         plex_map = {str(p["rating_key"]): p for p in plex_items}
@@ -2668,14 +2776,8 @@ Reply with ONLY this JSON (no markdown):
         ms = int((_time.monotonic() - t0) * 1000)
         if r.status_code != 200:
             raise HTTPException(502, f"AI API error: {r.text[:200]}")
-        raw = r.json()["choices"][0]["message"]["content"].strip()
-        # Parse JSON from response
-        text = raw
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        data = _json.loads(text)
+        raw = _extract_ai_content(r.json())
+        data = _parse_ai_json(raw)
         blocks = data.get("blocks", []) if isinstance(data, dict) else data
 
         # Log
@@ -2909,7 +3011,7 @@ Reply with ONLY this JSON (no markdown, no text before or after):
                 pass
             raise HTTPException(502, f"AI error: {error_msg}")
         resp_json = resp.json()
-        raw = resp_json["choices"][0]["message"]["content"].strip()
+        raw = _extract_ai_content(resp_json)
         cleaned = raw
         # Strip markdown code fences
         if "```" in cleaned:
@@ -3003,7 +3105,7 @@ async def ai_test(body: AITestIn):
         if resp.status_code != 200:
             detail = resp.json().get("error", {}).get("message", resp.text)
             raise HTTPException(502, detail)
-        reply = resp.json()["choices"][0]["message"]["content"].strip()
+        reply = _extract_ai_content(resp.json())
         return {"ok": True, "model": body.openai_model, "reply": reply, "duration_ms": duration_ms}
     except HTTPException:
         raise
@@ -3049,6 +3151,17 @@ def clear_app_logs():
 # ── Tunarr Integration ────────────────────────────────────────────────────────
 
 TUNARR_SUPPORTED_VERSION = "1.2.10"
+
+def _previous_sunday_midnight_ms() -> int:
+    """Return Unix epoch milliseconds for the most recent Sunday at 00:00:00 UTC."""
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    days_since_sunday = now.weekday() + 1  # Monday=0, Sunday=6 → +1 gives days since Sunday
+    if days_since_sunday == 7:
+        days_since_sunday = 0  # today is Sunday
+    sunday = now - timedelta(days=days_since_sunday)
+    midnight = sunday.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(midnight.timestamp() * 1000)
 
 def _parse_version(v: str) -> tuple[int, ...]:
     """Parse a version string like '1.2.10' or 'v1.2.10' into a tuple of ints."""
@@ -3237,7 +3350,7 @@ async def tunarr_create_channel(body: dict):
                 "name": body.get("name", "New Channel"),
                 "number": body.get("number", 1),
                 "duration": 0,
-                "startTime": 0,
+                "startTime": _previous_sunday_midnight_ms(),
                 "groupTitle": body.get("groupTitle", "Galaxy Network"),
                 "icon": {"path": "", "duration": 0, "width": 0, "position": "bottom-right"},
                 "offline": {"mode": "pic"},
@@ -3813,6 +3926,7 @@ async def tunarr_export_channels(body: TunarrExportRequest):
                 "name": cp.get("name", f"Channel {cp_num}"),
                 "number": cp_num,
                 "groupTitle": cp.get("tier", "Linearr"),
+                "startTime": _previous_sunday_midnight_ms(),
                 "transcoding": {"targetResolution": "1920x1080"},
                 "offline": {"mode": "pic"},
                 "stealth": False,
@@ -4099,7 +4213,7 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
         slots.append({
             "type": "smart-collection",
             "smartCollectionId": base_col["tunarr_collection_id"],
-            "startTime": 0,
+            "startTime": _previous_sunday_midnight_ms(),
             "order": "ordered_shuffle",
             "direction": "asc",
             "padMs": 0,

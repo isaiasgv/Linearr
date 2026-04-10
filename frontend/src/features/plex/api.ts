@@ -110,6 +110,56 @@ function popular(limit = 30): Promise<PlexPopularItem[]> {
   return get<PlexPopularItem[]>(`/api/plex/popular?limit=${limit}`)
 }
 
+interface PlexSession {
+  title: string
+  subtitle: string | null
+  type: string
+  thumb: string | null
+  user: string
+  player: string
+  platform: string
+  state: string
+  progress_pct: number
+  transcode: boolean
+  video_resolution: string
+  bandwidth_kbps: number | null
+}
+
+interface PlexHistoryItem {
+  rating_key: string
+  title: string
+  subtitle: string | null
+  type: string
+  thumb: string | null
+  viewed_at: number | null
+}
+
+interface PlexPlaylist {
+  rating_key: string
+  title: string
+  type: string
+  item_count: number
+  duration_ms: number
+  thumb: string | null
+  smart: boolean
+}
+
+function sessions(): Promise<PlexSession[]> {
+  return get<PlexSession[]>('/api/plex/sessions')
+}
+
+function history(limit = 50): Promise<PlexHistoryItem[]> {
+  return get<PlexHistoryItem[]>(`/api/plex/history?limit=${limit}`)
+}
+
+function playlists(): Promise<PlexPlaylist[]> {
+  return get<PlexPlaylist[]>('/api/plex/playlists')
+}
+
+function scanLibrary(sectionId: string): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>(`/api/plex/scan-library/${encodeURIComponent(sectionId)}`)
+}
+
 export const plexApi = {
   libraries,
   libraryItems,
@@ -126,6 +176,19 @@ export const plexApi = {
   recentlyAdded,
   onDeck,
   popular,
+  sessions,
+  history,
+  playlists,
+  scanLibrary,
 }
 
-export type { PlexServerInfo, PlexLibraryStat, PlexRecentItem, PlexOnDeckItem, PlexPopularItem }
+export type {
+  PlexServerInfo,
+  PlexLibraryStat,
+  PlexRecentItem,
+  PlexOnDeckItem,
+  PlexPopularItem,
+  PlexSession,
+  PlexHistoryItem,
+  PlexPlaylist,
+}

@@ -6,6 +6,10 @@ import {
   usePlexOnDeck,
   usePlexPopular,
   usePlexLibraryItems,
+  usePlexSessions,
+  usePlexHistory,
+  usePlexPlaylists,
+  useScanLibrary,
 } from '@/features/plex/hooks'
 import { useUIStore } from '@/shared/store/ui.store'
 import { Spinner } from '@/shared/components/ui/Spinner'
@@ -234,6 +238,10 @@ export function PlexView() {
   const { data: recentItems = [], isLoading: loadingRecent } = usePlexRecentlyAdded(30)
   const { data: onDeckItems = [], isLoading: loadingOnDeck } = usePlexOnDeck(20)
   const { data: popularItems = [], isLoading: loadingPopular } = usePlexPopular(30)
+  const { data: sessions = [] } = usePlexSessions()
+  const { data: historyItems = [] } = usePlexHistory(30)
+  const { data: playlists = [] } = usePlexPlaylists()
+  const scanLibrary = useScanLibrary()
 
   const [browsingLibrary, setBrowsingLibrary] = useState<{
     id: string
@@ -372,12 +380,27 @@ export function PlexView() {
                       <p className="text-2xl font-bold text-white mt-1">
                         {lib.total_items.toLocaleString()}
                       </p>
-                      <p className="text-xs text-slate-500">
-                        items{' '}
-                        <span className="text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                          — click to browse
-                        </span>
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-slate-500">items</p>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            scanLibrary.mutate(lib.id)
+                          }}
+                          className="text-xs text-slate-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-all"
+                          title="Scan library"
+                        >
+                          <svg
+                            className="w-3.5 h-3.5"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                          </svg>
+                        </button>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -407,6 +430,112 @@ export function PlexView() {
               loading={loadingPopular}
               emptyText="No watch history yet"
             />
+
+            {/* Now Playing */}
+            {sessions.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  Now Playing
+                  <span className="text-xs text-slate-500 font-normal">
+                    {sessions.length} stream{sessions.length !== 1 ? 's' : ''}
+                  </span>
+                </h3>
+                <div className="space-y-2">
+                  {sessions.map((s, i) => (
+                    <div
+                      key={i}
+                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center gap-3"
+                    >
+                      <div className="w-10 h-14 rounded overflow-hidden bg-slate-900 shrink-0">
+                        <PlexThumb
+                          path={s.thumb}
+                          alt={s.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-100 truncate">{s.title}</p>
+                        {s.subtitle && (
+                          <p className="text-xs text-slate-400 truncate">{s.subtitle}</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-slate-500">{s.user}</span>
+                          <span className="text-xs text-slate-600">on {s.player}</span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-indigo-500 rounded-full"
+                            style={{ width: `${s.progress_pct}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {s.video_resolution && `${s.video_resolution}p`}
+                          {s.transcode && ' • Transcode'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Watch History */}
+            {historyItems.length > 0 && (
+              <PosterRow
+                title="Watch History"
+                items={historyItems.map((h) => ({
+                  rating_key: h.rating_key,
+                  title: h.title,
+                  thumb: h.thumb,
+                  type: h.type,
+                  subtitle: h.subtitle,
+                }))}
+                loading={false}
+                emptyText="No history"
+              />
+            )}
+
+            {/* Playlists */}
+            {playlists.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-slate-300 mb-3">Playlists</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {playlists.map((pl) => (
+                    <div
+                      key={pl.rating_key}
+                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 hover:border-slate-600 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-900/50 flex items-center justify-center shrink-0">
+                          <svg
+                            className="w-4 h-4 text-indigo-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            strokeWidth={2}
+                          >
+                            <path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        </div>
+                        {pl.smart && (
+                          <span className="text-xs bg-amber-900/40 text-amber-300 rounded-full px-1.5 py-0.5">
+                            Smart
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium text-slate-100 truncate">{pl.title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {pl.item_count} item{pl.item_count !== 1 ? 's' : ''}
+                        {pl.type && ` • ${pl.type}`}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

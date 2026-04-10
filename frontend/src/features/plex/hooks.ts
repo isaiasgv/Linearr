@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useToastStore } from '@/shared/store/toast.store'
 import { plexApi } from './api'
 
 export function usePlexLibraries() {
@@ -95,5 +96,40 @@ export function usePlexPopular(limit = 30) {
   return useQuery({
     queryKey: ['plex', 'popular', limit],
     queryFn: () => plexApi.popular(limit),
+  })
+}
+
+export function usePlexSessions() {
+  return useQuery({
+    queryKey: ['plex', 'sessions'],
+    queryFn: () => plexApi.sessions(),
+    refetchInterval: 30_000,
+  })
+}
+
+export function usePlexHistory(limit = 50) {
+  return useQuery({
+    queryKey: ['plex', 'history', limit],
+    queryFn: () => plexApi.history(limit),
+  })
+}
+
+export function usePlexPlaylists() {
+  return useQuery({
+    queryKey: ['plex', 'playlists'],
+    queryFn: () => plexApi.playlists(),
+  })
+}
+
+export function useScanLibrary() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: (sectionId: string) => plexApi.scanLibrary(sectionId),
+    onSuccess: () => {
+      addToast('Library scan started')
+      void qc.invalidateQueries({ queryKey: ['plex', 'library-stats'] })
+    },
+    onError: (e: Error) => addToast(e.message || 'Scan failed', true),
   })
 }
