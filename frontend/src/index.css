@@ -11,3 +11,9 @@
 .swal2-timer-progress-bar {
   background: #6366f1 !important;
 }
+
+/* Splash screen pulse */
+@keyframes splash-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.04); }
+}

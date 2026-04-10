@@ -11,6 +11,7 @@ import { ChannelDetail } from '@/features/channels/components/ChannelDetail'
 import { EmptyState } from '@/features/channels/components/EmptyState'
 import { useChannels } from '@/features/channels/hooks'
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts'
+import { Logo } from '@/shared/components/ui/Logo'
 
 // Lazy-load modals and heavy views — only loaded when first opened/displayed
 const ChannelFormModal = lazy(() =>
@@ -111,8 +112,11 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen bg-slate-950 text-slate-100 items-center justify-center">
-        <Spinner size="lg" />
+      <div className="flex flex-col h-screen bg-[#020617] items-center justify-center">
+        <div style={{ animation: 'splash-pulse 2s ease-in-out infinite' }}>
+          <Logo size={80} />
+        </div>
+        <p className="mt-4 text-lg font-semibold tracking-wide text-slate-400">Linearr</p>
       </div>
     )
   }

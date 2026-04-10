@@ -22,7 +22,27 @@
     <meta name="application-name" content="Linearr" />
   </head>
   <body class="bg-slate-900 text-slate-100 antialiased">
-    <div id="root"></div>
+    <div id="root">
+      <!-- Splash screen — visible until React mounts and replaces this content -->
+      <style>
+        .splash{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#020617;animation:splash-in .4s ease}
+        .splash svg{animation:splash-pulse 2s ease-in-out infinite}
+        @keyframes splash-in{from{opacity:0}to{opacity:1}}
+        @keyframes splash-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(1.04)}}
+      </style>
+      <div class="splash">
+        <svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="sg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#6366f1"/><stop offset="100%" stop-color="#a855f7"/></linearGradient></defs>
+          <rect width="100" height="100" rx="22" fill="url(#sg)"/>
+          <rect x="20" y="20" width="13" height="56" rx="5" fill="#fff"/>
+          <rect x="20" y="63" width="56" height="13" rx="5" fill="#fff"/>
+          <rect x="40" y="20" width="36" height="7" rx="3" fill="#fff" fill-opacity=".55"/>
+          <rect x="40" y="33" width="25" height="7" rx="3" fill="#fff" fill-opacity=".38"/>
+          <rect x="40" y="46" width="31" height="7" rx="3" fill="#fff" fill-opacity=".38"/>
+        </svg>
+        <p style="margin-top:16px;font-size:18px;font-weight:600;letter-spacing:.5px;color:#94a3b8;font-family:system-ui,sans-serif">Linearr</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
