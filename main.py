@@ -3539,46 +3539,9 @@ def _normalize_guide_programs(programs: list) -> list[dict]:
         })
     return items
 
-@app.get("/api/tunarr/channels/{tunarr_id}/debug-schedule")
-async def tunarr_debug_schedule(tunarr_id: str, hours: int = Query(6)):
-    """Debug: probe all Tunarr API paths and return raw responses."""
-    url = get_tunarr_url()
-    from datetime import datetime, timezone, timedelta
-    now = datetime.now(timezone.utc)
-    date_from = now.isoformat()
-    date_to = (now + timedelta(hours=hours)).isoformat()
-    results = {}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        paths = [
-            ("guide", f"{url}/api/guide/channels/{tunarr_id}", {"dateFrom": date_from, "dateTo": date_to}),
-            ("lineup", f"{url}/api/channels/{tunarr_id}/lineup", {"from": date_from, "to": date_to}),
-            ("programming", f"{url}/api/channels/{tunarr_id}/programming", None),
-            ("schedule", f"{url}/api/channels/{tunarr_id}/schedule", None),
-            ("lineupV2", f"{url}/api/channels/{tunarr_id}/lineup", {"dateFrom": date_from, "dateTo": date_to}),
-        ]
-        for name, path, params in paths:
-            try:
-                r = await client.get(path, params=params) if params else await client.get(path)
-                body = r.json() if r.status_code == 200 else None
-                # Truncate large responses to first 3 items
-                preview = None
-                if isinstance(body, list):
-                    preview = body[:3]
-                elif isinstance(body, dict):
-                    preview = {}
-                    for k, v in body.items():
-                        if isinstance(v, list):
-                            preview[k] = f"[{len(v)} items] first: {v[:2]}" if v else "[]"
-                        else:
-                            preview[k] = v
-                results[name] = {"status": r.status_code, "preview": preview, "type": type(body).__name__ if body is not None else "null"}
-            except Exception as e:
-                results[name] = {"status": "error", "error": str(e)}
-    return {"tunarr_id": tunarr_id, "tunarr_url": url, "date_from": date_from, "date_to": date_to, "results": results}
-
-@app.get("/api/tunarr/debug-guide")
-async def tunarr_debug_guide():
-    """Debug: probe Tunarr guide API and return raw response structure."""
+@app.get("/api/tunarr/debug")
+async def tunarr_debug_api():
+    """Debug: discover Tunarr API structure by probing many possible paths."""
     url = get_tunarr_url()
     from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
@@ -3586,39 +3549,84 @@ async def tunarr_debug_guide():
     date_to = (now + timedelta(hours=6)).isoformat()
     with get_db() as conn:
         links = [dict(r) for r in conn.execute("SELECT * FROM tunarr_channel_links").fetchall()]
-    results = {"tunarr_url": url, "links_count": len(links), "links": links}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        # Try bulk guide
-        try:
-            r = await client.get(f"{url}/api/guide/channels", params={"dateFrom": date_from, "dateTo": date_to})
-            body = r.json() if r.status_code == 200 else None
-            if isinstance(body, list):
-                results["bulk_guide"] = {"status": r.status_code, "type": "list", "count": len(body),
-                                          "sample_keys": list(body[0].keys()) if body else [], "sample_id": body[0].get("id", "N/A") if body else None}
-            elif isinstance(body, dict):
-                results["bulk_guide"] = {"status": r.status_code, "type": "dict", "keys": list(body.keys()),
-                                          "channels_count": len(body.get("channels", body.get("data", [])))}
-            else:
-                results["bulk_guide"] = {"status": r.status_code, "type": str(type(body))}
-        except Exception as e:
-            results["bulk_guide"] = {"error": str(e)}
-        # Try per-channel for first link
-        if links:
-            tid = links[0]["tunarr_id"]
+    tid = links[0]["tunarr_id"] if links else "unknown"
+
+    # Probe many possible API paths to discover which ones exist
+    probe_paths = [
+        # Root / version
+        ("GET /api", f"{url}/api", None),
+        ("GET /api/version", f"{url}/api/version", None),
+        ("GET /api/v2", f"{url}/api/v2", None),
+        # Channels
+        ("GET /api/channels", f"{url}/api/channels", None),
+        ("GET /api/v2/channels", f"{url}/api/v2/channels", None),
+        # Single channel
+        ("GET /api/channels/{id}", f"{url}/api/channels/{tid}", None),
+        ("GET /api/v2/channels/{id}", f"{url}/api/v2/channels/{tid}", None),
+        # Guide
+        ("GET /api/guide", f"{url}/api/guide", None),
+        ("GET /api/guide/channels", f"{url}/api/guide/channels", {"dateFrom": date_from, "dateTo": date_to}),
+        ("GET /api/guide/channels/{id}", f"{url}/api/guide/channels/{tid}", {"dateFrom": date_from, "dateTo": date_to}),
+        ("GET /api/v2/guide", f"{url}/api/v2/guide", None),
+        ("GET /api/v2/guide/channels", f"{url}/api/v2/guide/channels", {"dateFrom": date_from, "dateTo": date_to}),
+        # Programming / lineup / schedule
+        ("GET /api/channels/{id}/programming", f"{url}/api/channels/{tid}/programming", None),
+        ("GET /api/channels/{id}/lineup", f"{url}/api/channels/{tid}/lineup", {"from": date_from, "to": date_to}),
+        ("GET /api/channels/{id}/schedule", f"{url}/api/channels/{tid}/schedule", None),
+        ("GET /api/v2/channels/{id}/programming", f"{url}/api/v2/channels/{tid}/programming", None),
+        ("GET /api/v2/channels/{id}/lineup", f"{url}/api/v2/channels/{tid}/lineup", {"from": date_from, "to": date_to}),
+        ("GET /api/v2/channels/{id}/schedule", f"{url}/api/v2/channels/{tid}/schedule", None),
+        # Lineup with dateFrom (alt params)
+        ("GET /api/channels/{id}/lineup?dateFrom", f"{url}/api/channels/{tid}/lineup", {"dateFrom": date_from, "dateTo": date_to}),
+        # Shows
+        ("GET /api/channels/{id}/shows", f"{url}/api/channels/{tid}/shows", None),
+        ("GET /api/shows", f"{url}/api/shows", None),
+        # XMLTV / EPG
+        ("GET /api/xmltv.xml", f"{url}/api/xmltv.xml", None),
+        # Health
+        ("GET /api/health", f"{url}/api/health", None),
+        ("GET /health", f"{url}/health", None),
+    ]
+
+    results = {"tunarr_url": url, "channel_id_used": tid, "links_count": len(links)}
+    api_results = {}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for name, path, params in probe_paths:
             try:
-                r = await client.get(f"{url}/api/guide/channels/{tid}", params={"dateFrom": date_from, "dateTo": date_to})
-                body = r.json() if r.status_code == 200 else None
-                if isinstance(body, dict):
-                    results["per_channel_guide"] = {"status": r.status_code, "keys": list(body.keys()),
-                                                     "programs_count": len(body.get("programs", [])),
-                                                     "first_program": body.get("programs", [None])[0] if body.get("programs") else None}
-                elif isinstance(body, list):
-                    results["per_channel_guide"] = {"status": r.status_code, "type": "list", "count": len(body),
-                                                     "first_item": body[0] if body else None}
+                if params:
+                    r = await client.get(path, params=params)
                 else:
-                    results["per_channel_guide"] = {"status": r.status_code, "raw_type": str(type(body))}
+                    r = await client.get(path)
+                info = {"status": r.status_code}
+                if r.status_code == 200:
+                    ct = r.headers.get("content-type", "")
+                    if "json" in ct:
+                        body = r.json()
+                        info["type"] = type(body).__name__
+                        if isinstance(body, list):
+                            info["count"] = len(body)
+                            if body:
+                                info["first_keys"] = list(body[0].keys()) if isinstance(body[0], dict) else str(type(body[0]))
+                                info["sample"] = body[0] if isinstance(body[0], dict) and len(str(body[0])) < 500 else "..."
+                        elif isinstance(body, dict):
+                            info["keys"] = list(body.keys())
+                            # Show short values
+                            for k, v in body.items():
+                                if isinstance(v, list):
+                                    info[f"len({k})"] = len(v)
+                                    if v and isinstance(v[0], dict) and len(str(v[0])) < 500:
+                                        info[f"first_{k}"] = v[0]
+                                elif isinstance(v, (str, int, float, bool)):
+                                    info[k] = v
+                    elif "xml" in ct:
+                        info["type"] = "xml"
+                        info["size"] = len(r.text)
+                    else:
+                        info["type"] = ct
+                api_results[name] = info
             except Exception as e:
-                results["per_channel_guide"] = {"error": str(e)}
+                api_results[name] = {"status": "error", "error": str(e)[:100]}
+    results["api_probes"] = api_results
     return results
 
 @app.get("/api/tunarr/channels/{tunarr_id}/shows")
