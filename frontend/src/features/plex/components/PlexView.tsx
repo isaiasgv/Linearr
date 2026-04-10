@@ -11,7 +11,11 @@ import {
   usePlexPlaylists,
   useScanLibrary,
   usePlexHubs,
+  usePlexEvents,
+  useClearPlexEvents,
+  useDeleteCollection,
 } from '@/features/plex/hooks'
+import { usePlexCollections } from '@/features/plex/hooks'
 import { useUIStore } from '@/shared/store/ui.store'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { PlexThumb } from '@/features/plex/components/PlexThumb'
@@ -244,6 +248,10 @@ export function PlexView() {
   const { data: playlists = [] } = usePlexPlaylists()
   const scanLibrary = useScanLibrary()
   const { data: hubsData } = usePlexHubs()
+  const { data: plexEvents = [] } = usePlexEvents(undefined, 20)
+  const clearEvents = useClearPlexEvents()
+  const { data: allCollections = [] } = usePlexCollections()
+  const deleteCollection = useDeleteCollection()
 
   const [browsingLibrary, setBrowsingLibrary] = useState<{
     id: string
@@ -555,6 +563,94 @@ export function PlexView() {
                         {pl.item_count} item{pl.item_count !== 1 ? 's' : ''}
                         {pl.type && ` • ${pl.type}`}
                       </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Collections */}
+            {allCollections.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-slate-300 mb-3">Collections</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {allCollections.map((coll) => (
+                    <div
+                      key={coll.rating_key}
+                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 hover:border-slate-600 transition-colors group relative"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {coll.thumb ? (
+                          <PlexThumb
+                            path={coll.thumb}
+                            alt={coll.title}
+                            className="w-8 h-8 rounded-lg object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-purple-900/50 flex items-center justify-center shrink-0">
+                            <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <rect x="3" y="3" width="7" height="7" rx="1" />
+                              <rect x="14" y="3" width="7" height="7" rx="1" />
+                              <rect x="3" y="14" width="7" height="7" rx="1" />
+                              <rect x="14" y="14" width="7" height="7" rx="1" />
+                            </svg>
+                          </div>
+                        )}
+                        <span className={`text-xs rounded-full px-1.5 py-0.5 ${coll.type === 'movie' ? 'bg-purple-900/40 text-purple-300' : 'bg-blue-900/40 text-blue-300'}`}>
+                          {coll.type === 'movie' ? 'Movies' : 'Shows'}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium text-slate-100 truncate">{coll.title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {coll.child_count} item{coll.child_count !== 1 ? 's' : ''}
+                      </p>
+                      <button
+                        onClick={() => deleteCollection.mutate(coll.rating_key)}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-red-900/60 hover:bg-red-900 rounded text-red-400"
+                        title="Delete collection"
+                      >
+                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path d="M18 6L6 18M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Webhook Event Feed */}
+            {plexEvents.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-slate-300">Recent Events</h3>
+                  <button
+                    onClick={() => clearEvents.mutate()}
+                    disabled={clearEvents.isPending}
+                    className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                  {plexEvents.map((ev) => (
+                    <div key={ev.id} className="flex items-center gap-3 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg">
+                      <span className={`shrink-0 w-2 h-2 rounded-full ${
+                        ev.event_type === 'library.new' ? 'bg-emerald-400' :
+                        ev.event_type.startsWith('media.play') ? 'bg-blue-400' :
+                        ev.event_type === 'media.scrobble' ? 'bg-amber-400' :
+                        'bg-slate-500'
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-200 truncate">
+                          <span className="text-slate-500">{ev.event_type.replace('media.', '').replace('library.', '')}</span>
+                          {ev.title && <> — {ev.title}</>}
+                        </p>
+                        <p className="text-[10px] text-slate-600">
+                          {ev.user_name && <>{ev.user_name} • </>}
+                          {new Date(ev.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
                     </div>
                   ))}
                 </div>

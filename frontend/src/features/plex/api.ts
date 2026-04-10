@@ -1,4 +1,4 @@
-import { get, post, put } from '@/shared/api/client'
+import { get, post, put, del } from '@/shared/api/client'
 import type { PlexCollection, PlexEpisode, PlexItem, PlexLibrary, PlexSeason } from '@/shared/types'
 
 function libraries(): Promise<PlexLibrary[]> {
@@ -185,6 +185,51 @@ function rateItem(ratingKey: string, rating: number): Promise<{ ok: boolean }> {
   return put<{ ok: boolean }>(`/api/plex/item/${encodeURIComponent(ratingKey)}/rate`, { rating })
 }
 
+// ── Webhook events ───────────────────────────────────────────────────────────
+
+interface PlexEvent {
+  id: number
+  event_type: string
+  rating_key: string | null
+  title: string | null
+  plex_type: string | null
+  user_name: string | null
+  player: string | null
+  created_at: string
+}
+
+function events(eventType?: string, limit = 50): Promise<PlexEvent[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (eventType) params.set('event_type', eventType)
+  return get<PlexEvent[]>(`/api/plex/events?${params.toString()}`)
+}
+
+function clearEvents(): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>('/api/plex/events')
+}
+
+// ── Collection CRUD ──────────────────────────────────────────────────────────
+
+function createCollection(body: { title: string; section_id: string; type: string }): Promise<{ rating_key: string; title: string }> {
+  return post<{ rating_key: string; title: string }>('/api/plex/collections', body)
+}
+
+function deleteCollection(ratingKey: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/api/plex/collections/${encodeURIComponent(ratingKey)}`)
+}
+
+function addCollectionItems(ratingKey: string, items: string[]): Promise<{ ok: boolean; added: number }> {
+  return put<{ ok: boolean; added: number }>(`/api/plex/collections/${encodeURIComponent(ratingKey)}/items`, { items })
+}
+
+function removeCollectionItem(ratingKey: string, itemKey: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/api/plex/collections/${encodeURIComponent(ratingKey)}/items/${encodeURIComponent(itemKey)}`)
+}
+
+function updateCollection(ratingKey: string, body: { title?: string; summary?: string }): Promise<{ ok: boolean }> {
+  return put<{ ok: boolean }>(`/api/plex/collections/${encodeURIComponent(ratingKey)}`, body)
+}
+
 interface PlexHub {
   title: string
   type: string
@@ -231,6 +276,13 @@ export const plexApi = {
   rateItem,
   hubs,
   libraryHubs,
+  events,
+  clearEvents,
+  createCollection,
+  deleteCollection,
+  addCollectionItems,
+  removeCollectionItem,
+  updateCollection,
 }
 
 export type {
@@ -244,4 +296,5 @@ export type {
   PlexPlaylist,
   PlexHub,
   LibraryFilterOptions,
+  PlexEvent,
 }

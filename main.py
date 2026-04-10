@@ -49,7 +49,7 @@ APP_SECRET   = os.getenv("APP_SECRET", "default-secret-change-me")
 def _session_token() -> str:
     return hmac.new(APP_SECRET.encode(), f"{APP_USERNAME}:{APP_PASSWORD}".encode(), hashlib.sha256).hexdigest()
 
-_PUBLIC_PATHS = {"/", "/api/auth/login", "/api/health", "/docs", "/openapi.json"}
+_PUBLIC_PATHS = {"/", "/api/auth/login", "/api/health", "/docs", "/openapi.json", "/api/plex/webhook"}
 
 # ── Rate limiting (login) ────────────────────────────────────────────────────
 _login_attempts: dict[str, list[float]] = defaultdict(list)
@@ -219,6 +219,21 @@ def init_db():
                     category   TEXT NOT NULL DEFAULT 'custom',
                     data       TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS plex_events (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type  TEXT NOT NULL,
+                    rating_key  TEXT,
+                    title       TEXT,
+                    plex_type   TEXT,
+                    user_name   TEXT,
+                    player      TEXT,
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
         except sqlite3.OperationalError:
@@ -1822,6 +1837,181 @@ async def plex_library_hubs(section_id: str):
                 "items": items,
             })
     return {"hubs": hubs}
+
+# ── Plex Webhooks ─────────────────────────────────────────────────────────────
+
+@app.post("/api/plex/webhook")
+async def plex_webhook(request: Request):
+    """Receive Plex webhook events. Requires Plex Pass on the Plex server side.
+    Plex sends multipart/form-data with a 'payload' JSON field."""
+    try:
+        form = await request.form()
+        payload_raw = form.get("payload", "")
+        if not payload_raw:
+            return {"ok": True}
+        payload = json.loads(str(payload_raw))
+        event_type = payload.get("event", "")
+        if not event_type:
+            return {"ok": True}
+
+        metadata = payload.get("Metadata", {})
+        account = payload.get("Account", {})
+        player = payload.get("Player", {})
+
+        rating_key = str(metadata.get("ratingKey", "")) if metadata.get("ratingKey") else None
+        title = metadata.get("grandparentTitle") or metadata.get("title") or ""
+        plex_type = metadata.get("type", "")
+        if plex_type == "episode":
+            plex_type = "show"
+        user_name = account.get("title", "")
+        player_title = player.get("title", "")
+
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO plex_events (event_type, rating_key, title, plex_type, user_name, player) VALUES (?,?,?,?,?,?)",
+                (event_type, rating_key, title, plex_type, user_name, player_title),
+            )
+        _log_app("plex-webhook", f"{event_type}: {title}" + (f" by {user_name}" if user_name else ""))
+    except Exception as e:
+        log.warning("Plex webhook parse error: %s", e)
+    # Always return 200 so Plex doesn't retry
+    return {"ok": True}
+
+@app.get("/api/plex/events")
+def plex_events(event_type: str | None = Query(None), limit: int = Query(50)):
+    """Return recent Plex webhook events."""
+    with get_db() as conn:
+        if event_type:
+            rows = conn.execute(
+                "SELECT * FROM plex_events WHERE event_type=? ORDER BY created_at DESC LIMIT ?",
+                (event_type, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM plex_events ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+@app.delete("/api/plex/events")
+def clear_plex_events():
+    """Clear all Plex webhook events."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM plex_events")
+    return {"ok": True}
+
+# ── Plex Collection CRUD ─────────────────────────────────────────────────────
+
+@app.post("/api/plex/collections")
+async def plex_create_collection(request: Request):
+    """Create a new Plex collection."""
+    body = await request.json()
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    title = body.get("title", "")
+    section_id = body.get("section_id", "")
+    collection_type = body.get("type", "movie")
+    if not title or not section_id:
+        raise HTTPException(400, "title and section_id required")
+    plex_type = "1" if collection_type == "movie" else "2"
+    async with httpx.AsyncClient(timeout=10) as client:
+        # Get machine ID for URI
+        identity_r = await client.get(f"{url}/identity", headers=hdrs)
+        machine_id = identity_r.json().get("MediaContainer", {}).get("machineIdentifier", "") if identity_r.status_code == 200 else ""
+        resp = await client.post(
+            f"{url}/library/collections",
+            headers=hdrs,
+            params={"type": plex_type, "title": title, "smart": "0", "sectionId": section_id},
+        )
+    if resp.status_code not in (200, 201):
+        raise HTTPException(resp.status_code, f"Plex error: {resp.text[:200]}")
+    coll = (resp.json().get("MediaContainer", {}).get("Metadata", [{}]) or [{}])[0]
+    return {
+        "rating_key": coll.get("ratingKey"),
+        "title": coll.get("title", title),
+        "type": collection_type,
+        "machine_id": machine_id,
+    }
+
+@app.delete("/api/plex/collections/{rating_key}")
+async def plex_delete_collection(rating_key: str):
+    """Delete a Plex collection."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.delete(f"{url}/library/collections/{rating_key}", headers=hdrs)
+    if resp.status_code not in (200, 204):
+        raise HTTPException(resp.status_code, "Failed to delete collection")
+    # Clean up any channel_collections references
+    with get_db() as conn:
+        conn.execute("DELETE FROM channel_collections WHERE collection_rating_key=?", (rating_key,))
+    return {"ok": True}
+
+@app.put("/api/plex/collections/{rating_key}/items")
+async def plex_add_collection_items(rating_key: str, request: Request):
+    """Add items to a Plex collection."""
+    body = await request.json()
+    item_keys = body.get("items", [])
+    if not item_keys:
+        raise HTTPException(400, "items list required")
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        identity_r = await client.get(f"{url}/identity", headers=hdrs)
+        machine_id = identity_r.json().get("MediaContainer", {}).get("machineIdentifier", "") if identity_r.status_code == 200 else ""
+        added = 0
+        for rk in item_keys:
+            uri = f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"
+            resp = await client.put(
+                f"{url}/library/collections/{rating_key}/items",
+                headers=hdrs,
+                params={"uri": uri},
+            )
+            if resp.status_code in (200, 201):
+                added += 1
+    return {"ok": True, "added": added}
+
+@app.delete("/api/plex/collections/{rating_key}/items/{item_key}")
+async def plex_remove_collection_item(rating_key: str, item_key: str):
+    """Remove an item from a Plex collection."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.delete(
+            f"{url}/library/collections/{rating_key}/items/{item_key}",
+            headers=hdrs,
+        )
+    if resp.status_code not in (200, 204):
+        raise HTTPException(resp.status_code, "Failed to remove item")
+    return {"ok": True}
+
+@app.put("/api/plex/collections/{rating_key}")
+async def plex_update_collection(rating_key: str, request: Request):
+    """Update a Plex collection's metadata (title, summary)."""
+    body = await request.json()
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    params = {}
+    if "title" in body:
+        params["title.value"] = body["title"]
+    if "summary" in body:
+        params["summary.value"] = body["summary"]
+    if not params:
+        return {"ok": True}
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.put(f"{url}/library/metadata/{rating_key}", headers=hdrs, params=params)
+    if resp.status_code not in (200, 204):
+        raise HTTPException(resp.status_code, "Failed to update collection")
+    return {"ok": True}
 
 # ── Blocks ────────────────────────────────────────────────────────────────────
 

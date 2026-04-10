@@ -373,6 +373,37 @@ export function SettingsView() {
                   </div>
                 </div>
               </div>
+
+                {/* Webhook URL */}
+                <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-2">
+                  <h3 className="text-sm font-medium text-slate-200">Plex Webhooks</h3>
+                  <p className="text-xs text-slate-500">
+                    To receive real-time events (new content, playback, etc.), add this webhook URL
+                    in your Plex server under <strong>Settings &gt; Webhooks</strong>.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${window.location.origin}/api/plex/webhook`}
+                      className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono"
+                      onClick={(e) => (e.target as HTMLInputElement).select()}
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/api/plex/webhook`)
+                      }}
+                      className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs transition"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-500/70">
+                    Requires Plex Pass on the server. If you don't have Plex Pass, webhooks are not available
+                    but all other features work normally.
+                  </p>
+                </div>
+              </div>
             )}
 
             {/* ── AI ── */}

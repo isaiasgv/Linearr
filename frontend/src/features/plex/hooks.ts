@@ -125,6 +125,98 @@ export function usePlexPlaylists() {
   })
 }
 
+export function usePlexEvents(eventType?: string, limit = 50) {
+  return useQuery({
+    queryKey: ['plex', 'events', eventType, limit],
+    queryFn: () => plexApi.events(eventType, limit),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useClearPlexEvents() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: () => plexApi.clearEvents(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['plex', 'events'] })
+      addToast('Events cleared')
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to clear events', true),
+  })
+}
+
+export function useCreateCollection() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: (body: { title: string; section_id: string; type: string }) =>
+      plexApi.createCollection(body),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ['plex', 'collections'] })
+      addToast(`Collection "${data.title}" created`)
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to create collection', true),
+  })
+}
+
+export function useDeleteCollection() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: (ratingKey: string) => plexApi.deleteCollection(ratingKey),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['plex', 'collections'] })
+      addToast('Collection deleted')
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to delete collection', true),
+  })
+}
+
+export function useAddCollectionItems() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: ({ ratingKey, items }: { ratingKey: string; items: string[] }) =>
+      plexApi.addCollectionItems(ratingKey, items),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ['plex', 'collections'] })
+      void qc.invalidateQueries({ queryKey: ['plex', 'collection-items'] })
+      addToast(`${data.added} item${data.added !== 1 ? 's' : ''} added to collection`)
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to add items', true),
+  })
+}
+
+export function useRemoveCollectionItem() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: ({ ratingKey, itemKey }: { ratingKey: string; itemKey: string }) =>
+      plexApi.removeCollectionItem(ratingKey, itemKey),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['plex', 'collections'] })
+      void qc.invalidateQueries({ queryKey: ['plex', 'collection-items'] })
+      addToast('Item removed from collection')
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to remove item', true),
+  })
+}
+
+export function useUpdateCollection() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: ({ ratingKey, body }: { ratingKey: string; body: { title?: string; summary?: string } }) =>
+      plexApi.updateCollection(ratingKey, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['plex', 'collections'] })
+      addToast('Collection updated')
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to update collection', true),
+  })
+}
+
 export function usePlexLibraryFilters(sectionId: string) {
   return useQuery({
     queryKey: ['plex', 'library-filters', sectionId],
