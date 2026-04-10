@@ -946,21 +946,30 @@ async def plex_item(rating_key: str):
     }
 
 @app.get("/api/plex/stream/{rating_key}")
-async def plex_stream_redirect(rating_key: str):
-    """Redirect to Plex transcode/direct-play URL for an item."""
+async def plex_stream_url(rating_key: str):
+    """Return playback URLs for a Plex item (web app + direct server).
+    Works for movies, episodes, and any playable content."""
     url, token = get_plex_config()
     if not token:
         raise HTTPException(400, "Plex token not configured")
-    from fastapi.responses import RedirectResponse
-    # Use Plex universal transcode endpoint — works for all clients
-    stream_url = (
-        f"{url}/video/:/transcode/universal/start"
-        f"?path=/library/metadata/{rating_key}"
-        f"&mediaIndex=0&partIndex=0"
-        f"&protocol=hls&directPlay=1&directStream=1"
-        f"&X-Plex-Token={token}"
-    )
-    return RedirectResponse(url=stream_url, status_code=302)
+    hdrs = plex_headers(token)
+    # Get machine ID for web URL
+    machine_id = ""
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            idr = await client.get(f"{url}/identity", headers=hdrs)
+            if idr.status_code == 200:
+                machine_id = idr.json().get("MediaContainer", {}).get("machineIdentifier", "")
+        except Exception:
+            pass
+
+    # Plex web app URL — works from anywhere (local + remote), opens in browser
+    plex_web_url = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}" if machine_id else None
+
+    return {
+        "plex_web": plex_web_url,
+        "rating_key": rating_key,
+    }
 
 @app.get("/api/plex/show/{rating_key}/seasons")
 async def plex_show_seasons(rating_key: str):
@@ -3826,12 +3835,25 @@ def _normalize_guide_programs(programs: list) -> list[dict]:
     """Normalize Tunarr guide/lineup programs to a consistent format.
 
     Handles multiple Tunarr response formats:
-    - New format: {startTimeMs, lineupItem: {type, id, durationMs, title?, ...}}
+    - New format: {startTimeMs, lineupItem: {type, id, durationMs, title?, ...}, listing: {title, ...}}
     - Old format: {start/startTime, duration, title, ...}
     """
+    # Log first item for debugging
+    if programs:
+        sample = programs[0]
+        log.debug("Guide program sample keys: %s", list(sample.keys()) if isinstance(sample, dict) else type(sample).__name__)
+        lineup_sample = sample.get("lineupItem", {}) if isinstance(sample, dict) else {}
+        if lineup_sample:
+            log.debug("  lineupItem keys: %s", list(lineup_sample.keys()))
+        listing_sample = sample.get("listing", {}) if isinstance(sample, dict) else {}
+        if listing_sample:
+            log.debug("  listing keys: %s", list(listing_sample.keys()))
+
     items = []
     for p in programs:
         lineup = p.get("lineupItem") or {}
+        listing = p.get("listing") or {}
+        program = p.get("program") or {}
 
         # ── Start time ──
         start_val = p.get("startTimeMs") or 0
@@ -3858,10 +3880,15 @@ def _normalize_guide_programs(programs: list) -> list[dict]:
                 except Exception:
                     pass
 
-        # ── Title (check multiple locations) ──
+        # ── Title (check all possible locations) ──
         title = (
-            p.get("title")
+            listing.get("title")
+            or listing.get("showTitle")
+            or program.get("title")
+            or program.get("showTitle")
+            or p.get("title")
             or p.get("programTitle")
+            or p.get("showTitle")
             or lineup.get("title")
             or lineup.get("showTitle")
             or lineup.get("programTitle")
@@ -3869,17 +3896,34 @@ def _normalize_guide_programs(programs: list) -> list[dict]:
         )
 
         # ── Episode info ──
-        episode = p.get("episode") or lineup.get("episode")
-        ep_title = p.get("episodeTitle") or lineup.get("episodeTitle") or lineup.get("title") or ""
-        if not episode and (ep_title or lineup.get("seasonNumber")):
+        episode = p.get("episode") or lineup.get("episode") or listing.get("episode")
+        ep_title = (
+            listing.get("episodeTitle")
+            or program.get("episodeTitle")
+            or p.get("episodeTitle")
+            or lineup.get("episodeTitle")
+            or listing.get("title")  # for episodes, listing.title is often the episode title
+            or ""
+        )
+        season_num = listing.get("seasonNumber") or program.get("seasonNumber") or lineup.get("seasonNumber") or p.get("season")
+        episode_num = listing.get("episodeNumber") or program.get("episodeNumber") or lineup.get("episodeNumber") or p.get("episode_number") or p.get("episodeNumber")
+
+        # For shows: if listing has showTitle, the title is the show, ep_title is the episode
+        show_title = listing.get("showTitle") or program.get("showTitle") or ""
+        if show_title and not title:
+            title = show_title
+        if show_title and ep_title and ep_title != show_title:
+            if not episode:
+                episode = {"title": ep_title, "season": season_num, "episode": episode_num}
+        elif not episode and (ep_title or season_num):
             episode = {
                 "title": ep_title if ep_title != title else "",
-                "season": lineup.get("seasonNumber") or p.get("season"),
-                "episode": lineup.get("episodeNumber") or p.get("episode_number") or p.get("episodeNumber"),
+                "season": season_num,
+                "episode": episode_num,
             }
 
         # ── Type ──
-        item_type = lineup.get("type") or p.get("type") or ""
+        item_type = lineup.get("type") or p.get("type") or listing.get("type") or ""
 
         # If no title, build one from what we have
         if not title:
@@ -3890,7 +3934,7 @@ def _normalize_guide_programs(programs: list) -> list[dict]:
             elif item_type == "offline":
                 title = "Offline"
             else:
-                title = f"Program"
+                title = "Program"
 
         items.append({
             "startTime": start_val,

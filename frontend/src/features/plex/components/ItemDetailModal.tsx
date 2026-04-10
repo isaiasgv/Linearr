@@ -236,22 +236,28 @@ export function ItemDetailModal() {
                 )}
               </div>
 
-              {/* Play button */}
-              {item.playback_url && item.type === 'movie' && (
-                <div className="mt-2">
-                  <a
-                    href={item.playback_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-medium transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                    Play on Plex
-                  </a>
-                </div>
-              )}
+              {/* Play button — opens in Plex web app (works local + remote) */}
+              <div className="mt-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/plex/stream/${encodeURIComponent(item.rating_key)}`)
+                      if (res.ok) {
+                        const data = await res.json()
+                        if (data.plex_web) {
+                          window.open(data.plex_web, '_blank')
+                        }
+                      }
+                    } catch { /* ignore */ }
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-medium transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                  Play on Plex
+                </button>
+              </div>
 
               {selectedChannel && (
                 <div className="mt-3">
