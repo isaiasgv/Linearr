@@ -249,7 +249,6 @@ function CollectionBrowser({
   onClose: () => void
 }) {
   const { data: items = [], isLoading } = usePlexCollectionItems(ratingKey)
-  const openModal = useUIStore((s) => s.openModal)
 
   return (
     <div className="space-y-4">
