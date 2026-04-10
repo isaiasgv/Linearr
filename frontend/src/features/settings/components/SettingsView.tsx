@@ -231,10 +231,8 @@ export function SettingsView() {
                 {plexServerInfo && (
                   <div className="bg-gradient-to-r from-amber-950/30 to-slate-900 border border-amber-800/30 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-lg bg-amber-600 flex items-center justify-center shrink-0">
-                        <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L5 12l7 10 7-10L12 2zm0 3.6L16.2 12 12 18.4 7.8 12 12 5.6z" />
-                        </svg>
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+                        <img src="/plex.svg" alt="Plex" className="w-10 h-10" />
                       </div>
                       <div>
                         <p className="text-sm font-bold text-white">{plexServerInfo.server_name}</p>
@@ -441,10 +439,8 @@ export function SettingsView() {
                 {(versionCheck?.version || tunarrInfo?.ok) && (
                   <div className="bg-gradient-to-r from-emerald-950/30 to-slate-900 border border-emerald-800/30 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center shrink-0">
-                        <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M7 2v4H5v2h14V6h-2V2h-2v4H9V2H7zm3 8v12h4V10h-4z" />
-                        </svg>
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+                        <img src="/tunarr.svg" alt="Tunarr" className="w-10 h-10" />
                       </div>
                       <div>
                         <p className="text-sm font-bold text-white">Tunarr</p>
