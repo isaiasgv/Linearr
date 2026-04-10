@@ -27,7 +27,7 @@ const DEFAULT_FORM: FormState = {
 }
 
 export function BlockFormModal() {
-  const { modals, closeModal, editingBlock, selectedChannel } = useUIStore()
+  const { modals, closeModal, editingBlock, selectedChannel, activeView } = useUIStore()
   const isOpen = modals.blockForm
 
   const createBlock = useCreateBlock()
@@ -80,7 +80,7 @@ export function BlockFormModal() {
 
     const payload: Partial<Block> = {
       ...form,
-      channel_number: editingBlock?.channel_number ?? selectedChannel?.number ?? null,
+      channel_number: activeView === 'generic' ? null : (editingBlock?.channel_number ?? selectedChannel?.number ?? null),
     }
 
     if (editingBlock) {

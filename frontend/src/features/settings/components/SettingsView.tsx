@@ -239,7 +239,8 @@ export function SettingsView() {
                         <p className="text-xs text-amber-300/60">
                           {plexServerInfo.username}
                           {plexServerInfo.plex_pass && (
-                            <span className="ml-2 bg-amber-600/40 text-amber-200 rounded-full px-2 py-0.5 text-xs">
+                            <span className="ml-2 inline-flex items-center gap-1 bg-amber-600/40 text-amber-200 rounded-full px-2 py-0.5 text-xs">
+                              <img src="/plexpass.svg" alt="" className="w-3.5 h-3.5" />
                               Plex Pass
                             </span>
                           )}
@@ -260,6 +261,26 @@ export function SettingsView() {
                         <p className="text-xs font-semibold text-amber-400">{plexServerInfo.library_count}</p>
                       </div>
                     </div>
+                    {plexServerInfo.machine_id && (
+                      <div className="mt-2 bg-slate-800/60 rounded-lg p-2">
+                        <p className="text-[10px] text-slate-500">Machine ID</p>
+                        <p className="text-xs font-mono text-slate-400 truncate">{plexServerInfo.machine_id}</p>
+                      </div>
+                    )}
+                    {plexServerInfo.libraries && plexServerInfo.libraries.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-[10px] text-slate-500 mb-1.5">Library Sections</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {plexServerInfo.libraries.map((lib) => (
+                            <div key={lib.id} className="flex items-center gap-2 bg-slate-800/60 rounded-lg px-2 py-1.5">
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${lib.type === 'movie' ? 'bg-purple-400' : 'bg-blue-400'}`} />
+                              <span className="text-xs text-slate-300 truncate">{lib.title}</span>
+                              <span className="text-[10px] text-slate-500 ml-auto shrink-0">{lib.type === 'movie' ? 'Movies' : 'Shows'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -282,6 +303,10 @@ export function SettingsView() {
                   {plexInfo?.ok && (
                     <div className="border-t border-slate-800 pt-3 space-y-0.5">
                       <InfoRow label="Server" value={plexInfo.server_name} />
+                      <InfoRow label="Version" value={plexInfo.version} />
+                      <InfoRow label="Platform" value={plexInfo.platform} />
+                      <InfoRow label="Username" value={plexInfo.username} />
+                      <InfoRow label="Plex Pass" value={plexInfo.plex_pass} />
                       <InfoRow label="Latency" value={`${plexInfo.latency_ms}ms`} />
                     </div>
                   )}
@@ -467,6 +492,26 @@ export function SettingsView() {
                           <p className="text-xs font-mono text-slate-200">{tunarrInfo.latency_ms}ms</p>
                         </div>
                       )}
+                      {tunarrInfo?.channels != null && (
+                        <div className="bg-slate-800/60 rounded-lg p-2">
+                          <p className="text-[10px] text-slate-500">Channels</p>
+                          <p className="text-xs font-semibold text-emerald-400">{tunarrInfo.channels}</p>
+                        </div>
+                      )}
+                      {versionCheck?.supported_version && (
+                        <div className="bg-slate-800/60 rounded-lg p-2">
+                          <p className="text-[10px] text-slate-500">Supported</p>
+                          <p className="text-xs font-mono text-slate-200">v{versionCheck.supported_version}</p>
+                        </div>
+                      )}
+                      {versionCheck?.is_supported != null && (
+                        <div className="bg-slate-800/60 rounded-lg p-2">
+                          <p className="text-[10px] text-slate-500">Compatibility</p>
+                          <p className={`text-xs font-medium ${versionCheck.is_supported ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {versionCheck.is_supported ? 'Fully supported' : 'Update recommended'}
+                          </p>
+                        </div>
+                      )}
                     </div>
                     {versionCheck?.is_supported === false && (
                       <p className="text-xs text-amber-400 mt-2">
@@ -492,6 +537,14 @@ export function SettingsView() {
                       Test Connection
                     </button>
                   </div>
+                  {tunarrInfo?.ok && (
+                    <div className="border-t border-slate-800 pt-3 space-y-0.5">
+                      <InfoRow label="Server" value={tunarrInfo.url} />
+                      <InfoRow label="Latency" value={`${tunarrInfo.latency_ms}ms`} />
+                      {tunarrInfo.version && <InfoRow label="Version" value={tunarrInfo.version} />}
+                      {tunarrInfo.channels != null && <InfoRow label="Channels" value={tunarrInfo.channels} />}
+                    </div>
+                  )}
                   {testTunarr.isError && (
                     <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded px-3 py-2">
                       {testTunarr.error.message}

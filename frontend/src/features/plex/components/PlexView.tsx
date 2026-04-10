@@ -45,7 +45,8 @@ export function PlexView() {
                 <p className="text-xs text-amber-300/60">
                   {serverInfo.username}
                   {serverInfo.plex_pass && (
-                    <span className="ml-2 bg-amber-600/40 text-amber-200 rounded-full px-2 py-0.5 text-xs">
+                    <span className="ml-2 inline-flex items-center gap-1 bg-amber-600/40 text-amber-200 rounded-full px-2 py-0.5 text-xs">
+                      <img src="/plexpass.svg" alt="" className="w-3.5 h-3.5" />
                       Plex Pass
                     </span>
                   )}
@@ -70,6 +71,16 @@ export function PlexView() {
                 <p className="text-xs font-mono text-slate-400 truncate">{serverInfo.machine_id}</p>
               </div>
             </div>
+            {serverInfo.libraries && serverInfo.libraries.length > 0 && (
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {serverInfo.libraries.map((lib) => (
+                  <div key={lib.id} className="flex items-center gap-2 bg-slate-800/40 rounded-lg px-3 py-2">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${lib.type === 'movie' ? 'bg-purple-400' : 'bg-blue-400'}`} />
+                    <span className="text-xs text-slate-300 truncate">{lib.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : null}
 
