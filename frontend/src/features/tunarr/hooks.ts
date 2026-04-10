@@ -342,6 +342,95 @@ export function useExportChannels() {
   })
 }
 
+// ── XMLTV/M3U ────────────────────────────────────────────────────────────────
+
+export function useTunarrXmltvSettings() {
+  return useQuery({
+    queryKey: ['tunarr', 'xmltv-settings'],
+    queryFn: () => tunarrApi.getXmltvSettings(),
+  })
+}
+
+export function useUpdateXmltvSettings() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: (body: Record<string, unknown>) => tunarrApi.updateXmltvSettings(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['tunarr', 'xmltv-settings'] })
+      addToast('XMLTV settings updated')
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to update XMLTV settings', true),
+  })
+}
+
+export function useRefreshXmltv() {
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: () => tunarrApi.refreshXmltv(),
+    onSuccess: () => addToast('XMLTV refresh triggered'),
+    onError: (e: Error) => addToast(e.message || 'Failed to refresh XMLTV', true),
+  })
+}
+
+// ── Sessions ─────────────────────────────────────────────────────────────────
+
+export function useTunarrSessions() {
+  return useQuery({
+    queryKey: ['tunarr', 'sessions'],
+    queryFn: () => tunarrApi.getSessions(),
+    refetchInterval: 15_000,
+  })
+}
+
+export function useKillTunarrSessions() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: (channelId: string) => tunarrApi.killSessions(channelId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['tunarr', 'sessions'] })
+      addToast('Sessions terminated')
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to kill sessions', true),
+  })
+}
+
+// ── Filler Lists ─────────────────────────────────────────────────────────────
+
+export function useTunarrFillerLists() {
+  return useQuery({
+    queryKey: ['tunarr', 'filler-lists'],
+    queryFn: () => tunarrApi.getFillerLists(),
+  })
+}
+
+export function useCreateFillerList() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: (body: { name: string }) => tunarrApi.createFillerList(body),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ['tunarr', 'filler-lists'] })
+      addToast(`Filler list "${data.name}" created`)
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to create filler list', true),
+  })
+}
+
+export function useDeleteFillerList() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: (id: string) => tunarrApi.deleteFillerList(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['tunarr', 'filler-lists'] })
+      addToast('Filler list deleted')
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to delete filler list', true),
+  })
+}
+
 export function useTunarrTasks() {
   const addToast = useToastStore((s) => s.addToast)
 

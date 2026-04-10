@@ -15,6 +15,12 @@ import {
   useImportPreview,
   useImportChannels,
   useExportChannels,
+  useRefreshXmltv,
+  useTunarrSessions,
+  useKillTunarrSessions,
+  useTunarrFillerLists,
+  useCreateFillerList,
+  useDeleteFillerList,
 } from '@/features/tunarr/hooks'
 import { useChannels } from '@/features/channels/hooks'
 import { use247Suggestions, useAiSuggestChannels } from '@/features/ai/hooks'
@@ -564,6 +570,12 @@ export function TunarrView() {
   const importPreview = useImportPreview()
   const importChannels = useImportChannels()
   const exportChannels = useExportChannels()
+  const refreshXmltv = useRefreshXmltv()
+  const { data: tunarrSessions } = useTunarrSessions()
+  const killSessions = useKillTunarrSessions()
+  const { data: fillerLists = [] } = useTunarrFillerLists()
+  const createFillerList = useCreateFillerList()
+  const deleteFillerList = useDeleteFillerList()
 
   if (showGuide) {
     return (
@@ -804,6 +816,119 @@ export function TunarrView() {
             <div className="space-y-2">
               {smartCollections.map((sc) => (
                 <SmartCollectionRow key={sc.uuid} collection={sc} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* XMLTV / M3U */}
+        <section>
+          <h2 className="text-sm font-semibold text-slate-100 mb-3">XMLTV / M3U</h2>
+          <div className="flex flex-wrap gap-3">
+            <a
+              href="/api/tunarr/xmltv"
+              download="xmltv.xml"
+              className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Download XMLTV
+            </a>
+            <a
+              href="/api/tunarr/m3u"
+              download="channels.m3u"
+              className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Download M3U
+            </a>
+            <button
+              onClick={() => refreshXmltv.mutate()}
+              disabled={refreshXmltv.isPending}
+              className="flex items-center gap-2 px-3 py-2 bg-emerald-800 hover:bg-emerald-700 border border-emerald-700 text-emerald-100 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            >
+              {refreshXmltv.isPending && <Spinner size="sm" />}
+              Refresh Guide
+            </button>
+          </div>
+          <p className="text-xs text-slate-600 mt-2">
+            Use these URLs in Plex or Jellyfin as a DVR tuner source.
+          </p>
+        </section>
+
+        {/* Active Sessions */}
+        {tunarrSessions && Object.keys(tunarrSessions).length > 0 && (
+          <section>
+            <h2 className="text-sm font-semibold text-slate-100 mb-3">Active Sessions</h2>
+            <div className="space-y-2">
+              {Object.entries(tunarrSessions).map(([channelId, sessions]) => (
+                <div key={channelId} className="flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg">
+                  <div>
+                    <p className="text-sm text-slate-200">Channel {channelId}</p>
+                    <p className="text-xs text-slate-500">
+                      {Array.isArray(sessions) ? sessions.length : 1} active stream{Array.isArray(sessions) && sessions.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => killSessions.mutate(channelId)}
+                    disabled={killSessions.isPending}
+                    className="px-2 py-1 text-xs bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-400 rounded transition-colors disabled:opacity-50"
+                  >
+                    Kill
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Filler Lists */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-100">
+              Filler Lists
+              {fillerLists.length > 0 && (
+                <span className="ml-2 text-xs text-slate-500">({fillerLists.length})</span>
+              )}
+            </h2>
+            <button
+              onClick={() => {
+                const name = prompt('Filler list name:')
+                if (name?.trim()) createFillerList.mutate({ name: name.trim() })
+              }}
+              className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              + New Filler List
+            </button>
+          </div>
+          {fillerLists.length === 0 ? (
+            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
+              <p className="text-slate-500 text-sm">No filler lists. Create one to add bumpers and interstitials.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {fillerLists.map((fl) => (
+                <div key={fl.id} className="flex items-center justify-between px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-slate-200">{fl.name}</p>
+                    {fl.count != null && (
+                      <p className="text-xs text-slate-500">{fl.count} item{fl.count !== 1 ? 's' : ''}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => deleteFillerList.mutate(fl.id)}
+                    disabled={deleteFillerList.isPending}
+                    className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                    title="Delete filler list"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                    </svg>
+                  </button>
+                </div>
               ))}
             </div>
           )}

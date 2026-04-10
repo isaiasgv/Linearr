@@ -4307,6 +4307,149 @@ async def tunarr_export_channels(body: TunarrExportRequest):
 
     return results
 
+# ── Tunarr XMLTV/M3U ──────────────────────────────────────────────────────────
+
+@app.get("/api/tunarr/xmltv")
+async def tunarr_xmltv():
+    """Proxy the Tunarr XMLTV file download."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{url}/api/xmltv.xml")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "Tunarr XMLTV error")
+    return StreamingResponse(
+        iter([r.content]),
+        media_type="application/xml",
+        headers={"Content-Disposition": "attachment; filename=xmltv.xml"},
+    )
+
+@app.get("/api/tunarr/m3u")
+async def tunarr_m3u():
+    """Proxy the Tunarr M3U playlist download."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{url}/api/channels.m3u")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "Tunarr M3U error")
+    return StreamingResponse(
+        iter([r.content]),
+        media_type="audio/x-mpegurl",
+        headers={"Content-Disposition": "attachment; filename=channels.m3u"},
+    )
+
+@app.post("/api/tunarr/xmltv/refresh")
+async def tunarr_xmltv_refresh():
+    """Force XMLTV guide refresh in Tunarr."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(f"{url}/api/xmltv/refresh")
+    return {"ok": r.status_code in (200, 204)}
+
+@app.get("/api/tunarr/xmltv-settings")
+async def tunarr_get_xmltv_settings():
+    """Get Tunarr XMLTV settings."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/xmltv-settings")
+    if r.status_code != 200:
+        return {}
+    return r.json()
+
+@app.put("/api/tunarr/xmltv-settings")
+async def tunarr_update_xmltv_settings(request: Request):
+    """Update Tunarr XMLTV settings."""
+    body = await request.json()
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.put(f"{url}/api/xmltv-settings", json=body)
+    if r.status_code not in (200, 204):
+        raise HTTPException(r.status_code, "Failed to update XMLTV settings")
+    return {"ok": True}
+
+# ── Tunarr Sessions ───────────────────────────────────────────────────────────
+
+@app.get("/api/tunarr/sessions")
+async def tunarr_sessions():
+    """Get active streaming sessions from Tunarr."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/sessions")
+    if r.status_code != 200:
+        return {}
+    return r.json()
+
+@app.delete("/api/tunarr/sessions/{channel_id}")
+async def tunarr_kill_sessions(channel_id: str):
+    """Kill all sessions for a Tunarr channel."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.delete(f"{url}/api/channels/{channel_id}/sessions")
+    return {"ok": r.status_code in (200, 204)}
+
+# ── Tunarr Filler Lists ──────────────────────────────────────────────────────
+
+@app.get("/api/tunarr/filler-lists")
+async def tunarr_filler_lists():
+    """List all filler lists from Tunarr."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/filler-lists")
+    if r.status_code != 200:
+        return []
+    return r.json() if isinstance(r.json(), list) else []
+
+@app.get("/api/tunarr/filler-lists/{filler_id}")
+async def tunarr_filler_list_detail(filler_id: str):
+    """Get a filler list with its programs."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/filler-lists/{filler_id}")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "Filler list not found")
+    return r.json()
+
+@app.post("/api/tunarr/filler-lists")
+async def tunarr_create_filler_list(request: Request):
+    """Create a new filler list in Tunarr."""
+    body = await request.json()
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(f"{url}/api/filler-lists", json=body)
+    if r.status_code not in (200, 201):
+        raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+    return r.json()
+
+@app.put("/api/tunarr/filler-lists/{filler_id}")
+async def tunarr_update_filler_list(filler_id: str, request: Request):
+    """Update a filler list in Tunarr."""
+    body = await request.json()
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.put(f"{url}/api/filler-lists/{filler_id}", json=body)
+    if r.status_code not in (200, 204):
+        raise HTTPException(r.status_code, "Failed to update filler list")
+    return r.json() if r.status_code == 200 else {"ok": True}
+
+@app.delete("/api/tunarr/filler-lists/{filler_id}")
+async def tunarr_delete_filler_list(filler_id: str):
+    """Delete a filler list from Tunarr."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.delete(f"{url}/api/filler-lists/{filler_id}")
+    if r.status_code not in (200, 204):
+        raise HTTPException(r.status_code, "Failed to delete filler list")
+    return {"ok": True}
+
+@app.get("/api/tunarr/filler-lists/{filler_id}/programs")
+async def tunarr_filler_list_programs(filler_id: str):
+    """Get programs in a filler list."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/filler-lists/{filler_id}/programs")
+    if r.status_code != 200:
+        return []
+    return r.json() if isinstance(r.json(), list) else []
+
 @app.get("/api/tunarr/smart-collections")
 async def tunarr_list_smart_collections():
     url = get_tunarr_url()
