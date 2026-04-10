@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo } from 'react'
+import Swal from 'sweetalert2'
 import { useChannels } from '@/features/channels/hooks'
 import { useAssignments } from '@/features/assignments/hooks'
 import { useUIStore } from '@/shared/store/ui.store'
@@ -112,7 +113,7 @@ interface ChannelCardExpandedProps {
   onClick: () => void
 }
 
-function ChannelCardExpanded({
+const ChannelCardExpanded = memo(function ChannelCardExpanded({
   channel,
   assignments: items,
   posterSize,
@@ -121,18 +122,20 @@ function ChannelCardExpanded({
 }: ChannelCardExpandedProps) {
   const shows = items.filter((a) => a.plex_type === 'show')
   const movies = items.filter((a) => a.plex_type === 'movie')
-  const maxThumbs = posterSize === 'large' ? 6 : posterSize === 'medium' ? 8 : 12
   const filteredItems = thumbFilter === 'shows' ? shows : thumbFilter === 'movies' ? movies : items
-  const thumbItems = filteredItems.filter((a) => a.plex_thumb).slice(0, maxThumbs)
+  const thumbItems = filteredItems.filter((a) => a.plex_thumb)
 
   return (
-    <button
+    <div
       onClick={onClick}
-      className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl text-left transition-all hover:bg-slate-800 overflow-hidden"
+      role="button"
+      tabIndex={0}
+      className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl text-left transition-all hover:bg-slate-800 overflow-hidden cursor-pointer"
+      style={{ contentVisibility: 'auto', containIntrinsicHeight: '80px' }}
     >
       <div className="flex items-stretch">
         {/* Channel info */}
-        <div className="p-3 flex items-center gap-3 shrink-0 w-56">
+        <div className="p-3 flex items-center gap-3 shrink-0 w-48">
           <span
             className={`text-sm font-mono font-bold rounded-lg w-11 h-10 flex items-center justify-center shrink-0 ${tierColor(channel.tier)}`}
           >
@@ -156,18 +159,23 @@ function ChannelCardExpanded({
             </div>
           </div>
         </div>
-        {/* Poster strip */}
-        <div className="flex-1 flex gap-1 overflow-hidden items-center px-2">
+        {/* Poster strip — scrollable, shows ALL items */}
+        <div
+          className="flex-1 flex gap-1 items-center px-2 overflow-x-auto py-2"
+          style={{ scrollbarWidth: 'thin' }}
+          onClick={(e) => e.stopPropagation()}
+        >
           {thumbItems.map((a, i) => (
             <div
-              key={i}
+              key={a.plex_rating_key || i}
               className={`${POSTER_SIZES[posterSize]} shrink-0 rounded overflow-hidden bg-slate-800 relative`}
+              title={a.plex_title}
             >
               <img
                 src={`/api/plex/thumb?path=${encodeURIComponent(a.plex_thumb!)}`}
                 alt={a.plex_title}
-                title={a.plex_title}
                 loading="lazy"
+                decoding="async"
                 className="absolute inset-0 w-full h-full object-cover"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none'
@@ -175,30 +183,14 @@ function ChannelCardExpanded({
               />
             </div>
           ))}
-          {filteredItems.length > maxThumbs && (
-            <span className="text-xs text-slate-600 shrink-0 pl-1">
-              +{filteredItems.length - maxThumbs}
-            </span>
-          )}
-        </div>
-        {/* Show titles */}
-        <div className="w-64 shrink-0 p-3 border-l border-slate-800 flex items-center">
-          {shows.length > 0 ? (
-            <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
-              {shows
-                .map((a) => a.plex_title)
-                .slice(0, 10)
-                .join(', ')}
-              {shows.length > 10 ? '...' : ''}
-            </p>
-          ) : (
-            <p className="text-xs text-slate-700 italic">No shows assigned</p>
+          {thumbItems.length === 0 && (
+            <span className="text-xs text-slate-700 italic">No posters</span>
           )}
         </div>
       </div>
-    </button>
+    </div>
   )
-}
+})
 
 export function CablePlexView() {
   const { data: channels = [], isLoading: loadingChannels } = useChannels()
@@ -397,9 +389,18 @@ export function CablePlexView() {
                 if (!file) return
                 const text = await file.text()
                 const data = JSON.parse(text)
-                const mode = confirm('Replace entire lineup? (OK = Replace, Cancel = Merge)')
-                  ? 'replace'
-                  : 'merge'
+                const { isConfirmed } = await Swal.fire({
+                  title: 'Import Mode',
+                  text: 'Replace entire lineup or merge with existing?',
+                  icon: 'question',
+                  showCancelButton: true,
+                  confirmButtonText: 'Replace',
+                  cancelButtonText: 'Merge',
+                  background: '#1e293b',
+                  color: '#e2e8f0',
+                  confirmButtonColor: '#4f46e5',
+                })
+                const mode = isConfirmed ? 'replace' : 'merge'
                 const res = await fetch('/api/import/lineup', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -407,12 +408,22 @@ export function CablePlexView() {
                 })
                 if (res.ok) {
                   const result = await res.json()
-                  alert(
-                    `Import done (${mode}): ${result.stats.channels_added} channels, ${result.stats.assignments_added} assignments, ${result.stats.blocks_added} blocks`,
-                  )
+                  await Swal.fire({
+                    icon: 'success',
+                    title: 'Import Complete',
+                    html: `<b>${mode}</b>: ${result.stats.channels_added} channels, ${result.stats.assignments_added} assignments, ${result.stats.blocks_added} blocks`,
+                    background: '#1e293b',
+                    color: '#e2e8f0',
+                    confirmButtonColor: '#4f46e5',
+                  })
                   window.location.reload()
                 } else {
-                  alert('Import failed')
+                  await Swal.fire({
+                    icon: 'error',
+                    title: 'Import Failed',
+                    background: '#1e293b',
+                    color: '#e2e8f0',
+                  })
                 }
                 e.target.value = ''
               }}

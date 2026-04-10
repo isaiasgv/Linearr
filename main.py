@@ -343,7 +343,7 @@ def login(body: LoginIn, request: Request):
         raise HTTPException(429, "Too many login attempts. Try again later.")
     _login_attempts[ip].append(now)
 
-    if body.username != APP_USERNAME or body.password != APP_PASSWORD:
+    if body.username.lower() != APP_USERNAME.lower() or body.password != APP_PASSWORD:
         log.info("Failed login from %s", ip)
         _log_app("auth", f"Failed login attempt from {ip}", "warn")
         raise HTTPException(401, "Invalid credentials")
@@ -3282,26 +3282,48 @@ async def tunarr_get_schedule(tunarr_id: str, hours: int = Query(6)):
     now = datetime.now(timezone.utc)
     date_from = now.isoformat()
     date_to = (now + timedelta(hours=hours)).isoformat()
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         # Try the guide API first (returns materialized lineup)
-        r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
-                             params={"dateFrom": date_from, "dateTo": date_to})
-        if r.status_code == 200:
-            data = r.json()
-            programs = data.get("programs", []) if isinstance(data, dict) else []
-            if not programs and isinstance(data, list):
-                programs = data
-            return _normalize_guide_programs(programs)
+        try:
+            r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
+                                 params={"dateFrom": date_from, "dateTo": date_to})
+            if r.status_code == 200:
+                data = r.json()
+                programs = data.get("programs", []) if isinstance(data, dict) else []
+                if not programs and isinstance(data, list):
+                    programs = data
+                if programs:
+                    return _normalize_guide_programs(programs)
+        except Exception as e:
+            log.warning("Tunarr guide API failed for %s: %s", tunarr_id, e)
         # Fallback: try the lineup API
-        r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
-                             params={"from": date_from, "to": date_to})
-        if r.status_code == 200:
-            items = r.json() if isinstance(r.json(), list) else r.json().get("items", [])
-            return _normalize_guide_programs(items)
-        # Last fallback: schedule config (may not have timestamps)
-        r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
-        if r.status_code == 200:
-            return _extract_schedule_items(r.json())
+        try:
+            r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
+                                 params={"from": date_from, "to": date_to})
+            if r.status_code == 200:
+                raw = r.json()
+                items = raw if isinstance(raw, list) else raw.get("items", raw.get("programs", []))
+                if items:
+                    return _normalize_guide_programs(items)
+        except Exception as e:
+            log.warning("Tunarr lineup API failed for %s: %s", tunarr_id, e)
+        # Fallback: try programming endpoint
+        try:
+            r = await client.get(f"{url}/api/channels/{tunarr_id}/programming")
+            if r.status_code == 200:
+                raw = r.json()
+                items = _extract_schedule_items(raw)
+                if items:
+                    return _normalize_guide_programs(items)
+        except Exception as e:
+            log.warning("Tunarr programming API failed for %s: %s", tunarr_id, e)
+        # Last fallback: schedule config
+        try:
+            r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
+            if r.status_code == 200:
+                return _extract_schedule_items(r.json())
+        except Exception as e:
+            log.warning("Tunarr schedule API failed for %s: %s", tunarr_id, e)
     return []
 
 def _normalize_guide_programs(programs: list) -> list[dict]:
@@ -3411,6 +3433,8 @@ async def tunarr_guide(hours: int = Query(24)):
         # Fallback: fetch per-channel lineup
         for link in links:
             tunarr_id = link["tunarr_id"]
+            items = []
+            # Try guide API per channel
             try:
                 r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
                                      params={"dateFrom": date_from, "dateTo": date_to})
@@ -3418,10 +3442,19 @@ async def tunarr_guide(hours: int = Query(24)):
                     data = r.json()
                     programs = data.get("programs", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
                     items = _normalize_guide_programs(programs)
-                else:
-                    items = []
-            except Exception:
-                items = []
+            except Exception as e:
+                log.warning("Tunarr guide fallback failed for %s: %s", tunarr_id, e)
+            # Try lineup API if guide returned nothing
+            if not items:
+                try:
+                    r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
+                                         params={"from": date_from, "to": date_to})
+                    if r.status_code == 200:
+                        raw = r.json()
+                        raw_items = raw if isinstance(raw, list) else raw.get("items", raw.get("programs", []))
+                        items = _normalize_guide_programs(raw_items)
+                except Exception as e:
+                    log.warning("Tunarr lineup fallback failed for %s: %s", tunarr_id, e)
             guide_channels.append({
                 "channel_number": link["channel_number"],
                 "tunarr_id": tunarr_id,
