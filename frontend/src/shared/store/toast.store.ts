@@ -11,7 +11,7 @@ export const useToastStore = create<ToastState>((set) => ({
   toasts: [],
 
   addToast: (message, isError = false) => {
-    const id = crypto.randomUUID()
+    const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)
     set((s) => ({ toasts: [...s.toasts, { id, message, isError }] }))
     setTimeout(() => {
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
