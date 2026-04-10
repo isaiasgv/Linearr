@@ -372,7 +372,6 @@ export function SettingsView() {
                     )}
                   </div>
                 </div>
-              </div>
 
                 {/* Webhook URL */}
                 <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-2">
@@ -399,7 +398,7 @@ export function SettingsView() {
                     </button>
                   </div>
                   <p className="text-xs text-amber-500/70">
-                    Requires Plex Pass on the server. If you don't have Plex Pass, webhooks are not available
+                    Requires Plex Pass on the server. If you don&apos;t have Plex Pass, webhooks are not available
                     but all other features work normally.
                   </p>
                 </div>
