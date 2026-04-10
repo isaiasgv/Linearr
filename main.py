@@ -780,19 +780,48 @@ async def plex_libraries():
             if d["type"] in ("movie", "show")]
 
 @app.get("/api/plex/library/{section_id}")
-async def plex_library(section_id: str, type_filter: str = Query("all")):
+async def plex_library(section_id: str, type_filter: str = Query("all"),
+                        genre: str | None = Query(None), year: int | None = Query(None),
+                        content_rating: str | None = Query(None)):
     url, token = get_plex_config()
     if not token:
         raise HTTPException(400, "Plex token not configured — open Settings")
+    params = {}
+    if genre:
+        params["genre"] = genre
+    if year:
+        params["year"] = str(year)
+    if content_rating:
+        params["contentRating"] = content_rating
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
             f"{url}/library/sections/{section_id}/all",
             headers=plex_headers(token),
+            params=params,
         )
     if resp.status_code != 200:
         raise HTTPException(resp.status_code, "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", [])
     return _format_items(items, type_filter)
+
+@app.get("/api/plex/library/{section_id}/filters")
+async def plex_library_filters(section_id: str):
+    """Return available filter values (genres, years, content ratings) for a library."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    result = {"genres": [], "years": [], "content_ratings": []}
+    async with httpx.AsyncClient(timeout=15) as client:
+        for facet, key in [("genre", "genres"), ("year", "years"), ("contentRating", "content_ratings")]:
+            try:
+                r = await client.get(f"{url}/library/sections/{section_id}/{facet}", headers=hdrs)
+                if r.status_code == 200:
+                    dirs = r.json().get("MediaContainer", {}).get("Directory", [])
+                    result[key] = [d.get("title") or d.get("key") for d in dirs if d.get("title") or d.get("key")]
+            except Exception:
+                pass
+    return result
 
 @app.get("/api/plex/search")
 async def plex_search(q: str = Query(..., min_length=1), type_filter: str = Query("all")):
@@ -835,6 +864,9 @@ def _format_items(items: list, type_filter: str) -> list:
             "year": m.get("year"),
             "thumb": m.get("thumb"),
             "summary": (m.get("summary") or "")[:200],
+            "genres": [g.get("tag") for g in m.get("Genre", []) if g.get("tag")],
+            "content_rating": m.get("contentRating"),
+            "user_rating": m.get("userRating"),
         })
     return out
 
@@ -853,6 +885,28 @@ async def plex_item(rating_key: str):
         raise HTTPException(404, "Item not found")
     m = meta[0]
     dur = m.get("duration")
+    # Extract media quality info
+    media = (m.get("Media") or [{}])[0] if m.get("Media") else {}
+    media_info = None
+    subtitles = []
+    if media:
+        media_info = {
+            "resolution": media.get("videoResolution"),
+            "video_codec": media.get("videoCodec"),
+            "audio_codec": media.get("audioCodec"),
+            "audio_channels": media.get("audioChannels"),
+            "bitrate": media.get("bitrate"),
+            "container": media.get("container"),
+        }
+        # Extract subtitle languages from streams
+        parts = media.get("Part", [])
+        if parts:
+            for stream in parts[0].get("Stream", []):
+                if stream.get("streamType") == 3:  # subtitle stream
+                    lang = stream.get("language") or stream.get("languageCode") or stream.get("displayTitle")
+                    if lang and lang not in subtitles:
+                        subtitles.append(lang)
+
     return {
         "rating_key": m.get("ratingKey"),
         "title": m.get("title"),
@@ -866,6 +920,13 @@ async def plex_item(rating_key: str):
         "content_rating": m.get("contentRating"),
         "child_count": m.get("childCount"),
         "leaf_count": m.get("leafCount"),
+        "genres": [g.get("tag") for g in m.get("Genre", []) if g.get("tag")],
+        "user_rating": m.get("userRating"),
+        "audience_rating": m.get("audienceRating"),
+        "rating": m.get("rating"),
+        "originally_available_at": m.get("originallyAvailableAt"),
+        "media_info": media_info,
+        "subtitles": subtitles,
     }
 
 @app.get("/api/plex/show/{rating_key}/seasons")
@@ -1668,6 +1729,99 @@ async def plex_scan_library(section_id: str):
     if resp.status_code not in (200, 202):
         raise HTTPException(resp.status_code, "Failed to trigger library scan")
     return {"ok": True, "message": f"Library scan triggered for section {section_id}"}
+
+class PlexRateIn(BaseModel):
+    rating: float  # 0-10 (0 clears)
+
+@app.put("/api/plex/item/{rating_key}/rate")
+async def plex_rate_item(rating_key: str, body: PlexRateIn):
+    """Set user rating for a Plex item (0 clears, 1-10 sets)."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    params = {
+        "key": rating_key,
+        "identifier": "com.plexapp.plugins.library",
+        "rating": str(body.rating),
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.put(f"{url}/:/rate", headers=hdrs, params=params)
+    if resp.status_code not in (200, 204):
+        raise HTTPException(resp.status_code, "Failed to set rating")
+    return {"ok": True}
+
+@app.get("/api/plex/hubs")
+async def plex_hubs():
+    """Return Plex discovery hubs (Continue Watching, Recommended, etc.)."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(f"{url}/hubs", headers=hdrs)
+    if resp.status_code != 200:
+        return {"hubs": []}
+    hubs_raw = resp.json().get("MediaContainer", {}).get("Hub", [])
+    hubs = []
+    for h in hubs_raw:
+        items = []
+        for m in h.get("Metadata", []) or []:
+            t = m.get("type", "")
+            if t not in ("movie", "show", "episode"):
+                continue
+            items.append({
+                "rating_key": m.get("ratingKey"),
+                "title": m.get("grandparentTitle") or m.get("title"),
+                "subtitle": m.get("title") if m.get("grandparentTitle") else None,
+                "type": "show" if t == "episode" else t,
+                "year": m.get("year"),
+                "thumb": m.get("grandparentThumb") or m.get("thumb"),
+            })
+        if items:
+            hubs.append({
+                "title": h.get("title", ""),
+                "type": h.get("type", ""),
+                "hub_key": h.get("hubKey", ""),
+                "items": items,
+            })
+    return {"hubs": hubs}
+
+@app.get("/api/plex/hubs/library/{section_id}")
+async def plex_library_hubs(section_id: str):
+    """Return library-specific Plex hubs."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(f"{url}/hubs/sections/{section_id}", headers=hdrs)
+    if resp.status_code != 200:
+        return {"hubs": []}
+    hubs_raw = resp.json().get("MediaContainer", {}).get("Hub", [])
+    hubs = []
+    for h in hubs_raw:
+        items = []
+        for m in h.get("Metadata", []) or []:
+            t = m.get("type", "")
+            if t not in ("movie", "show", "episode"):
+                continue
+            items.append({
+                "rating_key": m.get("ratingKey"),
+                "title": m.get("grandparentTitle") or m.get("title"),
+                "subtitle": m.get("title") if m.get("grandparentTitle") else None,
+                "type": "show" if t == "episode" else t,
+                "year": m.get("year"),
+                "thumb": m.get("grandparentThumb") or m.get("thumb"),
+            })
+        if items:
+            hubs.append({
+                "title": h.get("title", ""),
+                "type": h.get("type", ""),
+                "hub_key": h.get("hubKey", ""),
+                "items": items,
+            })
+    return {"hubs": hubs}
 
 # ── Blocks ────────────────────────────────────────────────────────────────────
 

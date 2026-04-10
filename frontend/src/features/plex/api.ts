@@ -1,13 +1,34 @@
-import { get, post } from '@/shared/api/client'
+import { get, post, put } from '@/shared/api/client'
 import type { PlexCollection, PlexEpisode, PlexItem, PlexLibrary, PlexSeason } from '@/shared/types'
 
 function libraries(): Promise<PlexLibrary[]> {
   return get<PlexLibrary[]>('/api/plex/libraries')
 }
 
-function libraryItems(sectionId: string, type?: string): Promise<PlexItem[]> {
-  const params = type ? `?type_filter=${encodeURIComponent(type)}` : ''
-  return get<PlexItem[]>(`/api/plex/library/${encodeURIComponent(sectionId)}${params}`)
+interface LibraryFilters {
+  genre?: string
+  year?: number
+  content_rating?: string
+}
+
+function libraryItems(sectionId: string, type?: string, filters?: LibraryFilters): Promise<PlexItem[]> {
+  const params = new URLSearchParams()
+  if (type) params.set('type_filter', type)
+  if (filters?.genre) params.set('genre', filters.genre)
+  if (filters?.year) params.set('year', String(filters.year))
+  if (filters?.content_rating) params.set('content_rating', filters.content_rating)
+  const qs = params.toString()
+  return get<PlexItem[]>(`/api/plex/library/${encodeURIComponent(sectionId)}${qs ? `?${qs}` : ''}`)
+}
+
+interface LibraryFilterOptions {
+  genres: string[]
+  years: string[]
+  content_ratings: string[]
+}
+
+function libraryFilters(sectionId: string): Promise<LibraryFilterOptions> {
+  return get<LibraryFilterOptions>(`/api/plex/library/${encodeURIComponent(sectionId)}/filters`)
 }
 
 function search(q: string, type?: string): Promise<PlexItem[]> {
@@ -160,6 +181,32 @@ function scanLibrary(sectionId: string): Promise<{ ok: boolean }> {
   return post<{ ok: boolean }>(`/api/plex/scan-library/${encodeURIComponent(sectionId)}`)
 }
 
+function rateItem(ratingKey: string, rating: number): Promise<{ ok: boolean }> {
+  return put<{ ok: boolean }>(`/api/plex/item/${encodeURIComponent(ratingKey)}/rate`, { rating })
+}
+
+interface PlexHub {
+  title: string
+  type: string
+  hub_key: string
+  items: Array<{
+    rating_key: string
+    title: string
+    subtitle?: string | null
+    type: string
+    year?: number | null
+    thumb: string | null
+  }>
+}
+
+function hubs(): Promise<{ hubs: PlexHub[] }> {
+  return get<{ hubs: PlexHub[] }>('/api/plex/hubs')
+}
+
+function libraryHubs(sectionId: string): Promise<{ hubs: PlexHub[] }> {
+  return get<{ hubs: PlexHub[] }>(`/api/plex/hubs/library/${encodeURIComponent(sectionId)}`)
+}
+
 export const plexApi = {
   libraries,
   libraryItems,
@@ -180,6 +227,10 @@ export const plexApi = {
   history,
   playlists,
   scanLibrary,
+  libraryFilters,
+  rateItem,
+  hubs,
+  libraryHubs,
 }
 
 export type {
@@ -191,4 +242,6 @@ export type {
   PlexSession,
   PlexHistoryItem,
   PlexPlaylist,
+  PlexHub,
+  LibraryFilterOptions,
 }

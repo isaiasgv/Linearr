@@ -121,6 +121,43 @@ export function usePlexPlaylists() {
   })
 }
 
+export function usePlexLibraryFilters(sectionId: string) {
+  return useQuery({
+    queryKey: ['plex', 'library-filters', sectionId],
+    queryFn: () => plexApi.libraryFilters(sectionId),
+    enabled: Boolean(sectionId),
+  })
+}
+
+export function useRateItem() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: ({ ratingKey, rating }: { ratingKey: string; rating: number }) =>
+      plexApi.rateItem(ratingKey, rating),
+    onSuccess: (_data, { ratingKey }) => {
+      void qc.invalidateQueries({ queryKey: ['plex', 'item', ratingKey] })
+      addToast('Rating saved')
+    },
+    onError: (e: Error) => addToast(e.message || 'Failed to save rating', true),
+  })
+}
+
+export function usePlexHubs() {
+  return useQuery({
+    queryKey: ['plex', 'hubs'],
+    queryFn: () => plexApi.hubs(),
+  })
+}
+
+export function usePlexLibraryHubs(sectionId: string) {
+  return useQuery({
+    queryKey: ['plex', 'library-hubs', sectionId],
+    queryFn: () => plexApi.libraryHubs(sectionId),
+    enabled: Boolean(sectionId),
+  })
+}
+
 export function useScanLibrary() {
   const qc = useQueryClient()
   const addToast = useToastStore((s) => s.addToast)

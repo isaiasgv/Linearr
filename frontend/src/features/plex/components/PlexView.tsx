@@ -10,6 +10,7 @@ import {
   usePlexHistory,
   usePlexPlaylists,
   useScanLibrary,
+  usePlexHubs,
 } from '@/features/plex/hooks'
 import { useUIStore } from '@/shared/store/ui.store'
 import { Spinner } from '@/shared/components/ui/Spinner'
@@ -242,6 +243,7 @@ export function PlexView() {
   const { data: historyItems = [] } = usePlexHistory(30)
   const { data: playlists = [] } = usePlexPlaylists()
   const scanLibrary = useScanLibrary()
+  const { data: hubsData } = usePlexHubs()
 
   const [browsingLibrary, setBrowsingLibrary] = useState<{
     id: string
@@ -430,6 +432,28 @@ export function PlexView() {
               loading={loadingPopular}
               emptyText="No watch history yet"
             />
+
+            {/* Plex Hubs (Discovery) */}
+            {hubsData?.hubs && hubsData.hubs.length > 0 && (
+              <>
+                {hubsData.hubs.map((hub) => (
+                  <PosterRow
+                    key={hub.hub_key || hub.title}
+                    title={hub.title}
+                    items={hub.items.map((i) => ({
+                      rating_key: i.rating_key,
+                      title: i.title,
+                      thumb: i.thumb,
+                      year: i.year,
+                      type: i.type,
+                      subtitle: i.subtitle,
+                    }))}
+                    loading={false}
+                    emptyText=""
+                  />
+                ))}
+              </>
+            )}
 
             {/* Now Playing */}
             {sessions.length > 0 && (
