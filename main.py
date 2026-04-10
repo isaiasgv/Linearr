@@ -942,8 +942,21 @@ async def plex_item(rating_key: str):
         "originally_available_at": m.get("originallyAvailableAt"),
         "media_info": media_info,
         "subtitles": subtitles,
-        "playback_url": f"/api/plex/stream/{rating_key}" if media else None,
     }
+
+    # Add Plex web app URL inline (avoids needing a second API call)
+    try:
+        machine_id = ""
+        async with httpx.AsyncClient(timeout=5) as mc:
+            idr = await mc.get(f"{url}/identity", headers=hdrs)
+            if idr.status_code == 200:
+                machine_id = idr.json().get("MediaContainer", {}).get("machineIdentifier", "")
+        if machine_id:
+            result["plex_web_url"] = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}"
+    except Exception:
+        pass
+
+    return result
 
 @app.get("/api/plex/stream/{rating_key}")
 async def plex_stream_url(rating_key: str):
