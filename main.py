@@ -1557,14 +1557,19 @@ async def generate_collections(channel_number: int):
 
 
 @app.get("/api/plex/thumb")
-async def plex_thumb(path: str = Query(...)):
+async def plex_thumb(path: str = Query(...), w: int = Query(200), h: int = Query(300)):
     url, token = get_plex_config()
-    full_url = f"{url}{path}?X-Plex-Token={token}&width=200&height=300"
+    full_url = f"{url}{path}?X-Plex-Token={token}&width={w}&height={h}"
     async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
         resp = await client.get(full_url)
+    headers = {
+        "Cache-Control": "public, max-age=86400, immutable",
+        "Vary": "Accept",
+    }
     return StreamingResponse(
         resp.aiter_bytes(),
         media_type=resp.headers.get("content-type", "image/jpeg"),
+        headers=headers,
     )
 
 # ── Blocks ────────────────────────────────────────────────────────────────────

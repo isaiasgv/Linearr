@@ -1,11 +1,232 @@
+import { useState, memo } from 'react'
 import {
   usePlexServerInfo,
   usePlexLibraryStats,
   usePlexRecentlyAdded,
   usePlexOnDeck,
   usePlexPopular,
+  usePlexLibraryItems,
 } from '@/features/plex/hooks'
+import { useUIStore } from '@/shared/store/ui.store'
 import { Spinner } from '@/shared/components/ui/Spinner'
+import { PlexThumb } from '@/features/plex/components/PlexThumb'
+
+/** Clickable poster card used throughout the view */
+const PosterCard = memo(function PosterCard({
+  ratingKey,
+  thumb,
+  title,
+  year,
+  type,
+  subtitle,
+}: {
+  ratingKey: string
+  thumb: string | null
+  title: string
+  year?: number | null
+  type?: string
+  subtitle?: string | null
+}) {
+  const openModal = useUIStore((s) => s.openModal)
+  return (
+    <button
+      onClick={() => openModal('itemDetail', { itemDetailRatingKey: ratingKey })}
+      className="shrink-0 w-28 text-left group"
+    >
+      <div
+        className="relative rounded-lg overflow-hidden bg-slate-800 mb-1.5 group-hover:ring-2 ring-indigo-500 transition-all"
+        style={{ aspectRatio: '2/3' }}
+      >
+        {thumb ? (
+          <PlexThumb
+            path={thumb}
+            alt={title}
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-slate-600">
+            <svg
+              className="w-8 h-8"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth={1}
+            >
+              <rect x="2" y="7" width="20" height="15" rx="2" />
+              <circle cx="12" cy="14" r="3" />
+            </svg>
+          </div>
+        )}
+        {type && (
+          <span
+            className={`absolute top-1 right-1 text-xs rounded px-1 py-0.5 font-medium shadow ${
+              type === 'movie' ? 'bg-purple-600/80 text-white' : 'bg-blue-600/80 text-white'
+            }`}
+          >
+            {type === 'movie' ? 'Movie' : 'TV'}
+          </span>
+        )}
+      </div>
+      <p className="text-xs font-medium text-slate-200 truncate group-hover:text-indigo-300 transition-colors">
+        {title}
+      </p>
+      {subtitle ? (
+        <p className="text-xs text-slate-500 truncate">{subtitle}</p>
+      ) : year ? (
+        <p className="text-xs text-slate-500">{year}</p>
+      ) : null}
+    </button>
+  )
+})
+
+/** Horizontal scrollable row of poster cards */
+function PosterRow({
+  title,
+  items,
+  loading,
+  emptyText,
+}: {
+  title: string
+  items: Array<{
+    rating_key: string
+    title: string
+    thumb: string | null
+    year?: number | null
+    type?: string
+    subtitle?: string | null
+  }>
+  loading: boolean
+  emptyText: string
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-slate-300 mb-3">{title}</h3>
+      {loading ? (
+        <div className="flex justify-center py-4">
+          <Spinner size="sm" />
+        </div>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-slate-500">{emptyText}</p>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
+          {items.map((item) => (
+            <PosterCard
+              key={item.rating_key}
+              ratingKey={item.rating_key}
+              thumb={item.thumb}
+              title={item.title}
+              year={item.year}
+              type={item.type}
+              subtitle={item.subtitle}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Library browse panel — shown when user clicks a library */
+function LibraryBrowser({
+  sectionId,
+  libraryTitle,
+  onClose,
+}: {
+  sectionId: string
+  libraryTitle: string
+  onClose: () => void
+}) {
+  const { data: items = [], isLoading } = usePlexLibraryItems(sectionId, true)
+  const [filter, setFilter] = useState<'all' | 'movie' | 'show'>('all')
+  const [search, setSearch] = useState('')
+
+  const filtered = items.filter((item) => {
+    if (filter !== 'all' && item.type !== filter) return false
+    if (search && !item.title.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+            Back
+          </button>
+          <h3 className="text-sm font-semibold text-slate-200">{libraryTitle}</h3>
+          <span className="text-xs text-slate-500">
+            {filtered.length} item{filtered.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
+            {(['all', 'movie', 'show'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  filter === f ? 'bg-slate-600 text-white' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {f === 'all' ? 'All' : f === 'movie' ? 'Movies' : 'Shows'}
+              </button>
+            ))}
+          </div>
+          <div className="relative">
+            <svg
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter..."
+              className="w-40 bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2 py-1 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12">
+          <Spinner />
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+          {filtered.map((item) => (
+            <PosterCard
+              key={item.rating_key}
+              ratingKey={item.rating_key}
+              thumb={item.thumb}
+              title={item.title}
+              year={item.year}
+              type={item.type}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function PlexView() {
   const { data: serverInfo, isLoading: loadingServer, isError: serverError } = usePlexServerInfo()
@@ -13,6 +234,11 @@ export function PlexView() {
   const { data: recentItems = [], isLoading: loadingRecent } = usePlexRecentlyAdded(30)
   const { data: onDeckItems = [], isLoading: loadingOnDeck } = usePlexOnDeck(20)
   const { data: popularItems = [], isLoading: loadingPopular } = usePlexPopular(30)
+
+  const [browsingLibrary, setBrowsingLibrary] = useState<{
+    id: string
+    title: string
+  } | null>(null)
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -71,269 +297,118 @@ export function PlexView() {
                 <p className="text-xs font-mono text-slate-400 truncate">{serverInfo.machine_id}</p>
               </div>
             </div>
-            {serverInfo.libraries && serverInfo.libraries.length > 0 && (
-              <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {serverInfo.libraries.map((lib) => (
-                  <div
-                    key={lib.id}
-                    className="flex items-center gap-2 bg-slate-800/40 rounded-lg px-3 py-2"
-                  >
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${lib.type === 'movie' ? 'bg-purple-400' : 'bg-blue-400'}`}
-                    />
-                    <span className="text-xs text-slate-300 truncate">{lib.title}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         ) : null}
 
-        {/* Library Stats */}
-        <div>
-          <h3 className="text-sm font-semibold text-slate-300 mb-3">Libraries</h3>
-          {loadingStats ? (
-            <div className="flex justify-center py-4">
-              <Spinner size="sm" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {libraryStats.map((lib) => (
-                <div
-                  key={lib.id}
-                  className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-slate-600 transition-colors"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        lib.type === 'movie'
-                          ? 'bg-purple-900/50 text-purple-400'
-                          : 'bg-blue-900/50 text-blue-400'
-                      }`}
-                    >
-                      {lib.type === 'movie' ? (
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          strokeWidth={2}
-                        >
-                          <rect x="2" y="7" width="20" height="15" rx="2" />
-                          <circle cx="12" cy="14" r="2" />
-                        </svg>
-                      ) : (
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          strokeWidth={2}
-                        >
-                          <rect x="2" y="3" width="20" height="18" rx="2" />
-                          <path d="M8 10h8M8 14h5" />
-                        </svg>
-                      )}
-                    </div>
-                    <span
-                      className={`text-xs rounded-full px-1.5 py-0.5 font-medium ${
-                        lib.type === 'movie'
-                          ? 'bg-purple-900/40 text-purple-300'
-                          : 'bg-blue-900/40 text-blue-300'
-                      }`}
-                    >
-                      {lib.type === 'movie' ? 'Movies' : 'Shows'}
-                    </span>
-                  </div>
-                  <p className="text-sm font-semibold text-slate-100 truncate">{lib.title}</p>
-                  <p className="text-2xl font-bold text-white mt-1">
-                    {lib.total_items.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-slate-500">items</p>
+        {/* Library browsing mode */}
+        {browsingLibrary ? (
+          <LibraryBrowser
+            sectionId={browsingLibrary.id}
+            libraryTitle={browsingLibrary.title}
+            onClose={() => setBrowsingLibrary(null)}
+          />
+        ) : (
+          <>
+            {/* Library Stats — clickable cards */}
+            <div>
+              <h3 className="text-sm font-semibold text-slate-300 mb-3">Libraries</h3>
+              {loadingStats ? (
+                <div className="flex justify-center py-4">
+                  <Spinner size="sm" />
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Recently Added */}
-        <div>
-          <h3 className="text-sm font-semibold text-slate-300 mb-3">Recently Added</h3>
-          {loadingRecent ? (
-            <div className="flex justify-center py-4">
-              <Spinner size="sm" />
-            </div>
-          ) : recentItems.length === 0 ? (
-            <p className="text-sm text-slate-500">No recent items</p>
-          ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
-              {recentItems.map((item) => (
-                <div key={item.rating_key} className="shrink-0 w-28">
-                  <div
-                    className="relative rounded-lg overflow-hidden bg-slate-800 mb-1.5"
-                    style={{ aspectRatio: '2/3' }}
-                  >
-                    {item.thumb ? (
-                      <img
-                        src={`/api/plex/thumb?path=${encodeURIComponent(item.thumb)}`}
-                        alt={item.title}
-                        loading="lazy"
-                        className="absolute inset-0 w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none'
-                        }}
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-slate-600">
-                        <svg
-                          className="w-8 h-8"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          strokeWidth={1}
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {libraryStats.map((lib) => (
+                    <button
+                      key={lib.id}
+                      onClick={() => setBrowsingLibrary({ id: lib.id, title: lib.title })}
+                      className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-indigo-500 hover:bg-slate-800/80 transition-all text-left group"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                            lib.type === 'movie'
+                              ? 'bg-purple-900/50 text-purple-400'
+                              : 'bg-blue-900/50 text-blue-400'
+                          }`}
                         >
-                          <rect x="2" y="7" width="20" height="15" rx="2" />
-                          <circle cx="12" cy="14" r="3" />
-                        </svg>
+                          {lib.type === 'movie' ? (
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={2}
+                            >
+                              <rect x="2" y="7" width="20" height="15" rx="2" />
+                              <circle cx="12" cy="14" r="2" />
+                            </svg>
+                          ) : (
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={2}
+                            >
+                              <rect x="2" y="3" width="20" height="18" rx="2" />
+                              <path d="M8 10h8M8 14h5" />
+                            </svg>
+                          )}
+                        </div>
+                        <span
+                          className={`text-xs rounded-full px-1.5 py-0.5 font-medium ${
+                            lib.type === 'movie'
+                              ? 'bg-purple-900/40 text-purple-300'
+                              : 'bg-blue-900/40 text-blue-300'
+                          }`}
+                        >
+                          {lib.type === 'movie' ? 'Movies' : 'Shows'}
+                        </span>
                       </div>
-                    )}
-                    <span
-                      className={`absolute top-1 right-1 text-xs rounded px-1 py-0.5 font-medium shadow ${
-                        item.type === 'movie'
-                          ? 'bg-purple-600/80 text-white'
-                          : 'bg-blue-600/80 text-white'
-                      }`}
-                    >
-                      {item.type === 'movie' ? 'Movie' : 'TV'}
-                    </span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-200 truncate">{item.title}</p>
-                  {item.year && <p className="text-xs text-slate-500">{item.year}</p>}
+                      <p className="text-sm font-semibold text-slate-100 truncate group-hover:text-indigo-300 transition-colors">
+                        {lib.title}
+                      </p>
+                      <p className="text-2xl font-bold text-white mt-1">
+                        {lib.total_items.toLocaleString()}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        items{' '}
+                        <span className="text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                          — click to browse
+                        </span>
+                      </p>
+                    </button>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
 
-        {/* On Deck */}
-        <div>
-          <h3 className="text-sm font-semibold text-slate-300 mb-3">On Deck</h3>
-          {loadingOnDeck ? (
-            <div className="flex justify-center py-4">
-              <Spinner size="sm" />
-            </div>
-          ) : onDeckItems.length === 0 ? (
-            <p className="text-sm text-slate-500">Nothing on deck</p>
-          ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
-              {onDeckItems.map((item) => (
-                <div key={item.rating_key} className="shrink-0 w-28">
-                  <div
-                    className="relative rounded-lg overflow-hidden bg-slate-800 mb-1.5"
-                    style={{ aspectRatio: '2/3' }}
-                  >
-                    {item.thumb ? (
-                      <img
-                        src={`/api/plex/thumb?path=${encodeURIComponent(item.thumb)}`}
-                        alt={item.title}
-                        loading="lazy"
-                        className="absolute inset-0 w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none'
-                        }}
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-slate-600">
-                        <svg
-                          className="w-8 h-8"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          strokeWidth={1}
-                        >
-                          <rect x="2" y="7" width="20" height="15" rx="2" />
-                          <circle cx="12" cy="14" r="3" />
-                        </svg>
-                      </div>
-                    )}
-                    <span
-                      className={`absolute top-1 right-1 text-xs rounded px-1 py-0.5 font-medium shadow ${
-                        item.type === 'movie'
-                          ? 'bg-purple-600/80 text-white'
-                          : 'bg-blue-600/80 text-white'
-                      }`}
-                    >
-                      {item.type === 'movie' ? 'Movie' : 'TV'}
-                    </span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-200 truncate">{item.title}</p>
-                  {item.subtitle && (
-                    <p className="text-xs text-slate-500 truncate">{item.subtitle}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+            {/* Recently Added */}
+            <PosterRow
+              title="Recently Added"
+              items={recentItems}
+              loading={loadingRecent}
+              emptyText="No recent items"
+            />
 
-        {/* Popular in Your Library */}
-        <div>
-          <h3 className="text-sm font-semibold text-slate-300 mb-3">Popular in Your Library</h3>
-          {loadingPopular ? (
-            <div className="flex justify-center py-4">
-              <Spinner size="sm" />
-            </div>
-          ) : popularItems.length === 0 ? (
-            <p className="text-sm text-slate-500">No watch history yet</p>
-          ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
-              {popularItems.map((item) => (
-                <div key={item.rating_key} className="shrink-0 w-28">
-                  <div
-                    className="relative rounded-lg overflow-hidden bg-slate-800 mb-1.5"
-                    style={{ aspectRatio: '2/3' }}
-                  >
-                    {item.thumb ? (
-                      <img
-                        src={`/api/plex/thumb?path=${encodeURIComponent(item.thumb)}`}
-                        alt={item.title}
-                        loading="lazy"
-                        className="absolute inset-0 w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none'
-                        }}
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-slate-600">
-                        <svg
-                          className="w-8 h-8"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          strokeWidth={1}
-                        >
-                          <rect x="2" y="7" width="20" height="15" rx="2" />
-                          <circle cx="12" cy="14" r="3" />
-                        </svg>
-                      </div>
-                    )}
-                    <span
-                      className={`absolute top-1 right-1 text-xs rounded px-1 py-0.5 font-medium shadow ${
-                        item.type === 'movie'
-                          ? 'bg-purple-600/80 text-white'
-                          : 'bg-blue-600/80 text-white'
-                      }`}
-                    >
-                      {item.type === 'movie' ? 'Movie' : 'TV'}
-                    </span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-200 truncate">{item.title}</p>
-                  {item.year && <p className="text-xs text-slate-500">{item.year}</p>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+            {/* On Deck */}
+            <PosterRow
+              title="On Deck"
+              items={onDeckItems}
+              loading={loadingOnDeck}
+              emptyText="Nothing on deck"
+            />
+
+            {/* Popular in Your Library */}
+            <PosterRow
+              title="Popular in Your Library"
+              items={popularItems}
+              loading={loadingPopular}
+              emptyText="No watch history yet"
+            />
+          </>
+        )}
       </div>
     </div>
   )
