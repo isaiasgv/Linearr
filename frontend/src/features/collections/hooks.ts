@@ -62,9 +62,8 @@ export function useLinkCollection() {
       )
       void queryClient.invalidateQueries({ queryKey: ['collection-status', channelNumber] })
       void queryClient.invalidateQueries({ queryKey: ['assignments'] })
-      const assigned = data.assigned as { added: number; skipped: number } | undefined
-      if (assigned && assigned.added > 0) {
-        addToast(`Collection linked — ${assigned.added} items assigned`)
+      if (data.assigned && data.assigned.added > 0) {
+        addToast(`Collection linked — ${data.assigned.added} items assigned`)
       } else {
         addToast('Collection linked successfully')
       }

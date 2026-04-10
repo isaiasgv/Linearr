@@ -1,22 +1,38 @@
 import { create } from 'zustand'
-import type { Toast } from '@/shared/types'
+import Swal from 'sweetalert2'
+
+const Toast = Swal.mixin({
+  toast: true,
+  position: 'bottom-end',
+  showConfirmButton: false,
+  timer: 4000,
+  timerProgressBar: true,
+  background: '#1e293b',
+  color: '#e2e8f0',
+  customClass: {
+    popup: 'swal-toast-popup',
+  },
+  didOpen: (toast) => {
+    toast.onmouseenter = Swal.stopTimer
+    toast.onmouseleave = Swal.resumeTimer
+  },
+})
 
 interface ToastState {
-  toasts: Toast[]
+  toasts: never[]
   addToast: (message: string, isError?: boolean) => void
   removeToast: (id: string) => void
 }
 
-export const useToastStore = create<ToastState>((set) => ({
+export const useToastStore = create<ToastState>(() => ({
   toasts: [],
 
   addToast: (message, isError = false) => {
-    const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)
-    set((s) => ({ toasts: [...s.toasts, { id, message, isError }] }))
-    setTimeout(() => {
-      set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
-    }, 4000)
+    Toast.fire({
+      icon: isError ? 'error' : 'success',
+      title: message,
+    })
   },
 
-  removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  removeToast: () => {},
 }))

@@ -104,6 +104,7 @@ export interface ChannelCollection {
   plex_type: 'movie' | 'show'
   collection_rating_key: string
   collection_title: string
+  assigned?: { added: number; skipped: number }
 }
 
 export interface CollectionStatusEntry {
