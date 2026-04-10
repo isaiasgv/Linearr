@@ -1206,7 +1206,7 @@ def get_channel_collections(channel_number: int):
 
 
 @app.post("/api/channel-collections/{channel_number}", status_code=201)
-def link_channel_collection(channel_number: int, body: ChannelCollectionIn):
+async def link_channel_collection(channel_number: int, body: ChannelCollectionIn):
     with get_db() as conn:
         conn.execute(
             """INSERT INTO channel_collections (channel_number, plex_type, collection_rating_key, collection_title)
@@ -1220,7 +1220,40 @@ def link_channel_collection(channel_number: int, body: ChannelCollectionIn):
             "SELECT * FROM channel_collections WHERE channel_number=? AND plex_type=?",
             (channel_number, body.plex_type),
         ).fetchone()
-    return dict(row)
+
+    # Auto-assign collection items to the channel
+    added = 0
+    skipped = 0
+    try:
+        url, token = get_plex_config()
+        if token:
+            hdrs = plex_headers(token)
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(f"{url}/library/collections/{body.collection_rating_key}/children", headers=hdrs)
+            if resp.status_code == 200:
+                items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+                with get_db() as conn:
+                    for m in items:
+                        t = m.get("type", "")
+                        if t not in ("movie", "show"):
+                            continue
+                        try:
+                            conn.execute(
+                                """INSERT INTO assignments
+                                   (channel_number, plex_rating_key, plex_title, plex_type, plex_thumb, plex_year)
+                                   VALUES (?, ?, ?, ?, ?, ?)""",
+                                (channel_number, m.get("ratingKey"), m.get("title"),
+                                 t, m.get("thumb"), m.get("year")),
+                            )
+                            added += 1
+                        except sqlite3.IntegrityError:
+                            skipped += 1
+    except Exception:
+        pass  # linking succeeded, assignment is best-effort
+
+    result = dict(row)
+    result["assigned"] = {"added": added, "skipped": skipped}
+    return result
 
 
 @app.delete("/api/channel-collections/{channel_number}/{plex_type}")
