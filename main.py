@@ -2351,7 +2351,7 @@ Reply with ONLY this JSON (no markdown):
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.6,
-                "max_tokens": 4096,
+                "max_completion_tokens": 4096,
             }, headers={"Authorization": f"Bearer {api_key}"})
         ms = int((_t.monotonic() - t0) * 1000)
         if r.status_code != 200:
