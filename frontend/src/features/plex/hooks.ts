@@ -9,10 +9,14 @@ export function usePlexLibraries() {
   })
 }
 
-export function usePlexLibraryItems(sectionId: string, enabled = true) {
+export function usePlexLibraryItems(
+  sectionId: string,
+  enabled = true,
+  filters?: { genre?: string; year?: number; content_rating?: string },
+) {
   return useQuery({
-    queryKey: ['plex', 'library', sectionId],
-    queryFn: () => plexApi.libraryItems(sectionId),
+    queryKey: ['plex', 'library', sectionId, filters],
+    queryFn: () => plexApi.libraryItems(sectionId, undefined, filters),
     enabled: enabled && Boolean(sectionId),
   })
 }

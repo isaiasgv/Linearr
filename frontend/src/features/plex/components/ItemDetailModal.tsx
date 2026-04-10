@@ -3,7 +3,7 @@ import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useAssign, useChannelAssignments } from '@/features/assignments/hooks'
-import { usePlexItem, usePlexSeasons, usePlexEpisodes } from '@/features/plex/hooks'
+import { usePlexItem, usePlexSeasons, usePlexEpisodes, useRateItem } from '@/features/plex/hooks'
 import { PlexThumb } from './PlexThumb'
 import type { PlexSeason } from '@/shared/types'
 
@@ -79,6 +79,7 @@ export function ItemDetailModal() {
 
   const { data: channelAssignments = [] } = useChannelAssignments(selectedChannel?.number ?? 0)
   const assign = useAssign()
+  const rateItem = useRateItem()
 
   const isAssigned = item && channelAssignments.some((a) => a.plex_rating_key === item.rating_key)
 
@@ -158,6 +159,82 @@ export function ItemDetailModal() {
               {item.summary && (
                 <p className="text-xs text-slate-400 mt-2 line-clamp-3">{item.summary}</p>
               )}
+
+              {/* Genre pills */}
+              {item.genres && item.genres.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {item.genres.map((g) => (
+                    <span key={g} className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                      {g}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Quality badge + subtitles */}
+              {item.media_info && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  {item.media_info.resolution && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-900/40 border border-indigo-800/50 text-indigo-300 font-mono font-medium">
+                      {item.media_info.resolution === '4k' ? '4K' : `${item.media_info.resolution}p`}
+                    </span>
+                  )}
+                  {item.media_info.video_codec && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400 font-mono">
+                      {item.media_info.video_codec.toUpperCase()}
+                    </span>
+                  )}
+                  {item.media_info.audio_codec && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400 font-mono">
+                      {item.media_info.audio_codec.toUpperCase()}
+                      {item.media_info.audio_channels ? ` ${item.media_info.audio_channels === 6 ? '5.1' : item.media_info.audio_channels === 8 ? '7.1' : `${item.media_info.audio_channels}ch`}` : ''}
+                    </span>
+                  )}
+                  {item.subtitles && item.subtitles.length > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/30 border border-amber-800/50 text-amber-400">
+                      Subs: {item.subtitles.slice(0, 3).join(', ')}{item.subtitles.length > 3 ? ` +${item.subtitles.length - 3}` : ''}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Star rating */}
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex gap-0.5">
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const filled = (item.user_rating ?? 0) >= star * 2
+                    const half = !filled && (item.user_rating ?? 0) >= star * 2 - 1
+                    return (
+                      <button
+                        key={star}
+                        onClick={() => {
+                          const newRating = star * 2
+                          rateItem.mutate({
+                            ratingKey: item.rating_key,
+                            rating: item.user_rating === newRating ? 0 : newRating,
+                          })
+                        }}
+                        className="text-amber-400 hover:scale-110 transition-transform"
+                        title={`${star} star${star > 1 ? 's' : ''}`}
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill={filled || half ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={1.5}>
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                      </button>
+                    )
+                  })}
+                </div>
+                {item.audience_rating && (
+                  <span className="text-[10px] text-slate-500">
+                    Audience: {item.audience_rating.toFixed(1)}
+                  </span>
+                )}
+                {item.rating && (
+                  <span className="text-[10px] text-slate-500">
+                    Critic: {item.rating.toFixed(1)}
+                  </span>
+                )}
+              </div>
 
               {selectedChannel && (
                 <div className="mt-3">

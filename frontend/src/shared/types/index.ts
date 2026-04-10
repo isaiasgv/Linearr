@@ -42,7 +42,25 @@ export interface PlexItem {
   thumb: string | null
   summary: string
   duration_ms?: number
+  duration_minutes?: number
   child_count?: number
+  leaf_count?: number
+  studio?: string
+  content_rating?: string
+  genres?: string[]
+  user_rating?: number
+  audience_rating?: number
+  rating?: number
+  originally_available_at?: string
+  media_info?: {
+    resolution?: string
+    video_codec?: string
+    audio_codec?: string
+    audio_channels?: number
+    bitrate?: number
+    container?: string
+  }
+  subtitles?: string[]
 }
 
 export interface PlexSeason {

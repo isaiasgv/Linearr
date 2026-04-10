@@ -2,7 +2,12 @@ import { useState, useMemo } from 'react'
 import { useDebounce } from '@/shared/hooks/useDebounce'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useAssignments, useAssign, useUnassign } from '@/features/assignments/hooks'
-import { usePlexLibraries, usePlexLibraryItems, usePlexSearch } from '@/features/plex/hooks'
+import {
+  usePlexLibraries,
+  usePlexLibraryItems,
+  usePlexSearch,
+  usePlexLibraryFilters,
+} from '@/features/plex/hooks'
 import { PosterGrid } from './PosterGrid'
 import type { PlexItem } from '@/shared/types'
 
@@ -19,6 +24,9 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
   const [loadLibrary, setLoadLibrary] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+  const [genreFilter, setGenreFilter] = useState('')
+  const [yearFilter, setYearFilter] = useState('')
+  const [ratingFilter, setRatingFilter] = useState('')
 
   const debouncedSearch = useDebounce(searchInput, 400)
   const isSearching = debouncedSearch.trim().length > 0
@@ -32,9 +40,20 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
     isSearching,
   )
 
+  const { data: filterOptions } = usePlexLibraryFilters(selectedLibrary)
+
+  const libraryFilters = useMemo(() => {
+    const f: Record<string, string | number> = {}
+    if (genreFilter) f.genre = genreFilter
+    if (yearFilter) f.year = Number(yearFilter)
+    if (ratingFilter) f.content_rating = ratingFilter
+    return Object.keys(f).length > 0 ? f : undefined
+  }, [genreFilter, yearFilter, ratingFilter])
+
   const { data: libraryItems = [], isFetching: libraryFetching } = usePlexLibraryItems(
     selectedLibrary,
     loadLibrary && !isSearching,
+    libraryFilters as { genre?: string; year?: number; content_rating?: string } | undefined,
   )
 
   const { data: assignmentsMap = {} } = useAssignments()
@@ -85,6 +104,9 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
             onChange={(e) => {
               setSelectedLibrary(e.target.value)
               setLoadLibrary(false)
+              setGenreFilter('')
+              setYearFilter('')
+              setRatingFilter('')
             }}
             disabled={librariesLoading}
             className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
@@ -158,6 +180,56 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
             </button>
           ))}
         </div>
+
+        {/* Genre / Year / Rating filters — only when browsing a library */}
+        {selectedLibrary && filterOptions && (
+          <div className="flex gap-2 flex-wrap">
+            {filterOptions.genres.length > 0 && (
+              <select
+                value={genreFilter}
+                onChange={(e) => { setGenreFilter(e.target.value); setLoadLibrary(true) }}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="">All Genres</option>
+                {filterOptions.genres.map((g) => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
+            )}
+            {filterOptions.years.length > 0 && (
+              <select
+                value={yearFilter}
+                onChange={(e) => { setYearFilter(e.target.value); setLoadLibrary(true) }}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="">All Years</option>
+                {filterOptions.years.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            )}
+            {filterOptions.content_ratings.length > 0 && (
+              <select
+                value={ratingFilter}
+                onChange={(e) => { setRatingFilter(e.target.value); setLoadLibrary(true) }}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="">All Ratings</option>
+                {filterOptions.content_ratings.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            )}
+            {(genreFilter || yearFilter || ratingFilter) && (
+              <button
+                onClick={() => { setGenreFilter(''); setYearFilter(''); setRatingFilter(''); setLoadLibrary(true) }}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Grid */}
