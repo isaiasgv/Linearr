@@ -160,9 +160,7 @@ interface ImportPreviewChannel {
   cable_plex_channel: { number: number; name: string } | null
 }
 
-function importPreview(
-  channelIds?: string[],
-): Promise<{ channels: ImportPreviewChannel[] }> {
+function importPreview(channelIds?: string[]): Promise<{ channels: ImportPreviewChannel[] }> {
   return post<{ channels: ImportPreviewChannel[] }>('/api/tunarr/import-channels/preview', {
     channel_ids: channelIds ?? 'all',
   })
@@ -230,4 +228,11 @@ export const tunarrApi = {
   exportChannels,
 }
 
-export type { GuideChannel, VersionCheck, ImportPreviewChannel, ImportAction, ImportResult, ExportResult }
+export type {
+  GuideChannel,
+  VersionCheck,
+  ImportPreviewChannel,
+  ImportAction,
+  ImportResult,
+  ExportResult,
+}

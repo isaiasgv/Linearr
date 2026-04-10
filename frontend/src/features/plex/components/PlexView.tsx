@@ -74,8 +74,13 @@ export function PlexView() {
             {serverInfo.libraries && serverInfo.libraries.length > 0 && (
               <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {serverInfo.libraries.map((lib) => (
-                  <div key={lib.id} className="flex items-center gap-2 bg-slate-800/40 rounded-lg px-3 py-2">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${lib.type === 'movie' ? 'bg-purple-400' : 'bg-blue-400'}`} />
+                  <div
+                    key={lib.id}
+                    className="flex items-center gap-2 bg-slate-800/40 rounded-lg px-3 py-2"
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${lib.type === 'movie' ? 'bg-purple-400' : 'bg-blue-400'}`}
+                    />
                     <span className="text-xs text-slate-300 truncate">{lib.title}</span>
                   </div>
                 ))}

@@ -80,7 +80,10 @@ export function BlockFormModal() {
 
     const payload: Partial<Block> = {
       ...form,
-      channel_number: activeView === 'generic' ? null : (editingBlock?.channel_number ?? selectedChannel?.number ?? null),
+      channel_number:
+        activeView === 'generic'
+          ? null
+          : (editingBlock?.channel_number ?? selectedChannel?.number ?? null),
     }
 
     if (editingBlock) {

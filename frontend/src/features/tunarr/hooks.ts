@@ -300,8 +300,13 @@ export function useImportChannels() {
   const addToast = useToastStore((s) => s.addToast)
 
   return useMutation({
-    mutationFn: (actions: Array<{ tunarr_id: string; action: 'link' | 'create' | 'skip'; cable_plex_number?: number }>) =>
-      tunarrApi.importChannels(actions),
+    mutationFn: (
+      actions: Array<{
+        tunarr_id: string
+        action: 'link' | 'create' | 'skip'
+        cable_plex_number?: number
+      }>,
+    ) => tunarrApi.importChannels(actions),
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['tunarr', 'links'] })
       void queryClient.invalidateQueries({ queryKey: ['tunarr', 'channels'] })
@@ -319,8 +324,13 @@ export function useExportChannels() {
   const addToast = useToastStore((s) => s.addToast)
 
   return useMutation({
-    mutationFn: ({ channelNumbers, syncCollections }: { channelNumbers: number[] | 'all'; syncCollections?: boolean }) =>
-      tunarrApi.exportChannels(channelNumbers, syncCollections),
+    mutationFn: ({
+      channelNumbers,
+      syncCollections,
+    }: {
+      channelNumbers: number[] | 'all'
+      syncCollections?: boolean
+    }) => tunarrApi.exportChannels(channelNumbers, syncCollections),
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['tunarr', 'links'] })
       void queryClient.invalidateQueries({ queryKey: ['tunarr', 'channels'] })

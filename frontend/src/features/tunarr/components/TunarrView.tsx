@@ -637,7 +637,13 @@ export function TunarrView() {
             disabled={!settings?.tunarr_url}
             className="flex items-center gap-2 px-3 py-1.5 bg-blue-800 hover:bg-blue-700 disabled:opacity-60 border border-blue-700 text-blue-100 rounded-lg text-xs font-medium transition-colors"
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
             </svg>
             Import
@@ -647,7 +653,13 @@ export function TunarrView() {
             disabled={!settings?.tunarr_url}
             className="flex items-center gap-2 px-3 py-1.5 bg-violet-800 hover:bg-violet-700 disabled:opacity-60 border border-violet-700 text-violet-100 rounded-lg text-xs font-medium transition-colors"
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
             </svg>
             Export
@@ -804,34 +816,56 @@ export function TunarrView() {
           <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col mx-4">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
               <h2 className="text-lg font-bold text-slate-100">Import Channels from Tunarr</h2>
-              <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-200">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <svg
+                  className="w-5 h-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-5">
               {importPreview.isPending ? (
-                <div className="flex justify-center py-8"><Spinner /></div>
+                <div className="flex justify-center py-8">
+                  <Spinner />
+                </div>
               ) : importPreview.data?.channels.length === 0 ? (
                 <p className="text-sm text-slate-500 text-center py-8">No Tunarr channels found</p>
               ) : (
                 <div className="space-y-2">
                   {(importPreview.data?.channels ?? []).map((ch) => (
-                    <div key={ch.tunarr_id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">
+                    <div
+                      key={ch.tunarr_id}
+                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800 border border-slate-700"
+                    >
                       <div>
-                        <p className="text-sm font-medium text-slate-200">CH {ch.tunarr_number} — {ch.tunarr_name}</p>
+                        <p className="text-sm font-medium text-slate-200">
+                          CH {ch.tunarr_number} — {ch.tunarr_name}
+                        </p>
                         {ch.match === 'already_linked' && (
                           <p className="text-xs text-emerald-400">Already linked</p>
                         )}
                         {ch.match === 'number' && ch.cable_plex_channel && (
-                          <p className="text-xs text-blue-400">Matches Cable Plex CH {ch.cable_plex_channel.number} by number</p>
+                          <p className="text-xs text-blue-400">
+                            Matches Cable Plex CH {ch.cable_plex_channel.number} by number
+                          </p>
                         )}
                         {ch.match === 'name' && ch.cable_plex_channel && (
-                          <p className="text-xs text-blue-400">Matches &quot;{ch.cable_plex_channel.name}&quot; by name</p>
+                          <p className="text-xs text-blue-400">
+                            Matches &quot;{ch.cable_plex_channel.name}&quot; by name
+                          </p>
                         )}
                         {ch.match === null && (
-                          <p className="text-xs text-amber-400">No match — will create new channel</p>
+                          <p className="text-xs text-amber-400">
+                            No match — will create new channel
+                          </p>
                         )}
                       </div>
                       {ch.match === 'already_linked' ? (
@@ -843,7 +877,9 @@ export function TunarrView() {
                           data-cp-number={ch.cable_plex_channel?.number}
                           className="text-xs bg-slate-700 border border-slate-600 text-slate-200 rounded px-2 py-1"
                         >
-                          {ch.cable_plex_channel && <option value="link">Link to CH {ch.cable_plex_channel.number}</option>}
+                          {ch.cable_plex_channel && (
+                            <option value="link">Link to CH {ch.cable_plex_channel.number}</option>
+                          )}
                           <option value="create">Create new</option>
                           <option value="skip">Skip</option>
                         </select>
@@ -854,14 +890,21 @@ export function TunarrView() {
               )}
             </div>
             <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-slate-800">
-              <button onClick={() => setShowImportModal(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200">
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200"
+              >
                 Cancel
               </button>
               <button
                 disabled={importChannels.isPending || !importPreview.data?.channels.length}
                 onClick={() => {
                   const selects = document.querySelectorAll<HTMLSelectElement>('[data-tunarr-id]')
-                  const actions: Array<{ tunarr_id: string; action: 'link' | 'create' | 'skip'; cable_plex_number?: number }> = []
+                  const actions: Array<{
+                    tunarr_id: string
+                    action: 'link' | 'create' | 'skip'
+                    cable_plex_number?: number
+                  }> = []
                   selects.forEach((sel) => {
                     const tid = sel.getAttribute('data-tunarr-id')!
                     const cpNum = sel.getAttribute('data-cp-number')
@@ -897,8 +940,17 @@ export function TunarrView() {
           <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col mx-4">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
               <h2 className="text-lg font-bold text-slate-100">Export Channels to Tunarr</h2>
-              <button onClick={() => setShowExportModal(false)} className="text-slate-400 hover:text-slate-200">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <svg
+                  className="w-5 h-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </button>
@@ -911,7 +963,10 @@ export function TunarrView() {
                   {cablePlexChannels.map((ch) => {
                     const isLinked = links.some((l) => l.channel_number === ch.number)
                     return (
-                      <label key={ch.number} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${isLinked ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-800 border-slate-700'}`}>
+                      <label
+                        key={ch.number}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${isLinked ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-800 border-slate-700'}`}
+                      >
                         <input
                           type="checkbox"
                           defaultChecked={!isLinked}
@@ -920,10 +975,14 @@ export function TunarrView() {
                           className="rounded border-slate-600 bg-slate-700 text-violet-500 focus:ring-violet-500"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${isLinked ? 'text-slate-500' : 'text-slate-200'}`}>
+                          <p
+                            className={`text-sm font-medium ${isLinked ? 'text-slate-500' : 'text-slate-200'}`}
+                          >
                             CH {ch.number} — {ch.name}
                           </p>
-                          {isLinked && <p className="text-xs text-emerald-500">Already linked to Tunarr</p>}
+                          {isLinked && (
+                            <p className="text-xs text-emerald-500">Already linked to Tunarr</p>
+                          )}
                         </div>
                       </label>
                     )
@@ -932,14 +991,21 @@ export function TunarrView() {
               )}
             </div>
             <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-slate-800">
-              <button onClick={() => setShowExportModal(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200">
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200"
+              >
                 Cancel
               </button>
               <button
                 disabled={exportChannels.isPending}
                 onClick={() => {
-                  const checks = document.querySelectorAll<HTMLInputElement>('[data-channel-number]:checked')
-                  const nums = Array.from(checks).map((c) => parseInt(c.getAttribute('data-channel-number')!))
+                  const checks = document.querySelectorAll<HTMLInputElement>(
+                    '[data-channel-number]:checked',
+                  )
+                  const nums = Array.from(checks).map((c) =>
+                    parseInt(c.getAttribute('data-channel-number')!),
+                  )
                   if (nums.length === 0) return
                   exportChannels.mutate(
                     { channelNumbers: nums },
