@@ -3272,11 +3272,14 @@ def _extract_schedule_items(data) -> list[dict]:
         return data
     if isinstance(data, dict):
         # Tunarr may return { "items": [...] }, { "programs": [...] }, or { "slots": [...] }
-        for key in ("items", "programs", "slots", "lineup"):
+        for key in ("items", "programs", "slots", "lineup", "schedule"):
             if key in data and isinstance(data[key], list):
                 return data[key]
-        # If it has schedule-like fields directly (startTime, duration), wrap it
-        if "startTime" in data or "start_time" in data:
+        # Programming endpoint returns {type: "time", timeSlots: [...], ...}
+        if "timeSlots" in data and isinstance(data["timeSlots"], list):
+            return data["timeSlots"]
+        # If it has schedule-like fields directly, wrap it
+        if "startTime" in data or "start_time" in data or "startTimeMs" in data:
             return [data]
     return []
 
@@ -3289,7 +3292,7 @@ async def tunarr_get_schedule(tunarr_id: str, hours: int = Query(6)):
     date_from = now.isoformat()
     date_to = (now + timedelta(hours=hours)).isoformat()
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Try the guide API first (returns materialized lineup)
+        # 1. Try the guide API (returns lineup with startTimeMs)
         try:
             r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
                                  params={"dateFrom": date_from, "dateTo": date_to})
@@ -3299,10 +3302,22 @@ async def tunarr_get_schedule(tunarr_id: str, hours: int = Query(6)):
                 if not programs and isinstance(data, list):
                     programs = data
                 if programs:
-                    return _normalize_guide_programs(programs)
+                    result = _normalize_guide_programs(programs)
+                    # If programs lack titles, try to enrich from programming endpoint
+                    if result and not result[0].get("title") or result[0].get("title") == "Program":
+                        try:
+                            pr = await client.get(f"{url}/api/channels/{tunarr_id}/programming")
+                            if pr.status_code == 200:
+                                prog_data = _extract_schedule_items(pr.json())
+                                enriched = _normalize_guide_programs(prog_data)
+                                if enriched and enriched[0].get("title") and enriched[0]["title"] != "Program":
+                                    return enriched
+                        except Exception:
+                            pass
+                    return result
         except Exception as e:
             log.warning("Tunarr guide API failed for %s: %s", tunarr_id, e)
-        # Fallback: try the lineup API
+        # 2. Try the lineup API
         try:
             r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
                                  params={"from": date_from, "to": date_to})
@@ -3313,7 +3328,7 @@ async def tunarr_get_schedule(tunarr_id: str, hours: int = Query(6)):
                     return _normalize_guide_programs(items)
         except Exception as e:
             log.warning("Tunarr lineup API failed for %s: %s", tunarr_id, e)
-        # Fallback: try programming endpoint
+        # 3. Try programming endpoint (often has titles)
         try:
             r = await client.get(f"{url}/api/channels/{tunarr_id}/programming")
             if r.status_code == 200:
@@ -3323,7 +3338,7 @@ async def tunarr_get_schedule(tunarr_id: str, hours: int = Query(6)):
                     return _normalize_guide_programs(items)
         except Exception as e:
             log.warning("Tunarr programming API failed for %s: %s", tunarr_id, e)
-        # Last fallback: schedule config
+        # 4. Last fallback: schedule config
         try:
             r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
             if r.status_code == 200:
@@ -3333,40 +3348,79 @@ async def tunarr_get_schedule(tunarr_id: str, hours: int = Query(6)):
     return []
 
 def _normalize_guide_programs(programs: list) -> list[dict]:
-    """Normalize Tunarr guide/lineup programs to a consistent format."""
+    """Normalize Tunarr guide/lineup programs to a consistent format.
+
+    Handles multiple Tunarr response formats:
+    - New format: {startTimeMs, lineupItem: {type, id, durationMs, title?, ...}}
+    - Old format: {start/startTime, duration, title, ...}
+    """
     items = []
     for p in programs:
-        start = p.get("start") or p.get("startTime") or p.get("start_time") or ""
-        stop = p.get("stop") or p.get("endTime") or p.get("end_time") or ""
-        # Calculate duration from start/stop if not provided directly
-        duration = p.get("duration", 0)
-        if not duration and start and stop:
-            try:
-                from datetime import datetime
-                s = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
-                e = datetime.fromisoformat(str(stop).replace("Z", "+00:00"))
-                duration = int((e - s).total_seconds() * 1000)
-            except Exception:
-                pass
-        # Handle numeric timestamps (milliseconds)
-        if isinstance(start, (int, float)):
-            start_val = start
-        elif isinstance(start, str) and start:
-            try:
-                from datetime import datetime
-                start_val = int(datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp() * 1000)
-            except Exception:
-                start_val = start
-        else:
-            start_val = start
-        title = p.get("title") or p.get("programTitle") or "Unknown"
-        episode = p.get("episode")
-        if not episode and p.get("episodeTitle"):
-            episode = {"title": p.get("episodeTitle"), "season": p.get("season"), "episode": p.get("episode_number") or p.get("episodeNumber")}
+        lineup = p.get("lineupItem") or {}
+
+        # ── Start time ──
+        start_val = p.get("startTimeMs") or 0
+        if not start_val:
+            start = p.get("start") or p.get("startTime") or p.get("start_time") or ""
+            if isinstance(start, (int, float)):
+                start_val = int(start)
+            elif isinstance(start, str) and start:
+                try:
+                    from datetime import datetime
+                    start_val = int(datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp() * 1000)
+                except Exception:
+                    start_val = 0
+
+        # ── Duration ──
+        duration = lineup.get("durationMs") or p.get("duration") or p.get("durationMs") or 0
+        if not duration:
+            stop = p.get("stop") or p.get("endTime") or p.get("end_time") or ""
+            if stop and start_val:
+                try:
+                    from datetime import datetime
+                    e = datetime.fromisoformat(str(stop).replace("Z", "+00:00"))
+                    duration = int(e.timestamp() * 1000) - start_val
+                except Exception:
+                    pass
+
+        # ── Title (check multiple locations) ──
+        title = (
+            p.get("title")
+            or p.get("programTitle")
+            or lineup.get("title")
+            or lineup.get("showTitle")
+            or lineup.get("programTitle")
+            or ""
+        )
+
+        # ── Episode info ──
+        episode = p.get("episode") or lineup.get("episode")
+        ep_title = p.get("episodeTitle") or lineup.get("episodeTitle") or lineup.get("title") or ""
+        if not episode and (ep_title or lineup.get("seasonNumber")):
+            episode = {
+                "title": ep_title if ep_title != title else "",
+                "season": lineup.get("seasonNumber") or p.get("season"),
+                "episode": lineup.get("episodeNumber") or p.get("episode_number") or p.get("episodeNumber"),
+            }
+
+        # ── Type ──
+        item_type = lineup.get("type") or p.get("type") or ""
+
+        # If no title, build one from what we have
+        if not title:
+            if item_type == "flex":
+                title = "Flex"
+            elif item_type == "redirect":
+                title = "Redirect"
+            elif item_type == "offline":
+                title = "Offline"
+            else:
+                title = f"Program"
+
         items.append({
             "startTime": start_val,
             "duration": duration,
-            "type": p.get("type", ""),
+            "type": item_type,
             "title": title,
             "episode": episode,
         })
@@ -3489,21 +3543,40 @@ async def tunarr_guide(hours: int = Query(24)):
                                  params={"dateFrom": date_from, "dateTo": date_to})
             if r.status_code == 200:
                 guide_data = r.json()
-                channels_data = guide_data if isinstance(guide_data, list) else guide_data.get("channels", [])
-                for ch in channels_data:
-                    ch_id = ch.get("id", "")
-                    if ch_id not in linked_ids:
-                        continue
-                    link = link_by_tunarr_id[ch_id]
-                    programs = ch.get("programs", []) if isinstance(ch, dict) else []
-                    guide_channels.append({
-                        "channel_number": link["channel_number"],
-                        "tunarr_id": ch_id,
-                        "tunarr_name": link.get("tunarr_name") or ch.get("name", ""),
-                        "tunarr_number": link.get("tunarr_number") or ch.get("number"),
-                        "schedule": _normalize_guide_programs(programs),
-                    })
-                # Add channels that weren't in guide response (may not have programming)
+                # Tunarr returns {uuid: [programs], ...} — dict keyed by channel ID
+                if isinstance(guide_data, dict) and not guide_data.get("channels"):
+                    # Check if keys look like UUIDs (the channel IDs)
+                    first_key = next(iter(guide_data), "")
+                    if first_key and first_key in linked_ids:
+                        for ch_id, programs in guide_data.items():
+                            if ch_id not in linked_ids:
+                                continue
+                            link = link_by_tunarr_id[ch_id]
+                            prog_list = programs if isinstance(programs, list) else []
+                            guide_channels.append({
+                                "channel_number": link["channel_number"],
+                                "tunarr_id": ch_id,
+                                "tunarr_name": link.get("tunarr_name", ""),
+                                "tunarr_number": link.get("tunarr_number"),
+                                "schedule": _normalize_guide_programs(prog_list),
+                            })
+                else:
+                    # Legacy format: list of {id, programs} or {channels: [...]}
+                    channels_data = guide_data if isinstance(guide_data, list) else guide_data.get("channels", [])
+                    for ch in channels_data:
+                        ch_id = ch.get("id", "")
+                        if ch_id not in linked_ids:
+                            continue
+                        link = link_by_tunarr_id[ch_id]
+                        programs = ch.get("programs", []) if isinstance(ch, dict) else []
+                        guide_channels.append({
+                            "channel_number": link["channel_number"],
+                            "tunarr_id": ch_id,
+                            "tunarr_name": link.get("tunarr_name") or ch.get("name", ""),
+                            "tunarr_number": link.get("tunarr_number") or ch.get("number"),
+                            "schedule": _normalize_guide_programs(programs),
+                        })
+                # Add channels that weren't in guide response
                 found_ids = {c["tunarr_id"] for c in guide_channels}
                 for link in links:
                     if link["tunarr_id"] not in found_ids:
@@ -3514,9 +3587,10 @@ async def tunarr_guide(hours: int = Query(24)):
                             "tunarr_number": link.get("tunarr_number"),
                             "schedule": [],
                         })
-                return {"channels": guide_channels}
-        except Exception:
-            pass
+                if guide_channels:
+                    return {"channels": guide_channels}
+        except Exception as e:
+            log.warning("Tunarr bulk guide failed: %s", e)
 
         # Fallback: fetch per-channel lineup
         for link in links:
