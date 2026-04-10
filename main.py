@@ -930,8 +930,8 @@ async def plex_item(rating_key: str):
             if idr.status_code == 200:
                 machine_id = idr.json().get("MediaContainer", {}).get("machineIdentifier", "")
                 if machine_id:
-                    plex_web_url = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=/library/metadata/{rating_key}"
-                    log.info("Plex web URL for %s: machineId=%s ratingKey=%s", m.get("title"), machine_id, rating_key)
+                    plex_web_url = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}&context=library%3Acontent.library"
+                    log.info("Plex web URL for %s: machineId=%s ratingKey=%s url=%s", m.get("title"), machine_id, rating_key, plex_web_url)
     except Exception as e:
         log.warning("Failed to build Plex web URL: %s", e)
 
@@ -977,7 +977,7 @@ async def plex_stream_url(rating_key: str):
             pass
 
     # Plex web app URL — works from anywhere (local + remote), opens in browser
-    plex_web_url = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=/library/metadata/{rating_key}" if machine_id else None
+    plex_web_url = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}&context=library%3Acontent.library" if machine_id else None
 
     return {
         "plex_web": plex_web_url,
