@@ -3066,33 +3066,33 @@ async def tunarr_test(body: TunarrTestIn | None = None):
     url = (body.url.rstrip("/") if body and body.url else None) or get_tunarr_url()
     t0 = _t.monotonic()
     # Try multiple paths — Tunarr version differences
-    for path in ("/health", "/api/health", "/api/channels"):
-        try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for path in ("/health", "/api/health", "/api/channels"):
+            try:
                 r = await client.get(f"{url}{path}")
-            ms = int((_t.monotonic() - t0) * 1000)
-            if r.status_code in (200, 204):
-                # Fetch extra info: version + channel count
-                version = ""
-                channel_count = 0
-                try:
-                    vr = await client.get(f"{url}/api/version")
-                    if vr.status_code == 200:
-                        version = vr.json().get("tunarr", vr.json().get("version", ""))
-                except Exception:
-                    pass
-                try:
-                    cr = await client.get(f"{url}/api/channels")
-                    if cr.status_code == 200:
-                        channel_count = len(cr.json()) if isinstance(cr.json(), list) else 0
-                except Exception:
-                    pass
-                return {"ok": True, "latency_ms": ms, "url": url, "path": path,
-                        "version": version, "channels": channel_count}
-        except (httpx.ConnectError, httpx.TimeoutException):
-            continue
-        except Exception:
-            continue
+                ms = int((_t.monotonic() - t0) * 1000)
+                if r.status_code in (200, 204):
+                    # Fetch extra info: version + channel count
+                    version = ""
+                    channel_count = 0
+                    try:
+                        vr = await client.get(f"{url}/api/version")
+                        if vr.status_code == 200:
+                            version = vr.json().get("tunarr", vr.json().get("version", ""))
+                    except Exception:
+                        pass
+                    try:
+                        cr = await client.get(f"{url}/api/channels")
+                        if cr.status_code == 200:
+                            channel_count = len(cr.json()) if isinstance(cr.json(), list) else 0
+                    except Exception:
+                        pass
+                    return {"ok": True, "latency_ms": ms, "url": url, "path": path,
+                            "version": version, "channels": channel_count}
+            except (httpx.ConnectError, httpx.TimeoutException):
+                continue
+            except Exception:
+                continue
     raise HTTPException(503, f"Cannot reach Tunarr at {url} — check the URL in Settings. If running in Docker use http://tunarr:8000 (not localhost)")
 
 @app.get("/api/tunarr/version-check")
