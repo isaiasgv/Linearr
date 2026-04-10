@@ -942,7 +942,25 @@ async def plex_item(rating_key: str):
         "originally_available_at": m.get("originallyAvailableAt"),
         "media_info": media_info,
         "subtitles": subtitles,
+        "playback_url": f"/api/plex/stream/{rating_key}" if media else None,
     }
+
+@app.get("/api/plex/stream/{rating_key}")
+async def plex_stream_redirect(rating_key: str):
+    """Redirect to Plex transcode/direct-play URL for an item."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    from fastapi.responses import RedirectResponse
+    # Use Plex universal transcode endpoint — works for all clients
+    stream_url = (
+        f"{url}/video/:/transcode/universal/start"
+        f"?path=/library/metadata/{rating_key}"
+        f"&mediaIndex=0&partIndex=0"
+        f"&protocol=hls&directPlay=1&directStream=1"
+        f"&X-Plex-Token={token}"
+    )
+    return RedirectResponse(url=stream_url, status_code=302)
 
 @app.get("/api/plex/show/{rating_key}/seasons")
 async def plex_show_seasons(rating_key: str):
@@ -4002,76 +4020,33 @@ async def tunarr_guide(hours: int = Query(24)):
 
     guide_channels = []
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Try Tunarr's guide API (returns all channels at once)
-        try:
-            r = await client.get(f"{url}/api/guide/channels",
-                                 params={"dateFrom": date_from, "dateTo": date_to})
-            if r.status_code == 200:
-                guide_data = r.json()
-                # Tunarr returns {uuid: [programs], ...} — dict keyed by channel ID
-                if isinstance(guide_data, dict) and not guide_data.get("channels"):
-                    # Check if keys look like UUIDs (the channel IDs)
-                    first_key = next(iter(guide_data), "")
-                    if first_key and first_key in linked_ids:
-                        for ch_id, programs in guide_data.items():
-                            if ch_id not in linked_ids:
-                                continue
-                            link = link_by_tunarr_id[ch_id]
-                            prog_list = programs if isinstance(programs, list) else []
-                            guide_channels.append({
-                                "channel_number": link["channel_number"],
-                                "tunarr_id": ch_id,
-                                "tunarr_name": link.get("tunarr_name", ""),
-                                "tunarr_number": link.get("tunarr_number"),
-                                "schedule": _normalize_guide_programs(prog_list),
-                            })
-                else:
-                    # Legacy format: list of {id, programs} or {channels: [...]}
-                    channels_data = guide_data if isinstance(guide_data, list) else guide_data.get("channels", [])
-                    for ch in channels_data:
-                        ch_id = ch.get("id", "")
-                        if ch_id not in linked_ids:
-                            continue
-                        link = link_by_tunarr_id[ch_id]
-                        programs = ch.get("programs", []) if isinstance(ch, dict) else []
-                        guide_channels.append({
-                            "channel_number": link["channel_number"],
-                            "tunarr_id": ch_id,
-                            "tunarr_name": link.get("tunarr_name") or ch.get("name", ""),
-                            "tunarr_number": link.get("tunarr_number") or ch.get("number"),
-                            "schedule": _normalize_guide_programs(programs),
-                        })
-                # Add channels that weren't in guide response
-                found_ids = {c["tunarr_id"] for c in guide_channels}
-                for link in links:
-                    if link["tunarr_id"] not in found_ids:
-                        guide_channels.append({
-                            "channel_number": link["channel_number"],
-                            "tunarr_id": link["tunarr_id"],
-                            "tunarr_name": link.get("tunarr_name", ""),
-                            "tunarr_number": link.get("tunarr_number"),
-                            "schedule": [],
-                        })
-                if guide_channels:
-                    return {"channels": guide_channels}
-        except Exception as e:
-            log.warning("Tunarr bulk guide failed: %s", e)
-
-        # Fallback: fetch per-channel lineup
+        # Strategy: fetch per-channel to avoid format guessing with the bulk API
         for link in links:
             tunarr_id = link["tunarr_id"]
             items = []
-            # Try guide API per channel
+
+            # 1. Try per-channel guide API (most reliable)
             try:
                 r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
                                      params={"dateFrom": date_from, "dateTo": date_to})
                 if r.status_code == 200:
                     data = r.json()
-                    programs = data.get("programs", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                    log.debug("Tunarr guide response for %s: type=%s keys=%s",
+                              tunarr_id, type(data).__name__,
+                              list(data.keys())[:5] if isinstance(data, dict) else f"list[{len(data)}]" if isinstance(data, list) else "?")
+                    # Extract programs from various response shapes
+                    programs = []
+                    if isinstance(data, list):
+                        programs = data
+                    elif isinstance(data, dict):
+                        programs = data.get("programs", data.get("items", data.get("lineup", [])))
+                        if not programs and isinstance(programs, list):
+                            programs = []
                     items = _normalize_guide_programs(programs)
             except Exception as e:
-                log.warning("Tunarr guide fallback failed for %s: %s", tunarr_id, e)
-            # Try lineup API if guide returned nothing
+                log.warning("Tunarr guide for %s failed: %s", tunarr_id, e)
+
+            # 2. Fallback: channel lineup API
             if not items:
                 try:
                     r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
@@ -4080,8 +4055,29 @@ async def tunarr_guide(hours: int = Query(24)):
                         raw = r.json()
                         raw_items = raw if isinstance(raw, list) else raw.get("items", raw.get("programs", []))
                         items = _normalize_guide_programs(raw_items)
+                        if items:
+                            log.debug("Tunarr lineup fallback returned %d items for %s", len(items), tunarr_id)
                 except Exception as e:
-                    log.warning("Tunarr lineup fallback failed for %s: %s", tunarr_id, e)
+                    log.warning("Tunarr lineup for %s failed: %s", tunarr_id, e)
+
+            # 3. Last fallback: bulk guide API with channel filtering
+            if not items:
+                try:
+                    r = await client.get(f"{url}/api/guide/channels",
+                                         params={"dateFrom": date_from, "dateTo": date_to})
+                    if r.status_code == 200:
+                        bulk = r.json()
+                        log.debug("Tunarr bulk guide: type=%s", type(bulk).__name__)
+                        if isinstance(bulk, dict):
+                            # Dict keyed by channel UUID
+                            ch_data = bulk.get(tunarr_id, bulk.get("channels", {}).get(tunarr_id))
+                            if isinstance(ch_data, list):
+                                items = _normalize_guide_programs(ch_data)
+                            elif isinstance(ch_data, dict):
+                                items = _normalize_guide_programs(ch_data.get("programs", []))
+                except Exception:
+                    pass
+
             guide_channels.append({
                 "channel_number": link["channel_number"],
                 "tunarr_id": tunarr_id,
@@ -4089,6 +4085,11 @@ async def tunarr_guide(hours: int = Query(24)):
                 "tunarr_number": link.get("tunarr_number"),
                 "schedule": items,
             })
+            if items:
+                log.info("Guide: CH %s (%s) — %d programs", link["channel_number"], link.get("tunarr_name", ""), len(items))
+            else:
+                log.warning("Guide: CH %s (%s) — no programs found", link["channel_number"], link.get("tunarr_name", ""))
+
     return {"channels": guide_channels}
 
 # ── Tunarr channel import/export ─────────────────────────────────────────────

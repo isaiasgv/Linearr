@@ -14,8 +14,9 @@ import {
   usePlexEvents,
   useClearPlexEvents,
   useDeleteCollection,
+  usePlexCollections,
+  usePlexCollectionItems,
 } from '@/features/plex/hooks'
-import { usePlexCollections } from '@/features/plex/hooks'
 import { useUIStore } from '@/shared/store/ui.store'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { PlexThumb } from '@/features/plex/components/PlexThumb'
@@ -237,6 +238,55 @@ function LibraryBrowser({
   )
 }
 
+/** Collection content viewer */
+function CollectionBrowser({
+  ratingKey,
+  collectionTitle,
+  onClose,
+}: {
+  ratingKey: string
+  collectionTitle: string
+  onClose: () => void
+}) {
+  const { data: items = [], isLoading } = usePlexCollectionItems(ratingKey)
+  const openModal = useUIStore((s) => s.openModal)
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          Back
+        </button>
+        <h3 className="text-sm font-semibold text-slate-200">{collectionTitle}</h3>
+        <span className="text-xs text-slate-500">{items.length} item{items.length !== 1 ? 's' : ''}</span>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Spinner /></div>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+          {items.map((item) => (
+            <PosterCard
+              key={item.rating_key}
+              ratingKey={item.rating_key}
+              thumb={item.thumb}
+              title={item.title}
+              year={item.year}
+              type={item.type}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function PlexView() {
   const { data: serverInfo, isLoading: loadingServer, isError: serverError } = usePlexServerInfo()
   const { data: libraryStats = [], isLoading: loadingStats } = usePlexLibraryStats()
@@ -255,6 +305,10 @@ export function PlexView() {
 
   const [browsingLibrary, setBrowsingLibrary] = useState<{
     id: string
+    title: string
+  } | null>(null)
+  const [browsingCollection, setBrowsingCollection] = useState<{
+    ratingKey: string
     title: string
   } | null>(null)
 
@@ -318,8 +372,14 @@ export function PlexView() {
           </div>
         ) : null}
 
-        {/* Library browsing mode */}
-        {browsingLibrary ? (
+        {/* Collection browsing mode */}
+        {browsingCollection ? (
+          <CollectionBrowser
+            ratingKey={browsingCollection.ratingKey}
+            collectionTitle={browsingCollection.title}
+            onClose={() => setBrowsingCollection(null)}
+          />
+        ) : browsingLibrary ? (
           <LibraryBrowser
             sectionId={browsingLibrary.id}
             libraryTitle={browsingLibrary.title}
@@ -577,7 +637,8 @@ export function PlexView() {
                   {allCollections.map((coll) => (
                     <div
                       key={coll.rating_key}
-                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 hover:border-slate-600 transition-colors group relative"
+                      onClick={() => setBrowsingCollection({ ratingKey: coll.rating_key, title: coll.title })}
+                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 hover:border-slate-600 transition-colors group relative cursor-pointer"
                     >
                       <div className="flex items-center gap-2 mb-2">
                         {coll.thumb ? (

@@ -61,6 +61,7 @@ export interface PlexItem {
     container?: string
   }
   subtitles?: string[]
+  playback_url?: string
 }
 
 export interface PlexSeason {
