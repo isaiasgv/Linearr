@@ -3372,6 +3372,88 @@ def _normalize_guide_programs(programs: list) -> list[dict]:
         })
     return items
 
+@app.get("/api/tunarr/channels/{tunarr_id}/debug-schedule")
+async def tunarr_debug_schedule(tunarr_id: str, hours: int = Query(6)):
+    """Debug: probe all Tunarr API paths and return raw responses."""
+    url = get_tunarr_url()
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    date_from = now.isoformat()
+    date_to = (now + timedelta(hours=hours)).isoformat()
+    results = {}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        paths = [
+            ("guide", f"{url}/api/guide/channels/{tunarr_id}", {"dateFrom": date_from, "dateTo": date_to}),
+            ("lineup", f"{url}/api/channels/{tunarr_id}/lineup", {"from": date_from, "to": date_to}),
+            ("programming", f"{url}/api/channels/{tunarr_id}/programming", None),
+            ("schedule", f"{url}/api/channels/{tunarr_id}/schedule", None),
+            ("lineupV2", f"{url}/api/channels/{tunarr_id}/lineup", {"dateFrom": date_from, "dateTo": date_to}),
+        ]
+        for name, path, params in paths:
+            try:
+                r = await client.get(path, params=params) if params else await client.get(path)
+                body = r.json() if r.status_code == 200 else None
+                # Truncate large responses to first 3 items
+                preview = None
+                if isinstance(body, list):
+                    preview = body[:3]
+                elif isinstance(body, dict):
+                    preview = {}
+                    for k, v in body.items():
+                        if isinstance(v, list):
+                            preview[k] = f"[{len(v)} items] first: {v[:2]}" if v else "[]"
+                        else:
+                            preview[k] = v
+                results[name] = {"status": r.status_code, "preview": preview, "type": type(body).__name__ if body is not None else "null"}
+            except Exception as e:
+                results[name] = {"status": "error", "error": str(e)}
+    return {"tunarr_id": tunarr_id, "tunarr_url": url, "date_from": date_from, "date_to": date_to, "results": results}
+
+@app.get("/api/tunarr/debug-guide")
+async def tunarr_debug_guide():
+    """Debug: probe Tunarr guide API and return raw response structure."""
+    url = get_tunarr_url()
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    date_from = now.isoformat()
+    date_to = (now + timedelta(hours=6)).isoformat()
+    with get_db() as conn:
+        links = [dict(r) for r in conn.execute("SELECT * FROM tunarr_channel_links").fetchall()]
+    results = {"tunarr_url": url, "links_count": len(links), "links": links}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # Try bulk guide
+        try:
+            r = await client.get(f"{url}/api/guide/channels", params={"dateFrom": date_from, "dateTo": date_to})
+            body = r.json() if r.status_code == 200 else None
+            if isinstance(body, list):
+                results["bulk_guide"] = {"status": r.status_code, "type": "list", "count": len(body),
+                                          "sample_keys": list(body[0].keys()) if body else [], "sample_id": body[0].get("id", "N/A") if body else None}
+            elif isinstance(body, dict):
+                results["bulk_guide"] = {"status": r.status_code, "type": "dict", "keys": list(body.keys()),
+                                          "channels_count": len(body.get("channels", body.get("data", [])))}
+            else:
+                results["bulk_guide"] = {"status": r.status_code, "type": str(type(body))}
+        except Exception as e:
+            results["bulk_guide"] = {"error": str(e)}
+        # Try per-channel for first link
+        if links:
+            tid = links[0]["tunarr_id"]
+            try:
+                r = await client.get(f"{url}/api/guide/channels/{tid}", params={"dateFrom": date_from, "dateTo": date_to})
+                body = r.json() if r.status_code == 200 else None
+                if isinstance(body, dict):
+                    results["per_channel_guide"] = {"status": r.status_code, "keys": list(body.keys()),
+                                                     "programs_count": len(body.get("programs", [])),
+                                                     "first_program": body.get("programs", [None])[0] if body.get("programs") else None}
+                elif isinstance(body, list):
+                    results["per_channel_guide"] = {"status": r.status_code, "type": "list", "count": len(body),
+                                                     "first_item": body[0] if body else None}
+                else:
+                    results["per_channel_guide"] = {"status": r.status_code, "raw_type": str(type(body))}
+            except Exception as e:
+                results["per_channel_guide"] = {"error": str(e)}
+    return results
+
 @app.get("/api/tunarr/channels/{tunarr_id}/shows")
 async def tunarr_get_channel_shows(tunarr_id: str):
     url = get_tunarr_url()
