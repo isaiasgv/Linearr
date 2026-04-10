@@ -922,7 +922,7 @@ async def plex_item(rating_key: str):
                     if lang and lang not in subtitles:
                         subtitles.append(lang)
 
-    # Build Plex web app URL for playback
+    # Build Plex web URL for playback
     plex_web_url = None
     try:
         async with httpx.AsyncClient(timeout=5) as mc:
@@ -930,9 +930,10 @@ async def plex_item(rating_key: str):
             if idr.status_code == 200:
                 machine_id = idr.json().get("MediaContainer", {}).get("machineIdentifier", "")
                 if machine_id:
-                    plex_web_url = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}"
-    except Exception:
-        pass
+                    plex_web_url = f"https://app.plex.tv/desktop/#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}"
+                    log.info("Plex web URL for %s: machineId=%s ratingKey=%s", m.get("title"), machine_id, rating_key)
+    except Exception as e:
+        log.warning("Failed to build Plex web URL: %s", e)
 
     return {
         "rating_key": m.get("ratingKey"),
@@ -976,7 +977,7 @@ async def plex_stream_url(rating_key: str):
             pass
 
     # Plex web app URL — works from anywhere (local + remote), opens in browser
-    plex_web_url = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}" if machine_id else None
+    plex_web_url = f"https://app.plex.tv/desktop/#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}" if machine_id else None
 
     return {
         "plex_web": plex_web_url,
