@@ -50,9 +50,9 @@ function QuickStart({
   applyAiSuggestion,
 }: QuickStartProps) {
   return (
-    <div className="border border-slate-700 rounded-lg overflow-hidden">
+    <div className="border border-slate-700 rounded-lg">
       {/* Header tabs */}
-      <div className="flex items-center bg-slate-900/60">
+      <div className="flex items-center bg-slate-900/60 rounded-t-lg">
         <button
           type="button"
           onClick={() => setMode(mode === 'presets' ? 'collapsed' : 'presets')}
@@ -100,7 +100,7 @@ function QuickStart({
 
       {/* Collapsible body */}
       {mode === 'presets' && (
-        <div className="p-3 border-t border-slate-700 bg-slate-900/30">
+        <div className="p-3 border-t border-slate-700 bg-slate-900/30 rounded-b-lg">
           <div className="flex gap-2 mb-3">
             <input
               type="text"
@@ -108,14 +108,13 @@ function QuickStart({
               onChange={(e) => setPresetSearch(e.target.value)}
               placeholder="Search HBO, Disney, FX…"
               className="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-              autoFocus
             />
             <select
               value={presetCategory}
               onChange={(e) => setPresetCategory(e.target.value)}
               className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-300"
             >
-              <option value="all">All</option>
+              <option value="all">All categories</option>
               {NETWORK_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -123,22 +122,32 @@ function QuickStart({
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto pr-1">
+          <p className="text-[10px] text-slate-500 mb-1.5">
+            {filteredPresets.length} preset{filteredPresets.length !== 1 ? 's' : ''}
+          </p>
+          <div className="flex flex-col gap-1 max-h-56 overflow-y-auto pr-1">
             {filteredPresets.length === 0 ? (
-              <p className="col-span-full text-xs text-slate-500 text-center py-2">No matches</p>
+              <p className="text-xs text-slate-500 text-center py-4">
+                No presets match. Try a different search or category.
+              </p>
             ) : (
               filteredPresets.map((p) => (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => applyPreset(p)}
-                  className="text-left px-2.5 py-1.5 text-xs bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 text-slate-200 rounded transition-colors group"
+                  className="w-full text-left px-3 py-2 bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 rounded transition-colors"
                   title={p.style}
                 >
-                  <div className="font-medium truncate">{p.name}</div>
-                  <div className="text-[10px] text-slate-500 group-hover:text-indigo-300 truncate">
-                    {p.category}
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs font-medium text-slate-100 truncate flex-1">
+                      {p.name}
+                    </span>
+                    <span className="text-[10px] text-slate-500 shrink-0">{p.tier}</span>
                   </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                    {p.category} · {p.vibe}
+                  </p>
                 </button>
               ))
             )}
