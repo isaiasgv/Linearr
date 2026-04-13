@@ -224,6 +224,10 @@ def init_db():
         except sqlite3.OperationalError:
             pass
         try:
+            conn.execute("ALTER TABLE saved_icons ADD COLUMN composition TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS plex_events (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -384,6 +388,7 @@ class ChannelIn(BaseModel):
     mode: str = "Shuffle"
     style: str = ""
     color: str = "blue"
+    icon: str | None = None
 
 @app.get("/api/channels")
 def list_channels():
@@ -398,8 +403,8 @@ async def create_channel(body: ChannelIn):
     with get_db() as conn:
         try:
             conn.execute(
-                "INSERT INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
-                (body.number, body.name, body.tier, body.vibe, body.mode, body.style, body.color)
+                "INSERT INTO channels (number, name, tier, vibe, mode, style, color, icon) VALUES (?,?,?,?,?,?,?,?)",
+                (body.number, body.name, body.tier, body.vibe, body.mode, body.style, body.color, body.icon)
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, f"Channel {body.number} already exists")
@@ -489,9 +494,9 @@ async def update_channel(channel_number: int, body: ChannelIn):
         if not existing:
             raise HTTPException(404, "Channel not found")
         conn.execute(
-            """UPDATE channels SET name=?, tier=?, vibe=?, mode=?, style=?, color=?
+            """UPDATE channels SET name=?, tier=?, vibe=?, mode=?, style=?, color=?, icon=?
                WHERE number=?""",
-            (body.name, body.tier, body.vibe, body.mode, body.style, body.color, channel_number)
+            (body.name, body.tier, body.vibe, body.mode, body.style, body.color, body.icon, channel_number)
         )
         # If channel number changed, update all related tables
         if body.number != channel_number:
@@ -584,12 +589,15 @@ async def save_icon(request: Request):
     name = body.get("name", "Untitled")
     category = body.get("category", "custom")
     data = body.get("data", "")
+    composition = body.get("composition")
     if not data:
         raise HTTPException(400, "Icon data required")
+    # Composition may be a dict — store as JSON string
+    comp_str = json.dumps(composition) if isinstance(composition, dict) else composition
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO saved_icons (name, category, data) VALUES (?, ?, ?)",
-            (name, category, data),
+            "INSERT INTO saved_icons (name, category, data, composition) VALUES (?, ?, ?, ?)",
+            (name, category, data, comp_str),
         )
         row = conn.execute("SELECT * FROM saved_icons WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
@@ -607,6 +615,10 @@ async def update_saved_icon(icon_id: int, request: Request):
             conn.execute("UPDATE saved_icons SET category=? WHERE id=?", (body["category"], icon_id))
         if "data" in body:
             conn.execute("UPDATE saved_icons SET data=? WHERE id=?", (body["data"], icon_id))
+        if "composition" in body:
+            comp = body["composition"]
+            comp_str = json.dumps(comp) if isinstance(comp, dict) else comp
+            conn.execute("UPDATE saved_icons SET composition=? WHERE id=?", (comp_str, icon_id))
         row = conn.execute("SELECT * FROM saved_icons WHERE id=?", (icon_id,)).fetchone()
     return dict(row)
 
