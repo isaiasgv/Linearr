@@ -21,6 +21,180 @@ const TIER_COLORS: Record<string, string> = {
   'Galaxy Premium': 'purple',
 }
 
+interface QuickStartProps {
+  mode: 'collapsed' | 'presets' | 'ai'
+  setMode: (m: 'collapsed' | 'presets' | 'ai') => void
+  presetSearch: string
+  setPresetSearch: (s: string) => void
+  presetCategory: string
+  setPresetCategory: (s: string) => void
+  filteredPresets: NetworkPreset[]
+  applyPreset: (p: NetworkPreset) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  aiSuggest: any
+  aiChannels: AiChannelSuggestion[]
+  applyAiSuggestion: (s: AiChannelSuggestion) => void
+}
+
+function QuickStart({
+  mode,
+  setMode,
+  presetSearch,
+  setPresetSearch,
+  presetCategory,
+  setPresetCategory,
+  filteredPresets,
+  applyPreset,
+  aiSuggest,
+  aiChannels,
+  applyAiSuggestion,
+}: QuickStartProps) {
+  return (
+    <div className="border border-slate-700 rounded-lg overflow-hidden">
+      {/* Header tabs */}
+      <div className="flex items-center bg-slate-900/60">
+        <button
+          type="button"
+          onClick={() => setMode(mode === 'presets' ? 'collapsed' : 'presets')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium border-r border-slate-700 transition-colors ${
+            mode === 'presets'
+              ? 'bg-slate-800 text-slate-100'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <svg
+            className="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
+          Network Presets
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode(mode === 'ai' ? 'collapsed' : 'ai')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+            mode === 'ai'
+              ? 'bg-slate-800 text-slate-100'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <svg
+            className="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+          </svg>
+          AI Suggestions
+        </button>
+      </div>
+
+      {/* Collapsible body */}
+      {mode === 'presets' && (
+        <div className="p-3 border-t border-slate-700 bg-slate-900/30">
+          <div className="flex gap-2 mb-3">
+            <input
+              type="text"
+              value={presetSearch}
+              onChange={(e) => setPresetSearch(e.target.value)}
+              placeholder="Search HBO, Disney, FX…"
+              className="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              autoFocus
+            />
+            <select
+              value={presetCategory}
+              onChange={(e) => setPresetCategory(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-300"
+            >
+              <option value="all">All</option>
+              {NETWORK_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto pr-1">
+            {filteredPresets.length === 0 ? (
+              <p className="col-span-full text-xs text-slate-500 text-center py-2">No matches</p>
+            ) : (
+              filteredPresets.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyPreset(p)}
+                  className="text-left px-2.5 py-1.5 text-xs bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 text-slate-200 rounded transition-colors group"
+                  title={p.style}
+                >
+                  <div className="font-medium truncate">{p.name}</div>
+                  <div className="text-[10px] text-slate-500 group-hover:text-indigo-300 truncate">
+                    {p.category}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {mode === 'ai' && (
+        <div className="p-3 border-t border-slate-700 bg-slate-900/30">
+          {!aiSuggest.data && !aiSuggest.isPending && !aiSuggest.isError && (
+            <button
+              type="button"
+              onClick={() => aiSuggest.mutate()}
+              className="w-full px-3 py-2 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium"
+            >
+              Generate suggestions from your library
+            </button>
+          )}
+          {aiSuggest.isPending && (
+            <div className="flex items-center gap-2 text-xs text-slate-400 py-2 justify-center">
+              <Spinner size="sm" />
+              Analyzing your Plex library…
+            </div>
+          )}
+          {aiSuggest.isError && (
+            <div className="text-xs text-red-400 text-center py-2">
+              AI suggestion failed. Check your AI settings.
+            </div>
+          )}
+          {aiChannels.length > 0 && (
+            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+              {aiChannels.map((s, i) => (
+                <button
+                  key={`${s.number}-${i}`}
+                  type="button"
+                  onClick={() => applyAiSuggestion(s)}
+                  className="w-full text-left px-2.5 py-2 bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 rounded transition-colors group"
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[10px] font-mono text-slate-500">CH {s.number}</span>
+                    <span className="text-xs font-medium text-slate-100 truncate flex-1">
+                      {s.name}
+                    </span>
+                    <span className="text-[10px] text-slate-500 shrink-0">{s.tier}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{s.description}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ChannelFormModal() {
   const { modals, editingChannel, closeModal, openModal } = useUIStore()
   const open = modals.channelForm
@@ -47,7 +221,7 @@ export function ChannelFormModal() {
   // Smart channel creation: preset picker + AI suggestions
   const [presetCategory, setPresetCategory] = useState<string>('all')
   const [presetSearch, setPresetSearch] = useState('')
-  const [showAiPanel, setShowAiPanel] = useState(false)
+  const [quickStartMode, setQuickStartMode] = useState<'collapsed' | 'presets' | 'ai'>('collapsed')
 
   const existingNumbers = useMemo(() => existingChannels.map((c) => c.number), [existingChannels])
 
@@ -78,7 +252,7 @@ export function ChannelFormModal() {
       setCreateTunarr(false)
       setPresetCategory('all')
       setPresetSearch('')
-      setShowAiPanel(false)
+      setQuickStartMode('collapsed')
     }
   }, [open, editingChannel])
 
@@ -109,6 +283,7 @@ export function ChannelFormModal() {
     if (!numberTouched) {
       setNumber(String(nextAvailableNumber(existingNumbers, p.tier)))
     }
+    setQuickStartMode('collapsed')
   }
 
   // Apply an AI suggestion to the form
@@ -122,7 +297,7 @@ export function ChannelFormModal() {
     if (!numberTouched && s.number) {
       setNumber(String(s.number))
     }
-    setShowAiPanel(false)
+    setQuickStartMode('collapsed')
   }
 
   function handleClose() {
@@ -176,124 +351,21 @@ export function ChannelFormModal() {
         </div>
 
         <div className="px-6 py-4 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
-          {/* Smart suggestions — create mode only */}
+          {/* Quick start — create mode only */}
           {!isEditing && (
-            <>
-              {/* Preset picker */}
-              <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs text-slate-400 font-semibold">
-                    Start from a preset
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowAiPanel((v) => !v)}
-                    className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300"
-                  >
-                    <svg
-                      className="w-3 h-3"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path d="M12 2L9 9l-7 1 5 5-1 7 6-3 6 3-1-7 5-5-7-1-3-7z" />
-                    </svg>
-                    Suggest with AI
-                  </button>
-                </div>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    type="text"
-                    value={presetSearch}
-                    onChange={(e) => setPresetSearch(e.target.value)}
-                    placeholder="Search networks…"
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-                  />
-                  <select
-                    value={presetCategory}
-                    onChange={(e) => setPresetCategory(e.target.value)}
-                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100"
-                  >
-                    <option value="all">All categories</option>
-                    {NETWORK_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                  {filteredPresets.length === 0 ? (
-                    <p className="text-xs text-slate-500 py-1">No matching presets</p>
-                  ) : (
-                    filteredPresets.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => applyPreset(p)}
-                        className="px-2 py-1 text-xs bg-slate-800 hover:bg-indigo-700 hover:text-white border border-slate-700 hover:border-indigo-500 text-slate-300 rounded transition-colors"
-                        title={`${p.tier} · ${p.vibe}`}
-                      >
-                        {p.name}
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* AI suggestions panel */}
-              {showAiPanel && (
-                <div className="bg-indigo-950/30 border border-indigo-800/50 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-indigo-300 font-semibold">
-                      AI Channel Suggestions
-                    </span>
-                    {!aiSuggest.data && !aiSuggest.isPending && (
-                      <button
-                        type="button"
-                        onClick={() => aiSuggest.mutate()}
-                        className="px-2 py-1 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded"
-                      >
-                        Generate
-                      </button>
-                    )}
-                  </div>
-                  {aiSuggest.isPending && (
-                    <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
-                      <Spinner size="sm" />
-                      Analyzing your library…
-                    </div>
-                  )}
-                  {aiSuggest.isError && (
-                    <p className="text-xs text-red-400">
-                      AI suggestion failed. Check your AI settings.
-                    </p>
-                  )}
-                  {aiChannels.length > 0 && (
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
-                      {aiChannels.map((s, i) => (
-                        <button
-                          key={`${s.number}-${i}`}
-                          type="button"
-                          onClick={() => applyAiSuggestion(s)}
-                          className="w-full text-left px-2 py-1.5 text-xs bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-indigo-500 rounded transition-colors"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-slate-500">CH {s.number}</span>
-                            <span className="font-medium text-slate-200">{s.name}</span>
-                            <span className="text-[10px] text-slate-500 ml-auto">{s.tier}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                            {s.vibe} — {s.description}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
+            <QuickStart
+              mode={quickStartMode}
+              setMode={setQuickStartMode}
+              presetSearch={presetSearch}
+              setPresetSearch={setPresetSearch}
+              presetCategory={presetCategory}
+              setPresetCategory={setPresetCategory}
+              filteredPresets={filteredPresets}
+              applyPreset={applyPreset}
+              aiSuggest={aiSuggest}
+              aiChannels={aiChannels}
+              applyAiSuggestion={applyAiSuggestion}
+            />
           )}
 
           {/* Icon */}

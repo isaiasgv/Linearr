@@ -277,11 +277,18 @@ export function ChannelSidebar() {
               }`}
             >
               {ch.icon ? (
-                <img
-                  src={ch.icon}
-                  alt=""
-                  className="flex-shrink-0 w-8 h-8 rounded-lg object-cover bg-slate-900"
-                />
+                <div className="relative shrink-0">
+                  <img
+                    src={ch.icon}
+                    alt=""
+                    className="w-8 h-8 rounded-lg object-cover bg-slate-900"
+                  />
+                  <span
+                    className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded px-1 leading-tight shadow ${tierNumberColor(ch.tier)}`}
+                  >
+                    {ch.number}
+                  </span>
+                </div>
               ) : (
                 <span
                   className={`flex-shrink-0 w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}

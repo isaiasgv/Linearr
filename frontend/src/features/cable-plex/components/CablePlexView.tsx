@@ -140,11 +140,18 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
         {/* Channel info */}
         <div className="p-3 flex items-center gap-3 shrink-0 w-48">
           {channel.icon ? (
-            <img
-              src={channel.icon}
-              alt=""
-              className="w-11 h-11 rounded-lg object-cover shrink-0 bg-slate-950"
-            />
+            <div className="relative shrink-0">
+              <img
+                src={channel.icon}
+                alt=""
+                className="w-11 h-11 rounded-lg object-cover bg-slate-950"
+              />
+              <span
+                className={`absolute -bottom-1 -right-1 text-[10px] font-mono font-bold rounded px-1 py-0 leading-tight shadow ${tierColor(channel.tier)}`}
+              >
+                {channel.number}
+              </span>
+            </div>
           ) : (
             <span
               className={`text-sm font-mono font-bold rounded-lg w-11 h-10 flex items-center justify-center shrink-0 ${tierColor(channel.tier)}`}
