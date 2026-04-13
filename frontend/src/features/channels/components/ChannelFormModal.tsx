@@ -1,8 +1,17 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react'
+import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react'
 import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
+import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
-import { useCreateChannel, useUpdateChannel } from '@/features/channels/hooks'
-import type { Channel } from '@/shared/types'
+import { useChannels, useCreateChannel, useUpdateChannel } from '@/features/channels/hooks'
+import { useAiSuggestChannels } from '@/features/ai/hooks'
+import type { AiChannelSuggestion, Channel } from '@/shared/types'
+import {
+  NETWORK_PRESETS,
+  NETWORK_CATEGORIES,
+  type NetworkPreset,
+} from '@/features/channels/presets/networks'
+import { VIBE_TEMPLATES, STYLE_TEMPLATES } from '@/features/channels/presets/templates'
+import { nextAvailableNumber } from '@/features/channels/presets/numbering'
 
 const TIERS: Channel['tier'][] = ['Galaxy Main', 'Classics', 'Galaxy Premium']
 const MODES = ['Shuffle', 'Flex', 'Sequential']
@@ -19,9 +28,12 @@ export function ChannelFormModal() {
 
   const createChannel = useCreateChannel()
   const updateChannel = useUpdateChannel()
+  const aiSuggest = useAiSuggestChannels()
+  const { data: existingChannels = [] } = useChannels()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [number, setNumber] = useState<string>('')
+  const [numberTouched, setNumberTouched] = useState(false)
   const [name, setName] = useState('')
   const [tier, setTier] = useState<Channel['tier']>('Galaxy Main')
   const [vibe, setVibe] = useState('')
@@ -32,12 +44,31 @@ export function ChannelFormModal() {
   const [autoAssign, setAutoAssign] = useState(false)
   const [createTunarr, setCreateTunarr] = useState(false)
 
+  // Smart channel creation: preset picker + AI suggestions
+  const [presetCategory, setPresetCategory] = useState<string>('all')
+  const [presetSearch, setPresetSearch] = useState('')
+  const [showAiPanel, setShowAiPanel] = useState(false)
+
+  const existingNumbers = useMemo(() => existingChannels.map((c) => c.number), [existingChannels])
+
+  const filteredPresets = useMemo(() => {
+    return NETWORK_PRESETS.filter((p) => {
+      if (presetCategory !== 'all' && p.category !== presetCategory) return false
+      if (presetSearch && !p.name.toLowerCase().includes(presetSearch.toLowerCase())) return false
+      return true
+    })
+  }, [presetCategory, presetSearch])
+
+  const aiChannels: AiChannelSuggestion[] = aiSuggest.data?.suggestions?.channels ?? []
+
   // Sync form state when editingChannel changes or modal opens
   useEffect(() => {
     if (open) {
+      const initialTier = editingChannel?.tier ?? 'Galaxy Main'
       setNumber(editingChannel?.number?.toString() ?? '')
+      setNumberTouched(false)
       setName(editingChannel?.name ?? '')
-      setTier(editingChannel?.tier ?? 'Galaxy Main')
+      setTier(initialTier)
       setVibe(editingChannel?.vibe ?? '')
       setMode(editingChannel?.mode ?? 'Shuffle')
       setStyle(editingChannel?.style ?? '')
@@ -45,6 +76,9 @@ export function ChannelFormModal() {
       setIcon(editingChannel?.icon ?? null)
       setAutoAssign(false)
       setCreateTunarr(false)
+      setPresetCategory('all')
+      setPresetSearch('')
+      setShowAiPanel(false)
     }
   }, [open, editingChannel])
 
@@ -54,6 +88,42 @@ export function ChannelFormModal() {
       setColor(TIER_COLORS[tier] ?? 'blue')
     }
   }, [tier, isEditing])
+
+  // Auto-suggest channel number based on tier (create mode, only if user hasn't typed)
+  useEffect(() => {
+    if (open && !isEditing && !numberTouched && existingChannels.length >= 0) {
+      const next = nextAvailableNumber(existingNumbers, tier)
+      setNumber(String(next))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEditing, tier, existingChannels.length])
+
+  // Apply a preset to the form
+  function applyPreset(p: NetworkPreset) {
+    setName(p.name)
+    setTier(p.tier)
+    setVibe(p.vibe)
+    setMode(p.mode)
+    setStyle(p.style)
+    setColor(p.color)
+    if (!numberTouched) {
+      setNumber(String(nextAvailableNumber(existingNumbers, p.tier)))
+    }
+  }
+
+  // Apply an AI suggestion to the form
+  function applyAiSuggestion(s: AiChannelSuggestion) {
+    setName(s.name)
+    if (s.tier === 'Galaxy Main' || s.tier === 'Classics' || s.tier === 'Galaxy Premium') {
+      setTier(s.tier)
+    }
+    setVibe(s.vibe)
+    setStyle(s.description)
+    if (!numberTouched && s.number) {
+      setNumber(String(s.number))
+    }
+    setShowAiPanel(false)
+  }
 
   function handleClose() {
     closeModal('channelForm')
@@ -105,7 +175,127 @@ export function ChannelFormModal() {
           </button>
         </div>
 
-        <div className="px-6 py-4 flex flex-col gap-4">
+        <div className="px-6 py-4 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
+          {/* Smart suggestions — create mode only */}
+          {!isEditing && (
+            <>
+              {/* Preset picker */}
+              <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs text-slate-400 font-semibold">
+                    Start from a preset
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAiPanel((v) => !v)}
+                    className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300"
+                  >
+                    <svg
+                      className="w-3 h-3"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path d="M12 2L9 9l-7 1 5 5-1 7 6-3 6 3-1-7 5-5-7-1-3-7z" />
+                    </svg>
+                    Suggest with AI
+                  </button>
+                </div>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={presetSearch}
+                    onChange={(e) => setPresetSearch(e.target.value)}
+                    placeholder="Search networks…"
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                  />
+                  <select
+                    value={presetCategory}
+                    onChange={(e) => setPresetCategory(e.target.value)}
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100"
+                  >
+                    <option value="all">All categories</option>
+                    {NETWORK_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                  {filteredPresets.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-1">No matching presets</p>
+                  ) : (
+                    filteredPresets.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => applyPreset(p)}
+                        className="px-2 py-1 text-xs bg-slate-800 hover:bg-indigo-700 hover:text-white border border-slate-700 hover:border-indigo-500 text-slate-300 rounded transition-colors"
+                        title={`${p.tier} · ${p.vibe}`}
+                      >
+                        {p.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* AI suggestions panel */}
+              {showAiPanel && (
+                <div className="bg-indigo-950/30 border border-indigo-800/50 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-indigo-300 font-semibold">
+                      AI Channel Suggestions
+                    </span>
+                    {!aiSuggest.data && !aiSuggest.isPending && (
+                      <button
+                        type="button"
+                        onClick={() => aiSuggest.mutate()}
+                        className="px-2 py-1 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded"
+                      >
+                        Generate
+                      </button>
+                    )}
+                  </div>
+                  {aiSuggest.isPending && (
+                    <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                      <Spinner size="sm" />
+                      Analyzing your library…
+                    </div>
+                  )}
+                  {aiSuggest.isError && (
+                    <p className="text-xs text-red-400">
+                      AI suggestion failed. Check your AI settings.
+                    </p>
+                  )}
+                  {aiChannels.length > 0 && (
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {aiChannels.map((s, i) => (
+                        <button
+                          key={`${s.number}-${i}`}
+                          type="button"
+                          onClick={() => applyAiSuggestion(s)}
+                          className="w-full text-left px-2 py-1.5 text-xs bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-indigo-500 rounded transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-500">CH {s.number}</span>
+                            <span className="font-medium text-slate-200">{s.name}</span>
+                            <span className="text-[10px] text-slate-500 ml-auto">{s.tier}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {s.vibe} — {s.description}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
           {/* Icon */}
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Channel Icon</label>
@@ -185,7 +375,10 @@ export function ChannelFormModal() {
               <input
                 type="number"
                 value={number}
-                onChange={(e) => setNumber(e.target.value)}
+                onChange={(e) => {
+                  setNumber(e.target.value)
+                  setNumberTouched(true)
+                }}
                 required
                 min={1}
                 max={9999}
@@ -261,13 +454,48 @@ export function ChannelFormModal() {
               value={vibe}
               onChange={(e) => setVibe(e.target.value)}
               placeholder="e.g. Cozy crime procedurals"
+              list="vibe-templates"
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
+            <datalist id="vibe-templates">
+              {VIBE_TEMPLATES.map((v) => (
+                <option key={v} value={v} />
+              ))}
+            </datalist>
           </div>
 
           {/* Style */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Style</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-slate-400">Style</label>
+              <details className="relative">
+                <summary className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer list-none">
+                  Quick templates ▾
+                </summary>
+                <div className="absolute right-0 top-5 z-10 w-72 bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-2 max-h-64 overflow-y-auto">
+                  <div className="flex flex-col gap-1">
+                    {STYLE_TEMPLATES.map((t) => (
+                      <button
+                        key={t.label}
+                        type="button"
+                        onClick={(e) => {
+                          setStyle(t.text)
+                          // close the <details> wrapper
+                          const det =
+                            (e.currentTarget.closest('details') as HTMLDetailsElement) ?? null
+                          if (det) det.open = false
+                        }}
+                        className="text-left px-2 py-1 text-xs hover:bg-slate-800 rounded"
+                        title={t.text}
+                      >
+                        <span className="text-slate-200 font-medium">{t.label}</span>
+                        <p className="text-[11px] text-slate-500 truncate">{t.text}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            </div>
             <textarea
               value={style}
               onChange={(e) => setStyle(e.target.value)}
