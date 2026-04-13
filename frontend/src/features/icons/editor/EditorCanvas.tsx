@@ -93,7 +93,13 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
   let bbox: { x: number; y: number; w: number; h: number; rot: number } | null = null
   if (selected) {
     if (selected.kind === 'image') {
-      bbox = { x: selected.x, y: selected.y, w: selected.width, h: selected.height, rot: selected.rotation }
+      bbox = {
+        x: selected.x,
+        y: selected.y,
+        w: selected.width,
+        h: selected.height,
+        rot: selected.rotation,
+      }
     } else {
       // approximate text bbox
       const tl = selected as TextLayer
@@ -165,7 +171,14 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
                 style={{ pointerEvents: 'all', cursor: 'crosshair' }}
                 onPointerDown={(e) => handlePointerDownLayer(e, selected, 'rotate')}
               />
-              <line x1={bbox.w / 2} y1={0} x2={bbox.w / 2} y2={-22} stroke="#a855f7" strokeWidth={2} />
+              <line
+                x1={bbox.w / 2}
+                y1={0}
+                x2={bbox.w / 2}
+                y2={-22}
+                stroke="#a855f7"
+                strokeWidth={2}
+              />
             </g>
           </svg>
         )}

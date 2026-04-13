@@ -24,10 +24,7 @@ function saveIcon(body: SaveIconBody): Promise<SavedIcon> {
   return post<SavedIcon>('/api/icons/library', body)
 }
 
-function updateIcon(
-  id: number,
-  body: Partial<SaveIconBody>,
-): Promise<SavedIcon> {
+function updateIcon(id: number, body: Partial<SaveIconBody>): Promise<SavedIcon> {
   return put<SavedIcon>(`/api/icons/library/${id}`, body)
 }
 

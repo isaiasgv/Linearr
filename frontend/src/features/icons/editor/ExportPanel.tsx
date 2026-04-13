@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import type { Composition, Background, ColorMode } from './types'
-import { applyColorMode, renderSVG, rasterizeToPng, downloadBlob, exportAllVariants } from './render'
+import {
+  applyColorMode,
+  renderSVG,
+  rasterizeToPng,
+  downloadBlob,
+  exportAllVariants,
+} from './render'
 
 interface Props {
   composition: Composition
@@ -43,7 +49,8 @@ export function ExportPanel({ composition, onChange, baseName = 'icon' }: Props)
   }
 
   // Parse gradient value
-  const grad = composition.background.type === 'gradient' ? composition.background.value.split('|') : []
+  const grad =
+    composition.background.type === 'gradient' ? composition.background.value.split('|') : []
   const gradAngle = grad[0] ? parseFloat(grad[0]) : 135
   const gradC1 = grad[1] || '#6366f1'
   const gradC2 = grad[2] || '#a855f7'
@@ -57,7 +64,13 @@ export function ExportPanel({ composition, onChange, baseName = 'icon' }: Props)
           {(['transparent', 'solid', 'gradient'] as const).map((t) => (
             <button
               key={t}
-              onClick={() => updateBg({ type: t, value: t === 'transparent' ? '' : t === 'solid' ? '#1e293b' : '135|#6366f1|#a855f7' })}
+              onClick={() =>
+                updateBg({
+                  type: t,
+                  value:
+                    t === 'transparent' ? '' : t === 'solid' ? '#1e293b' : '135|#6366f1|#a855f7',
+                })
+              }
               className={`flex-1 px-2 py-1 text-xs rounded ${
                 composition.background.type === t
                   ? 'bg-indigo-600 text-white'

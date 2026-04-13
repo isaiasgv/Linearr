@@ -257,17 +257,27 @@ function CollectionBrowser({
           onClick={onClose}
           className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
         >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg
+            className="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
             <path d="M15 18l-6-6 6-6" />
           </svg>
           Back
         </button>
         <h3 className="text-sm font-semibold text-slate-200">{collectionTitle}</h3>
-        <span className="text-xs text-slate-500">{items.length} item{items.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-slate-500">
+          {items.length} item{items.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-12"><Spinner /></div>
+        <div className="flex justify-center py-12">
+          <Spinner />
+        </div>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
           {items.map((item) => (
@@ -636,7 +646,9 @@ export function PlexView() {
                   {allCollections.map((coll) => (
                     <div
                       key={coll.rating_key}
-                      onClick={() => setBrowsingCollection({ ratingKey: coll.rating_key, title: coll.title })}
+                      onClick={() =>
+                        setBrowsingCollection({ ratingKey: coll.rating_key, title: coll.title })
+                      }
                       className="bg-slate-800 border border-slate-700 rounded-xl p-3 hover:border-slate-600 transition-colors group relative cursor-pointer"
                     >
                       <div className="flex items-center gap-2 mb-2">
@@ -648,7 +660,13 @@ export function PlexView() {
                           />
                         ) : (
                           <div className="w-8 h-8 rounded-lg bg-purple-900/50 flex items-center justify-center shrink-0">
-                            <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <svg
+                              className="w-4 h-4 text-purple-400"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={2}
+                            >
                               <rect x="3" y="3" width="7" height="7" rx="1" />
                               <rect x="14" y="3" width="7" height="7" rx="1" />
                               <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -656,7 +674,9 @@ export function PlexView() {
                             </svg>
                           </div>
                         )}
-                        <span className={`text-xs rounded-full px-1.5 py-0.5 ${coll.type === 'movie' ? 'bg-purple-900/40 text-purple-300' : 'bg-blue-900/40 text-blue-300'}`}>
+                        <span
+                          className={`text-xs rounded-full px-1.5 py-0.5 ${coll.type === 'movie' ? 'bg-purple-900/40 text-purple-300' : 'bg-blue-900/40 text-blue-300'}`}
+                        >
                           {coll.type === 'movie' ? 'Movies' : 'Shows'}
                         </span>
                       </div>
@@ -669,7 +689,13 @@ export function PlexView() {
                         className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-red-900/60 hover:bg-red-900 rounded text-red-400"
                         title="Delete collection"
                       >
-                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <svg
+                          className="w-3 h-3"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
                           <path d="M18 6L6 18M6 6l12 12" />
                         </svg>
                       </button>
@@ -694,21 +720,36 @@ export function PlexView() {
                 </div>
                 <div className="space-y-1.5 max-h-60 overflow-y-auto">
                   {plexEvents.map((ev) => (
-                    <div key={ev.id} className="flex items-center gap-3 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg">
-                      <span className={`shrink-0 w-2 h-2 rounded-full ${
-                        ev.event_type === 'library.new' ? 'bg-emerald-400' :
-                        ev.event_type.startsWith('media.play') ? 'bg-blue-400' :
-                        ev.event_type === 'media.scrobble' ? 'bg-amber-400' :
-                        'bg-slate-500'
-                      }`} />
+                    <div
+                      key={ev.id}
+                      className="flex items-center gap-3 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg"
+                    >
+                      <span
+                        className={`shrink-0 w-2 h-2 rounded-full ${
+                          ev.event_type === 'library.new'
+                            ? 'bg-emerald-400'
+                            : ev.event_type.startsWith('media.play')
+                              ? 'bg-blue-400'
+                              : ev.event_type === 'media.scrobble'
+                                ? 'bg-amber-400'
+                                : 'bg-slate-500'
+                        }`}
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-slate-200 truncate">
-                          <span className="text-slate-500">{ev.event_type.replace('media.', '').replace('library.', '')}</span>
+                          <span className="text-slate-500">
+                            {ev.event_type.replace('media.', '').replace('library.', '')}
+                          </span>
                           {ev.title && <> — {ev.title}</>}
                         </p>
                         <p className="text-[10px] text-slate-600">
                           {ev.user_name && <>{ev.user_name} • </>}
-                          {new Date(ev.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {new Date(ev.created_at).toLocaleString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
                         </p>
                       </div>
                     </div>

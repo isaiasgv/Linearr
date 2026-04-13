@@ -1,6 +1,6 @@
 // SVG rendering, color modes, and PNG rasterization.
 
-import type { Composition, Layer, ColorMode, CustomColors, TextLayer, ImageLayer } from './types'
+import type { Composition, ColorMode, CustomColors, TextLayer, ImageLayer } from './types'
 import { familyFor } from './fonts'
 
 // ── Color mode application ──────────────────────────────────────────────────
@@ -93,10 +93,7 @@ function renderTextLayer(layer: TextLayer): string {
   const anchor = layer.align === 'left' ? 'start' : layer.align === 'right' ? 'end' : 'middle'
 
   const tspans = lines
-    .map(
-      (line, i) =>
-        `<tspan x="0" y="${startY + i * lineHeight}">${escapeXml(line)}</tspan>`,
-    )
+    .map((line, i) => `<tspan x="0" y="${startY + i * lineHeight}">${escapeXml(line)}</tspan>`)
     .join('')
 
   const letterSpacing = layer.letterSpacing ? ` letter-spacing="${layer.letterSpacing}"` : ''
@@ -115,7 +112,9 @@ function renderImageLayer(layer: ImageLayer, idx: number): string {
       const recolored = decoded
         .replace(/fill\s*=\s*"(?!none)[^"]*"/gi, `fill="${layer.tint}"`)
         .replace(/stroke\s*=\s*"(?!none)[^"]*"/gi, `stroke="${layer.tint}"`)
-        .replace(/<svg[^>]*>/i, (m) => m.replace(/width="[^"]*"/i, '').replace(/height="[^"]*"/i, ''))
+        .replace(/<svg[^>]*>/i, (m) =>
+          m.replace(/width="[^"]*"/i, '').replace(/height="[^"]*"/i, ''),
+        )
       // Strip outer <svg> and <?xml> so we can embed
       const inner = recolored
         .replace(/<\?xml[^?]*\?>/g, '')

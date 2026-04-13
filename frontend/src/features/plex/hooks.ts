@@ -207,8 +207,13 @@ export function useUpdateCollection() {
   const qc = useQueryClient()
   const addToast = useToastStore((s) => s.addToast)
   return useMutation({
-    mutationFn: ({ ratingKey, body }: { ratingKey: string; body: { title?: string; summary?: string } }) =>
-      plexApi.updateCollection(ratingKey, body),
+    mutationFn: ({
+      ratingKey,
+      body,
+    }: {
+      ratingKey: string
+      body: { title?: string; summary?: string }
+    }) => plexApi.updateCollection(ratingKey, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['plex', 'collections'] })
       addToast('Collection updated')

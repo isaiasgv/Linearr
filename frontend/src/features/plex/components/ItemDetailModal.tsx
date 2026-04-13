@@ -164,7 +164,10 @@ export function ItemDetailModal() {
               {item.genres && item.genres.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
                   {item.genres.map((g) => (
-                    <span key={g} className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                    <span
+                      key={g}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300"
+                    >
                       {g}
                     </span>
                   ))}
@@ -176,7 +179,9 @@ export function ItemDetailModal() {
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   {item.media_info.resolution && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-900/40 border border-indigo-800/50 text-indigo-300 font-mono font-medium">
-                      {item.media_info.resolution === '4k' ? '4K' : `${item.media_info.resolution}p`}
+                      {item.media_info.resolution === '4k'
+                        ? '4K'
+                        : `${item.media_info.resolution}p`}
                     </span>
                   )}
                   {item.media_info.video_codec && (
@@ -187,12 +192,15 @@ export function ItemDetailModal() {
                   {item.media_info.audio_codec && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400 font-mono">
                       {item.media_info.audio_codec.toUpperCase()}
-                      {item.media_info.audio_channels ? ` ${item.media_info.audio_channels === 6 ? '5.1' : item.media_info.audio_channels === 8 ? '7.1' : `${item.media_info.audio_channels}ch`}` : ''}
+                      {item.media_info.audio_channels
+                        ? ` ${item.media_info.audio_channels === 6 ? '5.1' : item.media_info.audio_channels === 8 ? '7.1' : `${item.media_info.audio_channels}ch`}`
+                        : ''}
                     </span>
                   )}
                   {item.subtitles && item.subtitles.length > 0 && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/30 border border-amber-800/50 text-amber-400">
-                      Subs: {item.subtitles.slice(0, 3).join(', ')}{item.subtitles.length > 3 ? ` +${item.subtitles.length - 3}` : ''}
+                      Subs: {item.subtitles.slice(0, 3).join(', ')}
+                      {item.subtitles.length > 3 ? ` +${item.subtitles.length - 3}` : ''}
                     </span>
                   )}
                 </div>
@@ -217,7 +225,13 @@ export function ItemDetailModal() {
                         className="text-amber-400 hover:scale-110 transition-transform"
                         title={`${star} star${star > 1 ? 's' : ''}`}
                       >
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill={filled || half ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={1.5}>
+                        <svg
+                          className="w-4 h-4"
+                          viewBox="0 0 24 24"
+                          fill={filled || half ? 'currentColor' : 'none'}
+                          stroke="currentColor"
+                          strokeWidth={1.5}
+                        >
                           <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                         </svg>
                       </button>

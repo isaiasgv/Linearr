@@ -187,42 +187,62 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
             {filterOptions.genres.length > 0 && (
               <select
                 value={genreFilter}
-                onChange={(e) => { setGenreFilter(e.target.value); setLoadLibrary(true) }}
+                onChange={(e) => {
+                  setGenreFilter(e.target.value)
+                  setLoadLibrary(true)
+                }}
                 className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
               >
                 <option value="">All Genres</option>
                 {filterOptions.genres.map((g) => (
-                  <option key={g} value={g}>{g}</option>
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
                 ))}
               </select>
             )}
             {filterOptions.years.length > 0 && (
               <select
                 value={yearFilter}
-                onChange={(e) => { setYearFilter(e.target.value); setLoadLibrary(true) }}
+                onChange={(e) => {
+                  setYearFilter(e.target.value)
+                  setLoadLibrary(true)
+                }}
                 className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
               >
                 <option value="">All Years</option>
                 {filterOptions.years.map((y) => (
-                  <option key={y} value={y}>{y}</option>
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
                 ))}
               </select>
             )}
             {filterOptions.content_ratings.length > 0 && (
               <select
                 value={ratingFilter}
-                onChange={(e) => { setRatingFilter(e.target.value); setLoadLibrary(true) }}
+                onChange={(e) => {
+                  setRatingFilter(e.target.value)
+                  setLoadLibrary(true)
+                }}
                 className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
               >
                 <option value="">All Ratings</option>
                 {filterOptions.content_ratings.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
                 ))}
               </select>
             )}
             {(genreFilter || yearFilter || ratingFilter) && (
               <button
-                onClick={() => { setGenreFilter(''); setYearFilter(''); setRatingFilter(''); setLoadLibrary(true) }}
+                onClick={() => {
+                  setGenreFilter('')
+                  setYearFilter('')
+                  setRatingFilter('')
+                  setLoadLibrary(true)
+                }}
                 className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
               >
                 Clear filters

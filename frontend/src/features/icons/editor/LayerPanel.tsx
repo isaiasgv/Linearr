@@ -104,7 +104,13 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
               className="text-slate-500 hover:text-slate-300"
               title={layer.visible === false ? 'Show' : 'Hide'}
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 {layer.visible === false ? (
                   <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" />
                 ) : (
@@ -116,7 +122,9 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
               </svg>
             </button>
             <span className="flex-1 truncate text-slate-200">
-              {layer.kind === 'text' ? layer.text || 'Text' : `Image (${layer.format.toUpperCase()})`}
+              {layer.kind === 'text'
+                ? layer.text || 'Text'
+                : `Image (${layer.format.toUpperCase()})`}
             </span>
             <button
               onClick={(e) => {
@@ -126,7 +134,13 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
               className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-300"
               title="Move up"
             >
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-3 h-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M18 15l-6-6-6 6" />
               </svg>
             </button>
@@ -138,7 +152,13 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
               className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-300"
               title="Move down"
             >
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-3 h-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M6 9l6 6 6-6" />
               </svg>
             </button>
@@ -150,7 +170,13 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
               className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300"
               title="Delete"
             >
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="w-3 h-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>

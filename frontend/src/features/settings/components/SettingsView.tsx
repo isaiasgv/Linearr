@@ -398,8 +398,8 @@ export function SettingsView() {
                     </button>
                   </div>
                   <p className="text-xs text-amber-500/70">
-                    Requires Plex Pass on the server. If you don&apos;t have Plex Pass, webhooks are not available
-                    but all other features work normally.
+                    Requires Plex Pass on the server. If you don&apos;t have Plex Pass, webhooks are
+                    not available but all other features work normally.
                   </p>
                 </div>
               </div>

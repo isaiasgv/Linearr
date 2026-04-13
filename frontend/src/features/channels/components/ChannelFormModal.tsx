@@ -125,7 +125,9 @@ export function ChannelFormModal() {
                 <button
                   type="button"
                   onClick={() =>
-                    openModal('iconPicker', { iconPickerCallback: (dataUrl: string) => setIcon(dataUrl) })
+                    openModal('iconPicker', {
+                      iconPickerCallback: (dataUrl: string) => setIcon(dataUrl),
+                    })
                   }
                   className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded"
                 >

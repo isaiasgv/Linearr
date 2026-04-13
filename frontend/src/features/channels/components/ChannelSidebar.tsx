@@ -276,11 +276,19 @@ export function ChannelSidebar() {
                   : 'border-l-2 border-transparent hover:bg-slate-800'
               }`}
             >
-              <span
-                className={`flex-shrink-0 w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}
-              >
-                {ch.number}
-              </span>
+              {ch.icon ? (
+                <img
+                  src={ch.icon}
+                  alt=""
+                  className="flex-shrink-0 w-8 h-8 rounded-lg object-cover bg-slate-900"
+                />
+              ) : (
+                <span
+                  className={`flex-shrink-0 w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}
+                >
+                  {ch.number}
+                </span>
+              )}
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">

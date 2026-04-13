@@ -49,7 +49,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
         </div>
         <div>
           <label className={labelClass}>Font</label>
-          <select value={layer.font} onChange={(e) => update({ font: e.target.value })} className={inputClass}>
+          <select
+            value={layer.font}
+            onChange={(e) => update({ font: e.target.value })}
+            className={inputClass}
+          >
             {FONTS.map((f) => (
               <option key={f.name} value={f.name}>
                 {f.name}
@@ -120,7 +124,9 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
                 key={a}
                 onClick={() => update({ align: a })}
                 className={`flex-1 px-2 py-1 text-xs rounded ${
-                  layer.align === a ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  layer.align === a
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
                 {a}

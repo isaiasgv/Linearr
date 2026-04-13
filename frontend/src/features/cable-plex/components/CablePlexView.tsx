@@ -67,6 +67,9 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent" />
         {/* Channel badge overlaid */}
         <div className="absolute bottom-1.5 left-2 flex items-center gap-1.5">
+          {channel.icon && (
+            <img src={channel.icon} alt="" className="w-7 h-7 rounded object-cover shadow" />
+          )}
           <span
             className={`text-xs font-mono font-bold rounded px-1 py-0.5 shadow ${tierColor(channel.tier)}`}
           >
@@ -136,11 +139,19 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
       <div className="flex items-stretch">
         {/* Channel info */}
         <div className="p-3 flex items-center gap-3 shrink-0 w-48">
-          <span
-            className={`text-sm font-mono font-bold rounded-lg w-11 h-10 flex items-center justify-center shrink-0 ${tierColor(channel.tier)}`}
-          >
-            {channel.number}
-          </span>
+          {channel.icon ? (
+            <img
+              src={channel.icon}
+              alt=""
+              className="w-11 h-11 rounded-lg object-cover shrink-0 bg-slate-950"
+            />
+          ) : (
+            <span
+              className={`text-sm font-mono font-bold rounded-lg w-11 h-10 flex items-center justify-center shrink-0 ${tierColor(channel.tier)}`}
+            >
+              {channel.number}
+            </span>
+          )}
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-100 truncate">{channel.name}</p>
             <p className="text-xs text-slate-500 truncate">{channel.vibe || ''}</p>

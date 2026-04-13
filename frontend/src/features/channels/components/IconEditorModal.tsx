@@ -9,11 +9,7 @@ import { LayerPanel } from '@/features/icons/editor/LayerPanel'
 import { EditorCanvas } from '@/features/icons/editor/EditorCanvas'
 import { PropertiesPanel } from '@/features/icons/editor/PropertiesPanel'
 import { ExportPanel } from '@/features/icons/editor/ExportPanel'
-import {
-  defaultComposition,
-  newTextLayer,
-  type Composition,
-} from '@/features/icons/editor/types'
+import { defaultComposition, newTextLayer, type Composition } from '@/features/icons/editor/types'
 import { compositionToPngDataUrl } from '@/features/icons/editor/render'
 
 export function IconEditorModal() {
@@ -131,11 +127,14 @@ export function IconEditorModal() {
                 Use Icon
               </button>
             )}
-            <button
-              onClick={handleClose}
-              className="text-slate-400 hover:text-slate-200 px-2"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <button onClick={handleClose} className="text-slate-400 hover:text-slate-200 px-2">
+              <svg
+                className="w-5 h-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>

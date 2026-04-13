@@ -11,7 +11,11 @@ interface LibraryFilters {
   content_rating?: string
 }
 
-function libraryItems(sectionId: string, type?: string, filters?: LibraryFilters): Promise<PlexItem[]> {
+function libraryItems(
+  sectionId: string,
+  type?: string,
+  filters?: LibraryFilters,
+): Promise<PlexItem[]> {
   const params = new URLSearchParams()
   if (type) params.set('type_filter', type)
   if (filters?.genre) params.set('genre', filters.genre)
@@ -210,7 +214,11 @@ function clearEvents(): Promise<{ ok: boolean }> {
 
 // ── Collection CRUD ──────────────────────────────────────────────────────────
 
-function createCollection(body: { title: string; section_id: string; type: string }): Promise<{ rating_key: string; title: string }> {
+function createCollection(body: {
+  title: string
+  section_id: string
+  type: string
+}): Promise<{ rating_key: string; title: string }> {
   return post<{ rating_key: string; title: string }>('/api/plex/collections', body)
 }
 
@@ -218,15 +226,26 @@ function deleteCollection(ratingKey: string): Promise<{ ok: boolean }> {
   return del<{ ok: boolean }>(`/api/plex/collections/${encodeURIComponent(ratingKey)}`)
 }
 
-function addCollectionItems(ratingKey: string, items: string[]): Promise<{ ok: boolean; added: number }> {
-  return put<{ ok: boolean; added: number }>(`/api/plex/collections/${encodeURIComponent(ratingKey)}/items`, { items })
+function addCollectionItems(
+  ratingKey: string,
+  items: string[],
+): Promise<{ ok: boolean; added: number }> {
+  return put<{ ok: boolean; added: number }>(
+    `/api/plex/collections/${encodeURIComponent(ratingKey)}/items`,
+    { items },
+  )
 }
 
 function removeCollectionItem(ratingKey: string, itemKey: string): Promise<{ ok: boolean }> {
-  return del<{ ok: boolean }>(`/api/plex/collections/${encodeURIComponent(ratingKey)}/items/${encodeURIComponent(itemKey)}`)
+  return del<{ ok: boolean }>(
+    `/api/plex/collections/${encodeURIComponent(ratingKey)}/items/${encodeURIComponent(itemKey)}`,
+  )
 }
 
-function updateCollection(ratingKey: string, body: { title?: string; summary?: string }): Promise<{ ok: boolean }> {
+function updateCollection(
+  ratingKey: string,
+  body: { title?: string; summary?: string },
+): Promise<{ ok: boolean }> {
   return put<{ ok: boolean }>(`/api/plex/collections/${encodeURIComponent(ratingKey)}`, body)
 }
 
