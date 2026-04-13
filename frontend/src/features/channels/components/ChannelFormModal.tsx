@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react'
+import { useState, useEffect, useRef, type FormEvent } from 'react'
 import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useCreateChannel, useUpdateChannel } from '@/features/channels/hooks'
@@ -13,12 +13,13 @@ const TIER_COLORS: Record<string, string> = {
 }
 
 export function ChannelFormModal() {
-  const { modals, editingChannel, closeModal } = useUIStore()
+  const { modals, editingChannel, closeModal, openModal } = useUIStore()
   const open = modals.channelForm
   const isEditing = editingChannel !== null
 
   const createChannel = useCreateChannel()
   const updateChannel = useUpdateChannel()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [number, setNumber] = useState<string>('')
   const [name, setName] = useState('')
@@ -27,6 +28,7 @@ export function ChannelFormModal() {
   const [mode, setMode] = useState('Shuffle')
   const [style, setStyle] = useState('')
   const [color, setColor] = useState('')
+  const [icon, setIcon] = useState<string | null>(null)
   const [autoAssign, setAutoAssign] = useState(false)
   const [createTunarr, setCreateTunarr] = useState(false)
 
@@ -40,6 +42,7 @@ export function ChannelFormModal() {
       setMode(editingChannel?.mode ?? 'Shuffle')
       setStyle(editingChannel?.style ?? '')
       setColor(editingChannel?.color ?? '')
+      setIcon(editingChannel?.icon ?? null)
       setAutoAssign(false)
       setCreateTunarr(false)
     }
@@ -66,6 +69,7 @@ export function ChannelFormModal() {
       mode,
       style,
       color,
+      icon,
     }
 
     if (isEditing) {
@@ -102,6 +106,76 @@ export function ChannelFormModal() {
         </div>
 
         <div className="px-6 py-4 flex flex-col gap-4">
+          {/* Icon */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Channel Icon</label>
+            <div className="flex items-center gap-3">
+              {icon ? (
+                <img
+                  src={icon}
+                  alt="Icon"
+                  className="w-16 h-16 rounded-lg border border-slate-700 object-contain bg-slate-900"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-600 text-[10px]">
+                  No icon
+                </div>
+              )}
+              <div className="flex flex-wrap gap-1.5 flex-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openModal('iconPicker', { iconPickerCallback: (dataUrl: string) => setIcon(dataUrl) })
+                  }
+                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded"
+                >
+                  Pick from Library
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openModal('iconEditor', {
+                      iconEditorCallback: (dataUrl: string) => setIcon(dataUrl),
+                    })
+                  }
+                  className="px-2.5 py-1 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded"
+                >
+                  Create New
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded"
+                >
+                  Upload
+                </button>
+                {icon && (
+                  <button
+                    type="button"
+                    onClick={() => setIcon(null)}
+                    className="px-2.5 py-1 text-xs bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-400 rounded"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = () => setIcon(reader.result as string)
+                  reader.readAsDataURL(file)
+                  e.target.value = ''
+                }}
+              />
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             {/* Channel Number */}
             <div>

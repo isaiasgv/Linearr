@@ -69,6 +69,11 @@ const IconEditorModal = lazy(() =>
     default: m.IconEditorModal,
   })),
 )
+const IconPickerModal = lazy(() =>
+  import('@/features/channels/components/IconPickerModal').then((m) => ({
+    default: m.IconPickerModal,
+  })),
+)
 const TunarrView = lazy(() =>
   import('@/features/tunarr/components/TunarrView').then((m) => ({ default: m.TunarrView })),
 )
@@ -150,6 +155,7 @@ export default function App() {
         <TunarrPreviewModal />
         <TunarrCollectionPickerModal />
         <IconEditorModal />
+        <IconPickerModal />
       </Suspense>
     </AppLayout>
   )

@@ -13,7 +13,8 @@ export function useSaveIcon() {
   const qc = useQueryClient()
   const addToast = useToastStore((s) => s.addToast)
   return useMutation({
-    mutationFn: (body: { name: string; category: string; data: string }) => iconsApi.saveIcon(body),
+    mutationFn: (body: { name: string; category: string; data: string; composition?: unknown }) =>
+      iconsApi.saveIcon(body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['icons', 'library'] })
       addToast('Icon saved to library')

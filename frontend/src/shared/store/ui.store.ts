@@ -36,6 +36,8 @@ interface UIState {
   itemDetailRatingKey: string | null
   aiContentAdvisorChannel: number | null
   tunarrPreviewData: unknown | null
+  iconPickerCallback: ((dataUrl: string) => void) | null
+  iconEditorCallback: ((dataUrl: string, composition?: unknown) => void) | null
 
   // Actions
   selectChannel: (channel: Channel | null) => void
@@ -61,6 +63,7 @@ const defaultModals: Record<ModalName, boolean> = {
   templatesLibrary: false,
   tunarrCollectionPicker: false,
   iconEditor: false,
+  iconPicker: false,
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -82,6 +85,8 @@ export const useUIStore = create<UIState>((set) => ({
   itemDetailRatingKey: null,
   aiContentAdvisorChannel: null,
   tunarrPreviewData: null,
+  iconPickerCallback: null,
+  iconEditorCallback: null,
 
   // Close sidebar on mobile when navigating
   selectChannel: (channel) =>

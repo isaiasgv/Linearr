@@ -293,3 +293,4 @@ export type ModalName =
   | 'templatesLibrary'
   | 'tunarrCollectionPicker'
   | 'iconEditor'
+  | 'iconPicker'

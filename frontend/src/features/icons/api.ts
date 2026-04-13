@@ -5,6 +5,7 @@ export interface SavedIcon {
   name: string
   category: string
   data: string
+  composition?: string | null
   created_at: string
 }
 
@@ -12,13 +13,20 @@ function listIcons(): Promise<SavedIcon[]> {
   return get<SavedIcon[]>('/api/icons/library')
 }
 
-function saveIcon(body: { name: string; category: string; data: string }): Promise<SavedIcon> {
+interface SaveIconBody {
+  name: string
+  category: string
+  data: string
+  composition?: unknown
+}
+
+function saveIcon(body: SaveIconBody): Promise<SavedIcon> {
   return post<SavedIcon>('/api/icons/library', body)
 }
 
 function updateIcon(
   id: number,
-  body: Partial<{ name: string; category: string; data: string }>,
+  body: Partial<SaveIconBody>,
 ): Promise<SavedIcon> {
   return put<SavedIcon>(`/api/icons/library/${id}`, body)
 }
