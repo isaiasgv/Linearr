@@ -30,19 +30,6 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
 
   const selected = composition.layers.find((l) => l.id === selectedId) ?? null
 
-  const getSvgPoint = useCallback(
-    (e: React.PointerEvent | PointerEvent): { x: number; y: number } => {
-      const svg = svgRef.current
-      if (!svg) return { x: 0, y: 0 }
-      const rect = svg.getBoundingClientRect()
-      return {
-        x: ((e.clientX - rect.left) / rect.width) * CANVAS_SIZE,
-        y: ((e.clientY - rect.top) / rect.height) * CANVAS_SIZE,
-      }
-    },
-    [],
-  )
-
   const handlePointerDownLayer = useCallback(
     (e: React.PointerEvent, layer: Layer, mode: DragMode) => {
       e.stopPropagation()
