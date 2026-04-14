@@ -83,9 +83,11 @@ function renderBackground(comp: Composition): string {
   return ''
 }
 
-function renderTextLayer(layer: TextLayer): string {
+function renderTextLayer(layer: TextLayer, embedMode = false): string {
   if (layer.visible === false) return ''
-  const family = familyFor(layer.font)
+  // When embedding fonts in SVG for export, use the exact Google Font name
+  // (matches the @font-face declaration). For DOM rendering, use the full CSS family.
+  const family = embedMode ? `'${layer.font}'` : familyFor(layer.font)
   const lines = layer.text.split('\n')
   const lineHeight = layer.size * 1.1
   const totalHeight = lines.length * lineHeight
@@ -142,8 +144,9 @@ function renderImageLayer(layer: ImageLayer, idx: number): string {
 }
 
 export function renderSVG(comp: Composition, embeddedFontCSS?: string): string {
+  const embed = Boolean(embeddedFontCSS)
   const layers = comp.layers
-    .map((l, i) => (l.kind === 'text' ? renderTextLayer(l) : renderImageLayer(l, i)))
+    .map((l, i) => (l.kind === 'text' ? renderTextLayer(l, embed) : renderImageLayer(l, i)))
     .join('')
   const fontStyle = embeddedFontCSS ? `<defs><style>${embeddedFontCSS}</style></defs>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${comp.size}" height="${comp.size}" viewBox="0 0 ${comp.size} ${comp.size}">${fontStyle}${renderBackground(comp)}${layers}</svg>`

@@ -3,6 +3,7 @@ import { useUIStore, type TierFilter } from '@/shared/store/ui.store'
 import { useChannels } from '@/features/channels/hooks'
 import { useAssignments } from '@/features/assignments/hooks'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
+import { usePlexSessions } from '@/features/plex/hooks'
 import { tierColor } from '@/shared/components/ui/TierBadge'
 import type { Channel } from '@/shared/types'
 
@@ -39,6 +40,7 @@ export function ChannelSidebar() {
   const { data: channels = [] } = useChannels()
   const { data: assignmentsMap = {} } = useAssignments()
   const { data: tunarrLinks = [] } = useTunarrLinks()
+  const { data: plexSessions = [] } = usePlexSessions()
 
   const tunarrLinkedCount = tunarrLinks.length
 
@@ -129,6 +131,12 @@ export function ChannelSidebar() {
         >
           <img src="/plex.svg" alt="Plex" className="w-4 h-4 rounded-sm" />
           Plex
+          {plexSessions.length > 0 && (
+            <span className="ml-auto flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-xs text-green-400">{plexSessions.length}</span>
+            </span>
+          )}
         </button>
 
         <button

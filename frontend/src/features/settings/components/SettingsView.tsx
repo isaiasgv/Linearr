@@ -10,6 +10,7 @@ import {
 import { useTestTunarr, useTunarrVersionCheck } from '@/features/tunarr/hooks'
 import { useAiLogs, useClearAiLogs, useAppLogs, useClearAppLogs } from '@/features/ai/hooks'
 import { usePlexServerInfo } from '@/features/plex/hooks'
+import { useToastStore } from '@/shared/store/toast.store'
 import { plexApi } from '@/features/plex/api'
 import type { AiLog, AppLog } from '@/shared/types'
 
@@ -66,6 +67,7 @@ function InfoRow({
 }
 
 export function SettingsView() {
+  const addToast = useToastStore((s) => s.addToast)
   const { data: settings, isLoading } = useSettings()
   const saveSettings = useSaveSettings()
   const testAi = useTestAi()
@@ -390,7 +392,23 @@ export function SettingsView() {
                     />
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(`${window.location.origin}/api/plex/webhook`)
+                        const url = `${window.location.origin}/api/plex/webhook`
+                        const fallback = () => {
+                          const el = document.createElement('textarea')
+                          el.value = url
+                          el.style.position = 'fixed'
+                          el.style.opacity = '0'
+                          document.body.appendChild(el)
+                          el.select()
+                          document.execCommand('copy')
+                          document.body.removeChild(el)
+                        }
+                        if (navigator.clipboard?.writeText) {
+                          navigator.clipboard.writeText(url).catch(fallback)
+                        } else {
+                          fallback()
+                        }
+                        addToast('Webhook URL copied')
                       }}
                       className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs transition"
                     >

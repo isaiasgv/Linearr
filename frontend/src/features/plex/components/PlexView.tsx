@@ -381,6 +381,55 @@ export function PlexView() {
           </div>
         ) : null}
 
+        {/* Now Playing — always visible at top when active */}
+        {sessions.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              Now Playing
+              <span className="text-xs text-slate-500 font-normal">
+                {sessions.length} stream{sessions.length !== 1 ? 's' : ''}
+              </span>
+            </h3>
+            <div className="space-y-2">
+              {sessions.map((s, i) => (
+                <div
+                  key={i}
+                  className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center gap-3"
+                >
+                  <div className="w-10 h-14 rounded overflow-hidden bg-slate-900 shrink-0">
+                    <PlexThumb
+                      path={s.thumb}
+                      alt={s.title}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-100 truncate">{s.title}</p>
+                    {s.subtitle && <p className="text-xs text-slate-400 truncate">{s.subtitle}</p>}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-slate-500">{s.user}</span>
+                      <span className="text-xs text-slate-600">on {s.player}</span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-indigo-500 rounded-full"
+                        style={{ width: `${s.progress_pct}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {s.video_resolution && `${s.video_resolution}p`}
+                      {s.transcode && ' • Transcode'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Collection browsing mode */}
         {browsingCollection ? (
           <CollectionBrowser
@@ -530,57 +579,6 @@ export function PlexView() {
                   />
                 ))}
               </>
-            )}
-
-            {/* Now Playing */}
-            {sessions.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  Now Playing
-                  <span className="text-xs text-slate-500 font-normal">
-                    {sessions.length} stream{sessions.length !== 1 ? 's' : ''}
-                  </span>
-                </h3>
-                <div className="space-y-2">
-                  {sessions.map((s, i) => (
-                    <div
-                      key={i}
-                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center gap-3"
-                    >
-                      <div className="w-10 h-14 rounded overflow-hidden bg-slate-900 shrink-0">
-                        <PlexThumb
-                          path={s.thumb}
-                          alt={s.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-100 truncate">{s.title}</p>
-                        {s.subtitle && (
-                          <p className="text-xs text-slate-400 truncate">{s.subtitle}</p>
-                        )}
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-slate-500">{s.user}</span>
-                          <span className="text-xs text-slate-600">on {s.player}</span>
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-indigo-500 rounded-full"
-                            style={{ width: `${s.progress_pct}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1">
-                          {s.video_resolution && `${s.video_resolution}p`}
-                          {s.transcode && ' • Transcode'}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
             )}
 
             {/* Watch History */}
