@@ -117,7 +117,11 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
       className="flex-1 flex items-center justify-center bg-[repeating-conic-gradient(#1e293b_0%_25%,#0f172a_0%_50%)] bg-[length:24px_24px] overflow-auto p-6"
       onClick={() => onSelect(null)}
     >
-      <div className="relative" style={{ width: 480, height: 480 }}>
+      <div
+        className="relative"
+        style={{ width: 480, height: 480 }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <svg
           ref={svgRef}
           viewBox={`0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}`}
@@ -126,7 +130,6 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
           xmlns="http://www.w3.org/2000/svg"
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          onClick={(e) => e.stopPropagation()}
           dangerouslySetInnerHTML={{ __html: svgString.replace(/^<svg[^>]*>|<\/svg>$/g, '') }}
         />
         {/* Selection overlay */}
