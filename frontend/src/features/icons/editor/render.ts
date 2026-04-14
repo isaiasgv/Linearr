@@ -1,7 +1,7 @@
 // SVG rendering, color modes, and PNG rasterization.
 
 import type { Composition, ColorMode, CustomColors, TextLayer, ImageLayer } from './types'
-import { familyFor } from './fonts'
+import { familyFor, getEmbeddableFontFace, getUsedGoogleFonts } from './fonts'
 
 // ── Color mode application ──────────────────────────────────────────────────
 
@@ -141,11 +141,26 @@ function renderImageLayer(layer: ImageLayer, idx: number): string {
   return `<g transform="translate(${cx},${cy}) rotate(${layer.rotation}) translate(-${layer.width / 2},-${layer.height / 2})" opacity="${layer.opacity}"><image href="${escapeXml(layer.src)}" width="${layer.width}" height="${layer.height}" preserveAspectRatio="xMidYMid meet"/></g>`
 }
 
-export function renderSVG(comp: Composition): string {
+export function renderSVG(comp: Composition, embeddedFontCSS?: string): string {
   const layers = comp.layers
     .map((l, i) => (l.kind === 'text' ? renderTextLayer(l) : renderImageLayer(l, i)))
     .join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${comp.size}" height="${comp.size}" viewBox="0 0 ${comp.size} ${comp.size}">${renderBackground(comp)}${layers}</svg>`
+  const fontStyle = embeddedFontCSS ? `<defs><style>${embeddedFontCSS}</style></defs>` : ''
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${comp.size}" height="${comp.size}" viewBox="0 0 ${comp.size} ${comp.size}">${fontStyle}${renderBackground(comp)}${layers}</svg>`
+}
+
+/** Collect embedded @font-face CSS for all Google Fonts used in the composition. */
+async function getEmbeddedFonts(comp: Composition): Promise<string> {
+  const googleFonts = getUsedGoogleFonts(comp.layers)
+  if (googleFonts.length === 0) return ''
+  const faces = await Promise.all(googleFonts.map(getEmbeddableFontFace))
+  return faces.filter(Boolean).join('\n')
+}
+
+/** Render SVG with fonts embedded (for export/rasterization). */
+export async function renderSVGWithFonts(comp: Composition): Promise<string> {
+  const fontCSS = await getEmbeddedFonts(comp)
+  return renderSVG(comp, fontCSS)
 }
 
 // ── PNG rasterization ───────────────────────────────────────────────────────
@@ -178,7 +193,7 @@ export function rasterizeToPng(svgString: string, size: number): Promise<Blob> {
 }
 
 export async function compositionToPngDataUrl(comp: Composition, size = 512): Promise<string> {
-  const svg = renderSVG({ ...comp, size })
+  const svg = await renderSVGWithFonts({ ...comp, size })
   const blob = await rasterizeToPng(svg, size)
   return await blobToDataUrl(blob)
 }
@@ -205,6 +220,7 @@ export function downloadBlob(blob: Blob, filename: string) {
 
 // All 5 color modes × {svg, png}
 export async function exportAllVariants(comp: Composition, baseName: string) {
+  const fontCSS = await getEmbeddedFonts(comp)
   const modes: Array<{ id: ColorMode; label: string }> = [
     { id: 'original', label: 'original' },
     { id: 'all-black', label: 'all-black' },
@@ -213,7 +229,7 @@ export async function exportAllVariants(comp: Composition, baseName: string) {
   ]
   for (const m of modes) {
     const recolored = applyColorMode(comp, m.id)
-    const svg = renderSVG(recolored)
+    const svg = renderSVG(recolored, fontCSS)
     downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${baseName}-${m.label}.svg`)
     const png = await rasterizeToPng(svg, comp.size)
     downloadBlob(png, `${baseName}-${m.label}.png`)
