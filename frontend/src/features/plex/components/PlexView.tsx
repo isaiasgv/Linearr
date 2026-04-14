@@ -388,41 +388,98 @@ export function PlexView() {
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               Now Playing
               <span className="text-xs text-slate-500 font-normal">
-                {sessions.length} stream{sessions.length !== 1 ? 's' : ''}
+                {sessions.length} active stream{sessions.length !== 1 ? 's' : ''}
               </span>
             </h3>
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {sessions.map((s, i) => (
                 <div
                   key={i}
-                  className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center gap-3"
+                  className="bg-gradient-to-r from-slate-800 to-slate-900 border border-slate-700 rounded-xl overflow-hidden"
                 >
-                  <div className="w-10 h-14 rounded overflow-hidden bg-slate-900 shrink-0">
-                    <PlexThumb
-                      path={s.thumb}
-                      alt={s.title}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-100 truncate">{s.title}</p>
-                    {s.subtitle && <p className="text-xs text-slate-400 truncate">{s.subtitle}</p>}
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-slate-500">{s.user}</span>
-                      <span className="text-xs text-slate-600">on {s.player}</span>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-500 rounded-full"
-                        style={{ width: `${s.progress_pct}%` }}
+                  <div className="flex gap-3 p-3">
+                    {/* Poster */}
+                    <div className="w-16 h-24 rounded-lg overflow-hidden bg-slate-950 shrink-0 shadow-lg">
+                      <PlexThumb
+                        path={s.thumb}
+                        alt={s.title}
+                        className="w-full h-full object-cover"
                       />
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {s.video_resolution && `${s.video_resolution}p`}
-                      {s.transcode && ' • Transcode'}
-                    </p>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-100 truncate">{s.title}</p>
+                        {s.subtitle && (
+                          <p className="text-xs text-slate-400 truncate mt-0.5">{s.subtitle}</p>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {/* Progress bar */}
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-green-500 rounded-full transition-all duration-1000"
+                              style={{ width: `${s.progress_pct}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-slate-500 tabular-nums w-8 text-right">
+                            {s.progress_pct}%
+                          </span>
+                        </div>
+                        {/* Meta row */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-flex items-center gap-1 text-[10px] bg-slate-700/60 text-slate-300 rounded px-1.5 py-0.5">
+                            <svg
+                              className="w-2.5 h-2.5"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+                              <circle cx="12" cy="7" r="4" />
+                            </svg>
+                            {s.user}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[10px] bg-slate-700/60 text-slate-400 rounded px-1.5 py-0.5">
+                            <svg
+                              className="w-2.5 h-2.5"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <rect x="2" y="7" width="20" height="15" rx="2" />
+                              <path d="M17 2l-5 5-5-5" />
+                            </svg>
+                            {s.player}
+                          </span>
+                          {s.video_resolution && (
+                            <span className="text-[10px] bg-indigo-900/40 text-indigo-300 rounded px-1.5 py-0.5 font-medium">
+                              {s.video_resolution}p
+                            </span>
+                          )}
+                          {s.transcode && (
+                            <span className="text-[10px] bg-amber-900/40 text-amber-300 rounded px-1.5 py-0.5">
+                              Transcode
+                            </span>
+                          )}
+                          {s.state === 'paused' && (
+                            <span className="text-[10px] bg-yellow-900/40 text-yellow-300 rounded px-1.5 py-0.5">
+                              Paused
+                            </span>
+                          )}
+                          {s.bandwidth_kbps != null && s.bandwidth_kbps > 0 && (
+                            <span className="text-[10px] text-slate-500">
+                              {s.bandwidth_kbps > 1000
+                                ? `${(s.bandwidth_kbps / 1000).toFixed(1)} Mbps`
+                                : `${s.bandwidth_kbps} kbps`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
