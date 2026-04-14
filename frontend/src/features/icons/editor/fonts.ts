@@ -9,6 +9,8 @@ export interface FontDef {
 export const FONTS: FontDef[] = [
   { name: 'Inter', family: 'Inter, sans-serif', google: true },
   { name: 'Bebas Neue', family: '"Bebas Neue", sans-serif', google: true },
+  { name: 'Baloo Thambi', family: '"Baloo Thambi", cursive', google: true },
+  { name: 'Baloo Thambi 2', family: '"Baloo Thambi 2", cursive', google: true },
   { name: 'Impact', family: 'Impact, "Arial Black", sans-serif' },
   { name: 'Arial', family: 'Arial, Helvetica, sans-serif' },
   { name: 'Helvetica', family: 'Helvetica, Arial, sans-serif' },

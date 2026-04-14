@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import {
   useSavedIcons,
@@ -9,22 +9,11 @@ import {
   useImportFromTunarr,
 } from '../hooks'
 import { useChannels } from '@/features/channels/hooks'
+import { useToastStore } from '@/shared/store/toast.store'
 import type { SavedIcon } from '../api'
-
-const CANVAS_SIZE = 512
-
-const FONTS = [
-  'Inter',
-  'Arial',
-  'Helvetica',
-  'Impact',
-  'Georgia',
-  'Courier New',
-  'Trebuchet MS',
-  'Verdana',
-  'Palatino',
-  'Garamond',
-]
+import { IconEditor } from '../editor/IconEditor'
+import { defaultComposition, newTextLayer, type Composition } from '../editor/types'
+import { compositionToPngDataUrl } from '../editor/render'
 
 const PRESET_GRADIENTS: [string, string, string][] = [
   ['Indigo', '#4f46e5', '#818cf8'],
@@ -62,31 +51,7 @@ const CLASSIC_PRESETS = [
   { name: 'USA Network', colors: ['#1565c0', '#42a5f5'] },
 ]
 
-interface EditorState {
-  text: string
-  font: string
-  fontSize: number
-  textColor: string
-  bgType: 'solid' | 'gradient' | 'transparent'
-  bgColor1: string
-  bgColor2: string
-  borderRadius: number
-  textShadow: boolean
-  bold: boolean
-}
-
-const defaultEditor: EditorState = {
-  text: '',
-  font: 'Impact',
-  fontSize: 72,
-  textColor: '#ffffff',
-  bgType: 'gradient',
-  bgColor1: '#4f46e5',
-  bgColor2: '#818cf8',
-  borderRadius: 80,
-  textShadow: true,
-  bold: true,
-}
+// Old canvas-based editor removed — now using the shared IconEditor component
 
 export function IconLibraryView() {
   const { data: icons = [], isLoading } = useSavedIcons()
@@ -97,111 +62,31 @@ export function IconLibraryView() {
   const seedPack = useSeedIconPack()
   const importTunarr = useImportFromTunarr()
 
+  const addToast = useToastStore((s) => s.addToast)
+
   const [tab, setTab] = useState<'library' | 'editor' | 'presets'>('library')
-  const [editor, setEditor] = useState<EditorState>(defaultEditor)
   const [iconName, setIconName] = useState('New Icon')
   const [assignChannel, setAssignChannel] = useState('')
   const [selectedIcon, setSelectedIcon] = useState<SavedIcon | null>(null)
   const [previewIcon, setPreviewIcon] = useState<SavedIcon | null>(null)
   const [categoryFilter, setCategoryFilter] = useState('all')
 
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  // Composition state for the shared IconEditor
+  const [composition, setComposition] = useState<Composition>(defaultComposition())
+  const [editorSelectedId, setEditorSelectedId] = useState<string | null>(null)
 
   const categories = ['all', ...new Set(icons.map((i) => i.category))]
   const filteredIcons =
     categoryFilter === 'all' ? icons : icons.filter((i) => i.category === categoryFilter)
 
-  const drawCanvas = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    const S = CANVAS_SIZE
-
-    ctx.clearRect(0, 0, S, S)
-
-    // Rounded rect clip
-    ctx.save()
-    const r = (editor.borderRadius / 100) * (S / 2)
-    ctx.beginPath()
-    ctx.moveTo(r, 0)
-    ctx.lineTo(S - r, 0)
-    ctx.quadraticCurveTo(S, 0, S, r)
-    ctx.lineTo(S, S - r)
-    ctx.quadraticCurveTo(S, S, S - r, S)
-    ctx.lineTo(r, S)
-    ctx.quadraticCurveTo(0, S, 0, S - r)
-    ctx.lineTo(0, r)
-    ctx.quadraticCurveTo(0, 0, r, 0)
-    ctx.closePath()
-    ctx.clip()
-
-    // Background
-    if (editor.bgType === 'solid') {
-      ctx.fillStyle = editor.bgColor1
-      ctx.fillRect(0, 0, S, S)
-    } else if (editor.bgType === 'gradient') {
-      const grad = ctx.createLinearGradient(0, 0, S, S)
-      grad.addColorStop(0, editor.bgColor1)
-      grad.addColorStop(1, editor.bgColor2)
-      ctx.fillStyle = grad
-      ctx.fillRect(0, 0, S, S)
+  // ── Editor save handler (uses shared composition) ──
+  async function handleEditorSave() {
+    try {
+      const dataUrl = await compositionToPngDataUrl(composition)
+      saveIcon.mutate({ name: iconName, category: 'custom', data: dataUrl, composition })
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Save failed', true)
     }
-
-    // Text
-    if (editor.text) {
-      const weight = editor.bold ? 'bold' : 'normal'
-      ctx.font = `${weight} ${editor.fontSize}px "${editor.font}", sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-
-      // Shadow
-      if (editor.textShadow) {
-        ctx.shadowColor = 'rgba(0,0,0,0.5)'
-        ctx.shadowBlur = 8
-        ctx.shadowOffsetX = 2
-        ctx.shadowOffsetY = 2
-      }
-
-      ctx.fillStyle = editor.textColor
-
-      // Word wrap
-      const words = editor.text.split(' ')
-      const lines: string[] = []
-      let cur = ''
-      const maxW = S * 0.85
-      for (const w of words) {
-        const test = cur ? `${cur} ${w}` : w
-        if (ctx.measureText(test).width > maxW && cur) {
-          lines.push(cur)
-          cur = w
-        } else {
-          cur = test
-        }
-      }
-      if (cur) lines.push(cur)
-
-      const lh = editor.fontSize * 1.2
-      const startY = (S - lines.length * lh) / 2 + lh / 2
-      lines.forEach((line, i) => {
-        ctx.fillText(line, S / 2, startY + i * lh, maxW)
-      })
-
-      ctx.shadowColor = 'transparent'
-      ctx.shadowBlur = 0
-    }
-
-    ctx.restore()
-  }, [editor])
-
-  useEffect(() => {
-    drawCanvas()
-  }, [drawCanvas])
-
-  function handleSaveToLibrary() {
-    if (!canvasRef.current) return
-    const data = canvasRef.current.toDataURL('image/png')
-    saveIcon.mutate({ name: iconName, category: 'custom', data })
   }
 
   function handleAssignToChannel() {
@@ -210,7 +95,13 @@ export function IconLibraryView() {
   }
 
   function loadPreset(name: string, c1: string, c2: string) {
-    setEditor({ ...defaultEditor, text: name, bgColor1: c1, bgColor2: c2 })
+    const layer = newTextLayer(name)
+    setComposition({
+      layers: [layer],
+      background: { type: 'gradient', value: `135|${c1}|${c2}` },
+      size: 512,
+    })
+    setEditorSelectedId(layer.id)
     setIconName(name)
     setTab('editor')
   }
@@ -235,40 +126,6 @@ export function IconLibraryView() {
     setSelectedIcon(icon)
     setIconName(icon.name)
   }
-
-  function handleExportPng() {
-    if (!canvasRef.current) return
-    const a = document.createElement('a')
-    a.href = canvasRef.current.toDataURL('image/png')
-    a.download = `${iconName || 'icon'}.png`
-    a.click()
-  }
-
-  function handleImportImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const img = new Image()
-      img.onload = () => {
-        const canvas = canvasRef.current
-        if (!canvas) return
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-        ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-        const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height)
-        const w = img.width * scale
-        const h = img.height * scale
-        ctx.drawImage(img, (CANVAS_SIZE - w) / 2, (CANVAS_SIZE - h) / 2, w, h)
-      }
-      img.src = reader.result as string
-    }
-    reader.readAsDataURL(file)
-    e.target.value = ''
-  }
-
-  const set = (k: keyof EditorState, v: EditorState[keyof EditorState]) =>
-    setEditor((prev) => ({ ...prev, [k]: v }))
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -409,244 +266,28 @@ export function IconLibraryView() {
           </div>
         )}
 
-        {/* ── Editor tab (Figma-style) ── */}
+        {/* ── Editor tab — uses shared IconEditor component ── */}
         {tab === 'editor' && (
-          <div className="flex h-full">
-            {/* Left panel — Canvas */}
-            <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[repeating-conic-gradient(#1e293b_0%_25%,#0f172a_0%_50%)] bg-[length:20px_20px]">
-              <canvas
-                ref={canvasRef}
-                width={CANVAS_SIZE}
-                height={CANVAS_SIZE}
-                className="w-64 h-64 md:w-80 md:h-80 rounded-xl shadow-2xl shadow-black/40"
-              />
-              {/* Previews */}
-              <div className="flex gap-4 mt-4 items-end">
-                {[96, 48, 32].map((s) => (
-                  <div key={s} className="text-center">
-                    <canvas
-                      width={CANVAS_SIZE}
-                      height={CANVAS_SIZE}
-                      className="rounded-lg border border-slate-700"
-                      style={{ width: s, height: s }}
-                      ref={(el) => {
-                        if (el && canvasRef.current) {
-                          const ctx = el.getContext('2d')
-                          if (ctx) {
-                            ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-                            ctx.drawImage(canvasRef.current, 0, 0, CANVAS_SIZE, CANVAS_SIZE)
-                          }
-                        }
-                      }}
-                    />
-                    <span className="text-[10px] text-slate-600 block mt-1">{s}px</span>
-                  </div>
-                ))}
-              </div>
+          <div className="flex flex-col h-full">
+            {/* Save bar */}
+            <div className="flex items-center justify-end gap-2 px-4 py-2 border-b border-slate-800 shrink-0">
+              <button
+                onClick={handleEditorSave}
+                disabled={saveIcon.isPending || composition.layers.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded"
+              >
+                {saveIcon.isPending && <Spinner size="sm" />}
+                Save to Library
+              </button>
             </div>
-
-            {/* Right panel — Properties */}
-            <div className="w-72 shrink-0 border-l border-slate-800 overflow-y-auto p-4 space-y-5 bg-slate-950">
-              {/* Name */}
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
-                  Name
-                </label>
-                <input
-                  value={iconName}
-                  onChange={(e) => setIconName(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              {/* Text */}
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
-                  Text
-                </label>
-                <input
-                  value={editor.text}
-                  onChange={(e) => set('text', e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              {/* Font */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
-                    Font
-                  </label>
-                  <select
-                    value={editor.font}
-                    onChange={(e) => set('font', e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                  >
-                    {FONTS.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
-                    Size
-                  </label>
-                  <input
-                    type="number"
-                    min={16}
-                    max={200}
-                    value={editor.fontSize}
-                    onChange={(e) => set('fontSize', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {/* Style toggles */}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => set('bold', !editor.bold)}
-                  className={`flex-1 py-1.5 text-xs rounded-lg border transition ${editor.bold ? 'bg-slate-700 border-slate-500 text-white' : 'border-slate-700 text-slate-500'}`}
-                >
-                  <strong>B</strong> Bold
-                </button>
-                <button
-                  onClick={() => set('textShadow', !editor.textShadow)}
-                  className={`flex-1 py-1.5 text-xs rounded-lg border transition ${editor.textShadow ? 'bg-slate-700 border-slate-500 text-white' : 'border-slate-700 text-slate-500'}`}
-                >
-                  Shadow
-                </button>
-              </div>
-
-              {/* Colors */}
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
-                  Text Color
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={editor.textColor}
-                    onChange={(e) => set('textColor', e.target.value)}
-                    className="w-8 h-8 rounded border border-slate-700 cursor-pointer"
-                  />
-                  <input
-                    value={editor.textColor}
-                    onChange={(e) => set('textColor', e.target.value)}
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {/* Background */}
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
-                  Background
-                </label>
-                <div className="flex gap-1 mb-2">
-                  {(['gradient', 'solid', 'transparent'] as const).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => set('bgType', t)}
-                      className={`flex-1 py-1 text-[10px] rounded transition ${editor.bgType === t ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-                {editor.bgType !== 'transparent' && (
-                  <div className="flex gap-2">
-                    <div className="flex items-center gap-1.5 flex-1">
-                      <input
-                        type="color"
-                        value={editor.bgColor1}
-                        onChange={(e) => set('bgColor1', e.target.value)}
-                        className="w-7 h-7 rounded border border-slate-700 cursor-pointer"
-                      />
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        {editor.bgColor1}
-                      </span>
-                    </div>
-                    {editor.bgType === 'gradient' && (
-                      <div className="flex items-center gap-1.5 flex-1">
-                        <input
-                          type="color"
-                          value={editor.bgColor2}
-                          onChange={(e) => set('bgColor2', e.target.value)}
-                          className="w-7 h-7 rounded border border-slate-700 cursor-pointer"
-                        />
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {editor.bgColor2}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {/* Gradient presets */}
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {PRESET_GRADIENTS.map(([name, c1, c2]) => (
-                    <button
-                      key={name}
-                      title={name}
-                      onClick={() => {
-                        set('bgColor1', c1)
-                        set('bgColor2', c2)
-                        set('bgType', 'gradient')
-                      }}
-                      className="w-6 h-6 rounded-md border border-slate-700 hover:border-slate-400 transition"
-                      style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Corner radius */}
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
-                  Corners: {editor.borderRadius}%
-                </label>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={editor.borderRadius}
-                  onChange={(e) => set('borderRadius', Number(e.target.value))}
-                  className="w-full accent-indigo-500"
-                />
-              </div>
-
-              {/* Import image */}
-              <div>
-                <label className="flex items-center gap-2 px-3 py-2 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition cursor-pointer w-full justify-center">
-                  Upload Image
-                  <input
-                    type="file"
-                    accept=".png,.svg,.jpg,.jpeg,.webp"
-                    className="hidden"
-                    onChange={handleImportImage}
-                  />
-                </label>
-              </div>
-
-              {/* Actions */}
-              <div className="space-y-2 pt-2 border-t border-slate-800">
-                <button
-                  onClick={handleSaveToLibrary}
-                  disabled={saveIcon.isPending}
-                  className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm rounded-lg font-medium transition"
-                >
-                  {saveIcon.isPending ? 'Saving...' : 'Save to Library'}
-                </button>
-                <button
-                  onClick={handleExportPng}
-                  className="w-full px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm rounded-lg transition"
-                >
-                  Export PNG
-                </button>
-              </div>
-            </div>
+            <IconEditor
+              composition={composition}
+              onChange={setComposition}
+              selectedId={editorSelectedId}
+              onSelect={setEditorSelectedId}
+              iconName={iconName}
+              onNameChange={setIconName}
+            />
           </div>
         )}
 

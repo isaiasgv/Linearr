@@ -5,10 +5,7 @@ import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useToastStore } from '@/shared/store/toast.store'
 import { useSaveIcon, useAssignIconToChannel } from '@/features/icons/hooks'
-import { LayerPanel } from '@/features/icons/editor/LayerPanel'
-import { EditorCanvas } from '@/features/icons/editor/EditorCanvas'
-import { PropertiesPanel } from '@/features/icons/editor/PropertiesPanel'
-import { ExportPanel } from '@/features/icons/editor/ExportPanel'
+import { IconEditor } from '@/features/icons/editor/IconEditor'
 import { defaultComposition, newTextLayer, type Composition } from '@/features/icons/editor/types'
 import { compositionToPngDataUrl } from '@/features/icons/editor/render'
 
@@ -38,7 +35,6 @@ export function IconEditorModal() {
         setIconName(selectedChannel.name)
       }
     } else {
-      // Reset on close
       setComposition(defaultComposition())
       setSelectedId(null)
       setIconName('Untitled')
@@ -48,7 +44,7 @@ export function IconEditorModal() {
 
   const handleClose = () => closeModal('iconEditor')
 
-  const handleSaveToLibrary = async (assign: boolean) => {
+  const handleSave = async (assign: boolean) => {
     setBusy(true)
     try {
       const dataUrl = await compositionToPngDataUrl(composition)
@@ -63,7 +59,6 @@ export function IconEditorModal() {
           { onSuccess: () => resolve(), onError: (e) => reject(e) },
         )
       })
-      // If we have a callback (opened from ChannelFormModal), pass back the data URL
       if (iconEditorCallback) {
         iconEditorCallback(dataUrl, composition)
       } else if (assign && selectedChannel) {
@@ -86,21 +81,12 @@ export function IconEditorModal() {
   return (
     <ModalWrapper open={open} onClose={handleClose} maxWidth="max-w-7xl">
       <div className="flex flex-col h-[90vh]">
-        {/* Header */}
+        {/* Header with save actions */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-slate-100">Icon Editor</h2>
-            <input
-              type="text"
-              value={iconName}
-              onChange={(e) => setIconName(e.target.value)}
-              placeholder="Icon name…"
-              className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200 w-48"
-            />
-          </div>
+          <h2 className="text-lg font-semibold text-slate-100">Icon Editor</h2>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => handleSaveToLibrary(false)}
+              onClick={() => handleSave(false)}
               disabled={busy || composition.layers.length === 0}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded disabled:opacity-50"
             >
@@ -109,7 +95,7 @@ export function IconEditorModal() {
             </button>
             {selectedChannel && !iconEditorCallback && (
               <button
-                onClick={() => handleSaveToLibrary(true)}
+                onClick={() => handleSave(true)}
                 disabled={busy || composition.layers.length === 0}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded disabled:opacity-50"
               >
@@ -119,7 +105,7 @@ export function IconEditorModal() {
             )}
             {iconEditorCallback && (
               <button
-                onClick={() => handleSaveToLibrary(false)}
+                onClick={() => handleSave(false)}
                 disabled={busy || composition.layers.length === 0}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded disabled:opacity-50"
               >
@@ -141,35 +127,15 @@ export function IconEditorModal() {
           </div>
         </div>
 
-        {/* 3-panel layout */}
-        <div className="flex-1 flex overflow-hidden">
-          <LayerPanel
-            composition={composition}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onChange={setComposition}
-          />
-          <EditorCanvas
-            composition={composition}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onChange={setComposition}
-          />
-          <div className="w-72 shrink-0 border-l border-slate-800 flex flex-col bg-slate-950 overflow-hidden">
-            <div className="flex-1 overflow-y-auto">
-              <PropertiesPanel
-                composition={composition}
-                selectedId={selectedId}
-                onChange={setComposition}
-              />
-            </div>
-            <ExportPanel
-              composition={composition}
-              onChange={setComposition}
-              baseName={iconName.toLowerCase().replace(/\s+/g, '-')}
-            />
-          </div>
-        </div>
+        {/* Reusable editor */}
+        <IconEditor
+          composition={composition}
+          onChange={setComposition}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          iconName={iconName}
+          onNameChange={setIconName}
+        />
       </div>
     </ModalWrapper>
   )
