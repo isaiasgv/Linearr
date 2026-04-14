@@ -18,11 +18,11 @@ import {
 } from '@/features/icons/editor/render'
 import type { ColorMode } from '@/features/icons/editor/types'
 
-const COLOR_VARIANTS: Array<{ id: ColorMode; suffix: string }> = [
-  { id: 'original', suffix: '' },
-  { id: 'all-black', suffix: '-black' },
-  { id: 'all-white', suffix: '-white' },
-  { id: 'text-white-image-original', suffix: '-text-white' },
+const COLOR_VARIANTS: Array<{ id: ColorMode; label: string; suffix: string }> = [
+  { id: 'original', label: 'Original', suffix: '' },
+  { id: 'all-black', label: 'All Black', suffix: '-black' },
+  { id: 'all-white', label: 'All White', suffix: '-white' },
+  { id: 'text-white-image-original', label: 'Text White', suffix: '-text-white' },
 ]
 
 export function IconEditorModal() {
@@ -42,7 +42,6 @@ export function IconEditorModal() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // Seed composition with channel name on open if no layers yet
   useEffect(() => {
     if (open) {
       if (composition.layers.length === 0 && selectedChannel) {
@@ -62,37 +61,72 @@ export function IconEditorModal() {
 
   const handleClose = () => closeModal('iconEditor')
 
-  /** Generate PNG data URLs for all color variants */
-  async function generateVariants(
-    comp: Composition,
-  ): Promise<Array<{ suffix: string; data: string }>> {
-    const results: Array<{ suffix: string; data: string }> = []
-    for (const v of COLOR_VARIANTS) {
-      const recolored = applyColorMode(comp, v.id)
-      const svg = await renderSVGWithFonts(recolored)
-      const blob = await rasterizeToPng(svg, comp.size)
-      const dataUrl = await blobToDataUrl(blob)
-      results.push({ suffix: v.suffix, data: dataUrl })
-    }
-    return results
-  }
-
   const handleSave = async (assign: boolean) => {
+    if (composition.layers.length === 0) return
     setBusy(true)
     try {
-      // Generate original PNG
-      const dataUrl = await compositionToPngDataUrl(composition)
+      const baseName = iconName || 'Untitled'
 
-      // If editing existing icon, ask overwrite or new
+      // Ask what to save
+      const { value: options, isDismissed } = await Swal.fire<string[]>({
+        title: 'Save to Library',
+        html: `
+          <div style="text-align:left;font-size:13px;color:#cbd5e1">
+            <label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:pointer">
+              <input type="checkbox" id="swal-project" checked style="width:16px;height:16px;accent-color:#6366f1">
+              <span><b>Project file</b> — editable composition (re-open &amp; edit later)</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:pointer">
+              <input type="checkbox" id="swal-png" checked style="width:16px;height:16px;accent-color:#6366f1">
+              <span><b>PNG variants</b> — Original, Black, White, Text-White</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:pointer">
+              <input type="checkbox" id="swal-svg" style="width:16px;height:16px;accent-color:#6366f1">
+              <span><b>SVG variants</b> — scalable vector versions</span>
+            </label>
+          </div>
+        `,
+        confirmButtonText: editingId ? 'Save' : 'Save to Library',
+        showCancelButton: true,
+        cancelButtonText: 'Cancel',
+        background: '#1e293b',
+        color: '#e2e8f0',
+        confirmButtonColor: '#4f46e5',
+        preConfirm: () => {
+          const result: string[] = []
+          if ((document.getElementById('swal-project') as HTMLInputElement)?.checked)
+            result.push('project')
+          if ((document.getElementById('swal-png') as HTMLInputElement)?.checked) result.push('png')
+          if ((document.getElementById('swal-svg') as HTMLInputElement)?.checked) result.push('svg')
+          if (result.length === 0) {
+            Swal.showValidationMessage('Select at least one option')
+            return false
+          }
+          return result
+        },
+      })
+
+      if (isDismissed || !options) {
+        setBusy(false)
+        return
+      }
+
+      const wantProject = options.includes('project')
+      const wantPng = options.includes('png')
+      const wantSvg = options.includes('svg')
+
+      let savedCount = 0
+
+      // If editing existing, ask overwrite or new
       let saveAsNew = true
-      if (editingId) {
-        const { isConfirmed, isDismissed } = await Swal.fire({
-          title: 'Save Icon',
-          text: 'Overwrite the existing icon or save as new?',
+      if (editingId && wantProject) {
+        const { isConfirmed, isDismissed: cancelled } = await Swal.fire({
+          title: 'Project exists',
+          text: 'Overwrite the existing project or save as new?',
           icon: 'question',
           showDenyButton: true,
           showCancelButton: true,
-          confirmButtonText: 'Save as New',
+          confirmButtonText: 'Save as New (Recommended)',
           denyButtonText: 'Overwrite',
           cancelButtonText: 'Cancel',
           background: '#1e293b',
@@ -100,55 +134,73 @@ export function IconEditorModal() {
           confirmButtonColor: '#4f46e5',
           denyButtonColor: '#475569',
         })
-        if (isDismissed) {
+        if (cancelled) {
           setBusy(false)
           return
         }
-        saveAsNew = isConfirmed // confirmed = new, denied = overwrite
+        saveAsNew = isConfirmed
       }
 
-      // Generate all color variants
-      const variants = await generateVariants(composition)
-
-      if (editingId && !saveAsNew) {
-        // Overwrite existing
-        await iconsApi.updateIcon(editingId, {
-          name: iconName || 'Untitled',
-          data: dataUrl,
-          composition,
-        })
-        addToast('Icon updated')
-      } else {
-        // Save as new — save the project (original PNG + composition)
-        await new Promise<void>((resolve, reject) => {
-          saveIcon.mutate(
-            {
-              name: iconName || 'Untitled',
-              category: 'custom',
-              data: dataUrl,
-              composition,
-            },
-            { onSuccess: () => resolve(), onError: (e) => reject(e) },
-          )
-        })
+      // 1. Save project file (composition JSON + original PNG thumbnail)
+      if (wantProject) {
+        const thumbDataUrl = await compositionToPngDataUrl(composition)
+        if (editingId && !saveAsNew) {
+          await iconsApi.updateIcon(editingId, {
+            name: baseName,
+            data: thumbDataUrl,
+            composition,
+          })
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            saveIcon.mutate(
+              { name: baseName, category: 'projects', data: thumbDataUrl, composition },
+              { onSuccess: () => resolve(), onError: (e) => reject(e) },
+            )
+          })
+        }
+        savedCount++
       }
 
-      // Save all color variants to library
-      for (const v of variants) {
-        if (v.suffix === '') continue // skip original, already saved above
-        await iconsApi.saveIcon({
-          name: `${iconName || 'Untitled'}${v.suffix}`,
-          category: 'variants',
-          data: v.data,
-        })
+      // 2. Save PNG variants
+      if (wantPng) {
+        for (const v of COLOR_VARIANTS) {
+          const recolored = applyColorMode(composition, v.id)
+          const svg = await renderSVGWithFonts(recolored)
+          const blob = await rasterizeToPng(svg, composition.size)
+          const dataUrl = await blobToDataUrl(blob)
+          await iconsApi.saveIcon({
+            name: `${baseName}${v.suffix}`,
+            category: 'png',
+            data: dataUrl,
+          })
+          savedCount++
+        }
+      }
+
+      // 3. Save SVG variants
+      if (wantSvg) {
+        for (const v of COLOR_VARIANTS) {
+          const recolored = applyColorMode(composition, v.id)
+          const svg = await renderSVGWithFonts(recolored)
+          const svgDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
+          await iconsApi.saveIcon({
+            name: `${baseName}${v.suffix}`,
+            category: 'svg',
+            data: svgDataUrl,
+          })
+          savedCount++
+        }
       }
 
       void queryClient.invalidateQueries({ queryKey: ['icons', 'library'] })
+      addToast(`Saved ${savedCount} item${savedCount !== 1 ? 's' : ''} to library`)
 
       // Callback or assign
       if (iconEditorCallback) {
+        const dataUrl = await compositionToPngDataUrl(composition)
         iconEditorCallback(dataUrl, composition)
       } else if (assign && selectedChannel) {
+        const dataUrl = await compositionToPngDataUrl(composition)
         await new Promise<void>((resolve, reject) => {
           assignToChannel.mutate(
             { channelNumber: selectedChannel.number, iconData: dataUrl },
@@ -174,7 +226,7 @@ export function IconEditorModal() {
             <h2 className="text-lg font-semibold text-slate-100">Icon Editor</h2>
             {editingId && (
               <span className="text-xs bg-amber-900/40 text-amber-300 rounded-full px-2 py-0.5">
-                Editing #{editingId}
+                Editing project
               </span>
             )}
           </div>
@@ -221,7 +273,6 @@ export function IconEditorModal() {
           </div>
         </div>
 
-        {/* Reusable editor */}
         <IconEditor
           composition={composition}
           onChange={setComposition}
