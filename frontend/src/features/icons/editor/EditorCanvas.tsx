@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import type { Composition, Layer, ImageLayer, TextLayer } from './types'
 import { CANVAS_SIZE } from './types'
 import { renderSVG } from './render'
@@ -16,11 +16,10 @@ type DragMode = 'move' | 'resize' | 'rotate' | null
 export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [dragMode, setDragMode] = useState<DragMode>(null)
-  const dragStartRef = useRef<{
-    x: number
-    y: number
-    layer: Layer | null
-  } | null>(null)
+  const dragStartRef = useRef<{ x: number; y: number; layer: Layer | null } | null>(null)
+  const rafRef = useRef<number>(0)
+  const compRef = useRef(composition)
+  compRef.current = composition
 
   // Preload fonts used in any text layer
   useEffect(() => {
@@ -31,63 +30,99 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
 
   const selected = composition.layers.find((l) => l.id === selectedId) ?? null
 
-  // Convert browser pointer coords to SVG coords
-  const getSvgPoint = (e: React.PointerEvent | PointerEvent): { x: number; y: number } => {
-    const svg = svgRef.current
-    if (!svg) return { x: 0, y: 0 }
-    const rect = svg.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * CANVAS_SIZE
-    const y = ((e.clientY - rect.top) / rect.height) * CANVAS_SIZE
-    return { x, y }
-  }
+  const getSvgPoint = useCallback(
+    (e: React.PointerEvent | PointerEvent): { x: number; y: number } => {
+      const svg = svgRef.current
+      if (!svg) return { x: 0, y: 0 }
+      const rect = svg.getBoundingClientRect()
+      return {
+        x: ((e.clientX - rect.left) / rect.width) * CANVAS_SIZE,
+        y: ((e.clientY - rect.top) / rect.height) * CANVAS_SIZE,
+      }
+    },
+    [],
+  )
 
-  const handlePointerDownLayer = (e: React.PointerEvent, layer: Layer, mode: DragMode) => {
-    e.stopPropagation()
-    onSelect(layer.id)
-    setDragMode(mode)
-    dragStartRef.current = { ...getSvgPoint(e), layer: { ...layer } }
-    ;(e.target as Element).setPointerCapture(e.pointerId)
-  }
+  const handlePointerDownLayer = useCallback(
+    (e: React.PointerEvent, layer: Layer, mode: DragMode) => {
+      e.stopPropagation()
+      onSelect(layer.id)
+      setDragMode(mode)
+      const svg = svgRef.current
+      if (!svg) return
+      const rect = svg.getBoundingClientRect()
+      const x = ((e.clientX - rect.left) / rect.width) * CANVAS_SIZE
+      const y = ((e.clientY - rect.top) / rect.height) * CANVAS_SIZE
+      dragStartRef.current = { x, y, layer: { ...layer } }
+      ;(e.target as Element).setPointerCapture(e.pointerId)
+    },
+    [onSelect],
+  )
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!dragMode || !dragStartRef.current) return
-    const { x, y, layer } = dragStartRef.current
-    if (!layer) return
-    const cur = getSvgPoint(e)
-    const dx = cur.x - x
-    const dy = cur.y - y
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragStartRef.current) return
+      const { x, y, layer } = dragStartRef.current
+      if (!layer) return
 
-    if (dragMode === 'move') {
-      const updated: Layer = { ...layer, x: layer.x + dx, y: layer.y + dy }
-      onChange({
-        ...composition,
-        layers: composition.layers.map((l) => (l.id === layer.id ? updated : l)),
+      // Throttle to animation frame
+      cancelAnimationFrame(rafRef.current)
+      const clientX = e.clientX
+      const clientY = e.clientY
+
+      rafRef.current = requestAnimationFrame(() => {
+        const svg = svgRef.current
+        if (!svg) return
+        const rect = svg.getBoundingClientRect()
+        const curX = ((clientX - rect.left) / rect.width) * CANVAS_SIZE
+        const curY = ((clientY - rect.top) / rect.height) * CANVAS_SIZE
+        const dx = curX - x
+        const dy = curY - y
+        const comp = compRef.current
+
+        if (dragMode === 'move') {
+          const updated: Layer = { ...layer, x: layer.x + dx, y: layer.y + dy }
+          onChange({
+            ...comp,
+            layers: comp.layers.map((l) => (l.id === layer.id ? updated : l)),
+          })
+        } else if (dragMode === 'resize' && layer.kind === 'image') {
+          const il = layer as ImageLayer
+          const updated: ImageLayer = {
+            ...il,
+            width: Math.max(20, il.width + dx),
+            height: Math.max(20, il.height + dy),
+          }
+          onChange({
+            ...comp,
+            layers: comp.layers.map((l) => (l.id === layer.id ? updated : l)),
+          })
+        } else if (dragMode === 'rotate') {
+          const cx = layer.kind === 'image' ? layer.x + (layer as ImageLayer).width / 2 : layer.x
+          const cy = layer.kind === 'image' ? layer.y + (layer as ImageLayer).height / 2 : layer.y
+          const angle = (Math.atan2(curY - cy, curX - cx) * 180) / Math.PI + 90
+          const updated: Layer = { ...layer, rotation: Math.round(angle) }
+          onChange({
+            ...comp,
+            layers: comp.layers.map((l) => (l.id === layer.id ? updated : l)),
+          })
+        }
       })
-    } else if (dragMode === 'resize' && layer.kind === 'image') {
-      const il = layer as ImageLayer
-      const newW = Math.max(20, il.width + dx)
-      const newH = Math.max(20, il.height + dy)
-      const updated: ImageLayer = { ...il, width: newW, height: newH }
-      onChange({
-        ...composition,
-        layers: composition.layers.map((l) => (l.id === layer.id ? updated : l)),
-      })
-    } else if (dragMode === 'rotate') {
-      const cx = layer.kind === 'image' ? layer.x + (layer as ImageLayer).width / 2 : layer.x
-      const cy = layer.kind === 'image' ? layer.y + (layer as ImageLayer).height / 2 : layer.y
-      const angle = (Math.atan2(cur.y - cy, cur.x - cx) * 180) / Math.PI + 90
-      const updated: Layer = { ...layer, rotation: Math.round(angle) }
-      onChange({
-        ...composition,
-        layers: composition.layers.map((l) => (l.id === layer.id ? updated : l)),
-      })
-    }
-  }
+    },
+    [dragMode, onChange],
+  )
 
-  const handlePointerUp = () => {
+  const handlePointerUp = useCallback(() => {
+    cancelAnimationFrame(rafRef.current)
     setDragMode(null)
     dragStartRef.current = null
-  }
+  }, [])
+
+  // Memoize SVG rendering — only recompute when composition actually changes
+  const svgInner = useMemo(() => {
+    const full = renderSVG(composition)
+    return full.replace(/^<svg[^>]*>|<\/svg>$/g, '')
+  }, [composition])
 
   // Compute selection bounding box
   let bbox: { x: number; y: number; w: number; h: number; rot: number } | null = null
@@ -101,16 +136,12 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
         rot: selected.rotation,
       }
     } else {
-      // approximate text bbox
       const tl = selected as TextLayer
       const w = Math.max(80, tl.size * Math.max(2, tl.text.length * 0.6))
       const h = tl.size * 1.2 * (tl.text.split('\n').length || 1)
       bbox = { x: tl.x - w / 2, y: tl.y - h / 2, w, h, rot: tl.rotation }
     }
   }
-
-  // Render the composition as inline SVG for the canvas
-  const svgString = renderSVG(composition)
 
   return (
     <div
@@ -130,7 +161,7 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
           xmlns="http://www.w3.org/2000/svg"
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          dangerouslySetInnerHTML={{ __html: svgString.replace(/^<svg[^>]*>|<\/svg>$/g, '') }}
+          dangerouslySetInnerHTML={{ __html: svgInner }}
         />
         {/* Selection overlay */}
         {bbox && selected && (
