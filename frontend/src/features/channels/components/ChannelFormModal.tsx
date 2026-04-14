@@ -3,8 +3,8 @@ import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useChannels, useCreateChannel, useUpdateChannel } from '@/features/channels/hooks'
-import { useAiSuggestChannels } from '@/features/ai/hooks'
-import type { AiChannelSuggestion, Channel } from '@/shared/types'
+import { useAiSuggestChannels, use247Suggestions } from '@/features/ai/hooks'
+import type { AiChannelSuggestion, Suggestion247, Channel } from '@/shared/types'
 import {
   NETWORK_PRESETS,
   NETWORK_CATEGORIES,
@@ -21,9 +21,11 @@ const TIER_COLORS: Record<string, string> = {
   'Galaxy Premium': 'purple',
 }
 
+type QuickStartMode = 'collapsed' | 'presets' | 'ai' | '247'
+
 interface QuickStartProps {
-  mode: 'collapsed' | 'presets' | 'ai'
-  setMode: (m: 'collapsed' | 'presets' | 'ai') => void
+  mode: QuickStartMode
+  setMode: (m: QuickStartMode) => void
   presetSearch: string
   setPresetSearch: (s: string) => void
   presetCategory: string
@@ -34,6 +36,10 @@ interface QuickStartProps {
   aiSuggest: any
   aiChannels: AiChannelSuggestion[]
   applyAiSuggestion: (s: AiChannelSuggestion) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  suggest247: any
+  suggestions247: Suggestion247[]
+  apply247: (s: Suggestion247) => void
 }
 
 function QuickStart({
@@ -48,6 +54,9 @@ function QuickStart({
   aiSuggest,
   aiChannels,
   applyAiSuggestion,
+  suggest247,
+  suggestions247,
+  apply247,
 }: QuickStartProps) {
   return (
     <div className="border border-slate-700 rounded-lg">
@@ -95,6 +104,30 @@ function QuickStart({
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
           </svg>
           AI Suggestions
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setMode(mode === '247' ? 'collapsed' : '247')
+            if (!suggest247.data && !suggest247.isPending) suggest247.mutate()
+          }}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+            mode === '247'
+              ? 'bg-slate-800 text-slate-100'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <svg
+            className="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 6v6l4 2" />
+          </svg>
+          24/7 Channels
         </button>
       </div>
 
@@ -200,6 +233,74 @@ function QuickStart({
           )}
         </div>
       )}
+
+      {mode === '247' && (
+        <div className="p-3 border-t border-slate-700 bg-slate-900/30 rounded-b-lg">
+          {suggest247.isPending && (
+            <div className="flex items-center gap-2 text-xs text-slate-400 py-2 justify-center">
+              <Spinner size="sm" />
+              Scanning your Plex library for 24/7 channel candidates…
+            </div>
+          )}
+          {suggest247.isError && (
+            <div className="text-xs text-red-400 text-center py-2">Failed to scan library.</div>
+          )}
+          {!suggest247.data && !suggest247.isPending && !suggest247.isError && (
+            <button
+              type="button"
+              onClick={() => suggest247.mutate()}
+              className="w-full px-3 py-2 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium"
+            >
+              Scan library for 24/7 channel candidates
+            </button>
+          )}
+          {suggestions247.length > 0 && (
+            <>
+              <p className="text-[10px] text-slate-500 mb-1.5">
+                {suggestions247.length} shows/franchises with enough content for a dedicated channel
+              </p>
+              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                {suggestions247.map((s) => (
+                  <button
+                    key={s.rating_key}
+                    type="button"
+                    onClick={() => apply247(s)}
+                    className="w-full text-left flex items-center gap-2.5 px-2.5 py-2 bg-slate-800 hover:bg-emerald-700/20 hover:border-emerald-500 border border-slate-700 rounded transition-colors"
+                  >
+                    {s.thumb && (
+                      <img
+                        src={`/api/plex/thumb?path=${encodeURIComponent(s.thumb)}`}
+                        alt=""
+                        className="w-10 h-14 rounded object-cover shrink-0 bg-slate-900"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs font-medium text-slate-100 truncate flex-1">
+                          {s.channel_name}
+                        </span>
+                        <span className="text-[10px] text-emerald-400 shrink-0">
+                          {Math.round(s.hours)}h
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate">{s.title}</p>
+                      <p className="text-[10px] text-slate-500">
+                        {s.seasons > 0 ? `${s.seasons} seasons · ` : ''}
+                        {s.episodes} episode{s.episodes !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {suggest247.data && suggestions247.length === 0 && (
+            <p className="text-xs text-slate-500 text-center py-4">
+              No shows or franchises with enough content found in your Plex library.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -230,7 +331,9 @@ export function ChannelFormModal() {
   // Smart channel creation: preset picker + AI suggestions
   const [presetCategory, setPresetCategory] = useState<string>('all')
   const [presetSearch, setPresetSearch] = useState('')
-  const [quickStartMode, setQuickStartMode] = useState<'collapsed' | 'presets' | 'ai'>('collapsed')
+  const [quickStartMode, setQuickStartMode] = useState<QuickStartMode>('collapsed')
+  const suggest247 = use247Suggestions()
+  const suggestions247: Suggestion247[] = suggest247.data ?? []
 
   const existingNumbers = useMemo(() => existingChannels.map((c) => c.number), [existingChannels])
 
@@ -309,6 +412,22 @@ export function ChannelFormModal() {
     setQuickStartMode('collapsed')
   }
 
+  // Apply a 24/7 suggestion to the form
+  function apply247(s: Suggestion247) {
+    setName(s.channel_name)
+    setTier('Galaxy Main')
+    setVibe(`24/7 ${s.type === 'shows' ? 'show' : 'movie'} loop`)
+    setMode('Shuffle')
+    setStyle(
+      s.description ||
+        `24/7 loop of ${s.title}. ${s.episodes} episode${s.episodes !== 1 ? 's' : ''}, ${Math.round(s.hours)} hours of content.`,
+    )
+    if (!numberTouched) {
+      setNumber(String(nextAvailableNumber(existingNumbers, 'Galaxy Main')))
+    }
+    setQuickStartMode('collapsed')
+  }
+
   function handleClose() {
     closeModal('channelForm')
   }
@@ -374,6 +493,9 @@ export function ChannelFormModal() {
               aiSuggest={aiSuggest}
               aiChannels={aiChannels}
               applyAiSuggestion={applyAiSuggestion}
+              suggest247={suggest247}
+              suggestions247={suggestions247}
+              apply247={apply247}
             />
           )}
 
