@@ -165,7 +165,6 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
         ref={wrapperRef}
         className="relative outline-none"
         style={{ width: 480, height: 480 }}
-        onClick={(e) => e.stopPropagation()}
         tabIndex={0}
       >
         <svg
@@ -176,6 +175,7 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
           xmlns="http://www.w3.org/2000/svg"
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onClick={(e) => e.stopPropagation()}
           dangerouslySetInnerHTML={{ __html: svgString.replace(/^<svg[^>]*>|<\/svg>$/g, '') }}
         />
         {/* Selection overlay */}
