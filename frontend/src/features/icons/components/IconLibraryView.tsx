@@ -156,137 +156,160 @@ export function IconLibraryView() {
       <div className="flex-1 overflow-auto">
         {/* ── Library tab ── */}
         {tab === 'library' && (
-          <div className="p-4 space-y-4">
-            {/* Category filter */}
-            <div className="flex gap-1 flex-wrap">
-              {categories.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setCategoryFilter(c)}
-                  className={`px-2.5 py-1 text-xs rounded-lg transition ${
-                    categoryFilter === c
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {c === 'all' ? 'All' : c}
-                </button>
-              ))}
-            </div>
-
-            {isLoading ? (
-              <div className="flex justify-center py-12">
-                <Spinner />
-              </div>
-            ) : filteredIcons.length === 0 ? (
-              <div className="text-center py-12 text-slate-500 text-sm">
-                <p>No icons yet. Create one in the editor or use a preset.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3">
-                {filteredIcons.map((icon) => (
-                  <div
-                    key={icon.id}
-                    className={`group relative cursor-pointer rounded-xl border-2 p-1 transition ${
-                      selectedIcon?.id === icon.id
-                        ? 'border-indigo-500 bg-indigo-500/10'
-                        : 'border-transparent hover:border-slate-600'
+          <div className="flex flex-col h-full">
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              {/* Category filter */}
+              <div className="flex gap-1 flex-wrap">
+                {categories.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setCategoryFilter(c)}
+                    className={`px-2.5 py-1 text-xs rounded-lg transition ${
+                      categoryFilter === c
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
-                    onClick={() => loadIconForEdit(icon)}
-                    onDoubleClick={() => setPreviewIcon(icon)}
                   >
-                    <img
-                      src={icon.data}
-                      alt={icon.name}
-                      loading="lazy"
-                      className="w-full aspect-square rounded-lg object-contain bg-slate-900"
-                    />
-                    <p className="text-xs text-slate-400 text-center truncate mt-1">{icon.name}</p>
-                    {icon.category === 'projects' && (
-                      <span className="absolute bottom-7 left-1 text-[9px] bg-indigo-600/80 text-white rounded px-1 py-0">
-                        Project
-                      </span>
-                    )}
-                    {/* Preview button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPreviewIcon(icon)
-                      }}
-                      className="absolute top-1 left-1 w-5 h-5 bg-slate-800/80 rounded text-slate-300 text-xs opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
-                      title="View full size"
-                    >
-                      <svg
-                        className="w-3 h-3"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-                      </svg>
-                    </button>
-                    {/* Edit button (only for project icons with composition) */}
-                    {icon.composition && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          let comp: unknown = icon.composition
-                          if (typeof comp === 'string') {
-                            try {
-                              comp = JSON.parse(comp)
-                            } catch {
-                              return
-                            }
-                          }
-                          openModal('iconEditor', {
-                            iconEditorComposition: comp,
-                            iconEditorId: icon.id,
-                            iconEditorName: icon.name,
-                          })
-                        }}
-                        className="absolute top-1 right-1 w-5 h-5 bg-indigo-600/90 rounded text-white text-xs opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
-                        title="Edit in editor"
-                      >
-                        <svg
-                          className="w-3 h-3"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                      </button>
-                    )}
-                    {/* Delete button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        deleteIcon.mutate(icon.id)
-                      }}
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-white text-xs opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
-                    >
-                      x
-                    </button>
-                  </div>
+                    {c === 'all'
+                      ? `All (${icons.length})`
+                      : `${c} (${icons.filter((i) => i.category === c).length})`}
+                  </button>
                 ))}
               </div>
-            )}
 
-            {/* Assign to channel */}
+              {isLoading ? (
+                <div className="flex justify-center py-12">
+                  <Spinner />
+                </div>
+              ) : filteredIcons.length === 0 ? (
+                <div className="text-center py-12 text-slate-500 text-sm">
+                  <p>No icons yet. Create one in the editor or use a preset.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 gap-2">
+                  {filteredIcons.map((icon) => (
+                    <div
+                      key={icon.id}
+                      className={`group relative cursor-pointer rounded-xl border transition overflow-hidden bg-slate-900 ${
+                        selectedIcon?.id === icon.id
+                          ? 'border-indigo-500 ring-1 ring-indigo-500/50'
+                          : 'border-slate-700 hover:border-slate-500'
+                      }`}
+                      onClick={() => loadIconForEdit(icon)}
+                      onDoubleClick={() => setPreviewIcon(icon)}
+                    >
+                      <img
+                        src={icon.data}
+                        alt={icon.name}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full aspect-square object-contain p-1"
+                      />
+                      {/* Category badge */}
+                      {icon.category === 'projects' && (
+                        <span className="absolute top-1 left-1 text-[9px] bg-indigo-600/90 text-white rounded px-1 py-0 leading-tight">
+                          Project
+                        </span>
+                      )}
+                      {/* Hover overlay with actions */}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pt-6 pb-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-[10px] text-slate-300 text-center truncate mb-1">
+                          {icon.name}
+                        </p>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPreviewIcon(icon)
+                            }}
+                            className="w-6 h-6 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 flex items-center justify-center transition"
+                            title="Preview"
+                          >
+                            <svg
+                              className="w-3 h-3"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                            </svg>
+                          </button>
+                          {icon.composition && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                let comp: unknown = icon.composition
+                                if (typeof comp === 'string') {
+                                  try {
+                                    comp = JSON.parse(comp)
+                                  } catch {
+                                    return
+                                  }
+                                }
+                                openModal('iconEditor', {
+                                  iconEditorComposition: comp,
+                                  iconEditorId: icon.id,
+                                  iconEditorName: icon.name,
+                                })
+                              }}
+                              className="w-6 h-6 bg-indigo-600 hover:bg-indigo-500 rounded text-white flex items-center justify-center transition"
+                              title="Edit"
+                            >
+                              <svg
+                                className="w-3 h-3"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                              >
+                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              deleteIcon.mutate(icon.id)
+                            }}
+                            className="w-6 h-6 bg-red-600 hover:bg-red-500 rounded text-white flex items-center justify-center transition"
+                            title="Delete"
+                          >
+                            <svg
+                              className="w-3 h-3"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <path d="M18 6L6 18M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Sticky assign bar — fixed at bottom */}
             {selectedIcon && (
-              <div className="mt-4 p-4 bg-slate-900 border border-slate-700 rounded-xl flex items-center gap-3">
-                <img src={selectedIcon.data} alt="" className="w-12 h-12 rounded-lg" />
+              <div className="shrink-0 border-t border-slate-700 bg-slate-900/95 backdrop-blur-sm px-4 py-3 flex items-center gap-3">
+                <img
+                  src={selectedIcon.data}
+                  alt=""
+                  className="w-10 h-10 rounded-lg border border-slate-700"
+                />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-200">{selectedIcon.name}</p>
-                  <p className="text-xs text-slate-500">Select a channel to assign this icon</p>
+                  <p className="text-sm font-medium text-slate-200 truncate">{selectedIcon.name}</p>
+                  <p className="text-[10px] text-slate-500">Assign to a channel</p>
                 </div>
                 <select
                   value={assignChannel}
                   onChange={(e) => setAssignChannel(e.target.value)}
-                  className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200"
+                  className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-xs text-slate-200"
                 >
                   <option value="">Select channel...</option>
                   {channels.map((ch) => (
@@ -298,9 +321,23 @@ export function IconLibraryView() {
                 <button
                   onClick={handleAssignToChannel}
                   disabled={!assignChannel || assignIcon.isPending}
-                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm rounded-lg font-medium transition"
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs rounded-lg font-medium transition"
                 >
                   Assign
+                </button>
+                <button
+                  onClick={() => setSelectedIcon(null)}
+                  className="text-slate-500 hover:text-slate-300 transition"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
             )}
