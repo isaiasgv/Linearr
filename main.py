@@ -242,18 +242,43 @@ def init_db():
             """)
         except sqlite3.OperationalError:
             pass
+        # App log columns
+        for col in ["duration_ms INTEGER", "request_path TEXT", "metadata TEXT"]:
+            try:
+                conn.execute(f"ALTER TABLE app_logs ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
 
-def _log_app(category: str, message: str, level: str = "info", detail: str | None = None):
-    """Insert an app-level log entry."""
+def _log_app(category: str, message: str, level: str = "info", detail: str | None = None,
+             duration_ms: int | None = None, path: str | None = None, metadata: dict | None = None):
+    """Insert an app-level log entry with optional timing and context."""
     try:
+        import json as _j
+        meta_str = _j.dumps(metadata) if metadata else None
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO app_logs (level, category, message, detail) VALUES (?, ?, ?, ?)",
-                (level, category, message, detail),
+                "INSERT INTO app_logs (level, category, message, detail, duration_ms, request_path, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (level, category, message, detail, duration_ms, path, meta_str),
             )
         log.info("[%s] %s", category, message)
     except Exception as e:
         log.warning("Failed to write app log: %s", e)
+
+def _purge_old_logs():
+    """Purge logs older than retention period and trim to max rows."""
+    try:
+        with get_db() as conn:
+            settings = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings").fetchall()}
+            days = int(settings.get("log_retention_days", "30"))
+            max_rows = int(settings.get("log_max_rows", "5000"))
+            # Delete old logs
+            conn.execute(f"DELETE FROM app_logs WHERE created_at < datetime('now', '-{days} days')")
+            conn.execute(f"DELETE FROM ai_logs WHERE created_at < datetime('now', '-{days} days')")
+            # Trim to max rows
+            conn.execute(f"DELETE FROM app_logs WHERE id NOT IN (SELECT id FROM app_logs ORDER BY created_at DESC LIMIT {max_rows})")
+            conn.execute(f"DELETE FROM ai_logs WHERE id NOT IN (SELECT id FROM ai_logs ORDER BY created_at DESC LIMIT {max_rows})")
+    except Exception as e:
+        log.warning("Log purge failed: %s", e)
 
 def get_plex_config():
     with get_db() as conn:
@@ -267,6 +292,7 @@ def get_plex_config():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    _purge_old_logs()
     _log_app("system", "Linearr started")
     yield
 
@@ -410,6 +436,7 @@ async def create_channel(body: ChannelIn):
             raise HTTPException(409, f"Channel {body.number} already exists")
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
     result = dict(row)
+    _log_app("channel", f"Created channel {body.number}: {body.name}", metadata={"number": body.number, "name": body.name, "tier": body.tier})
     # Auto-create in Tunarr
     sync = await _sync_channel_to_tunarr(body.number)
     result["tunarr_sync"] = sync
@@ -728,6 +755,8 @@ def bulk_assignments(body: BulkAssignmentIn):
             "SELECT * FROM assignments WHERE channel_number=? ORDER BY plex_title",
             (body.channel_number,)
         ).fetchall()
+    _log_app("assignment", f"Bulk assign to ch {body.channel_number}: {added} added, {skipped} skipped",
+             metadata={"channel": body.channel_number, "added": added, "skipped": skipped})
     return {"added": added, "skipped": skipped, "assignments": [dict(r) for r in rows]}
 
 # ── Settings ──────────────────────────────────────────────────────────────────
@@ -3544,6 +3573,28 @@ def clear_app_logs():
     with get_db() as conn:
         conn.execute("DELETE FROM app_logs")
     return {"ok": True}
+
+@app.post("/api/logs/purge")
+def purge_logs(days: int = Query(30)):
+    """Purge logs older than N days."""
+    with get_db() as conn:
+        conn.execute(f"DELETE FROM app_logs WHERE created_at < datetime('now', '-{days} days')")
+        conn.execute(f"DELETE FROM ai_logs WHERE created_at < datetime('now', '-{days} days')")
+    _log_app("logs", f"Purged logs older than {days} days")
+    return {"ok": True}
+
+@app.get("/api/logs/stats")
+def log_stats():
+    """Return log counts and oldest entries."""
+    with get_db() as conn:
+        app_count = conn.execute("SELECT COUNT(*) FROM app_logs").fetchone()[0]
+        ai_count = conn.execute("SELECT COUNT(*) FROM ai_logs").fetchone()[0]
+        app_oldest = conn.execute("SELECT MIN(created_at) FROM app_logs").fetchone()[0]
+        ai_oldest = conn.execute("SELECT MIN(created_at) FROM ai_logs").fetchone()[0]
+    return {
+        "app_logs": {"count": app_count, "oldest": app_oldest},
+        "ai_logs": {"count": ai_count, "oldest": ai_oldest},
+    }
 
 # ── Tunarr Integration ────────────────────────────────────────────────────────
 
