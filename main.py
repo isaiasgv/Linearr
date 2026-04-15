@@ -23,15 +23,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("linearr")
 
-from channels import CHANNELS, CHANNELS_BY_NUMBER
-
 def _get_channel(channel_number: int) -> dict | None:
-    """Look up a channel from DB first, then fall back to static CHANNELS list."""
+    """Look up a channel from DB."""
     with get_db() as conn:
         row = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
-    if row:
-        return dict(row)
-    return CHANNELS_BY_NUMBER.get(channel_number)
+    return dict(row) if row else None
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -421,9 +417,7 @@ class ChannelIn(BaseModel):
 def list_channels():
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM channels ORDER BY number").fetchall()
-    if rows:
-        return [dict(r) for r in rows]
-    return CHANNELS
+    return [dict(r) for r in rows]
 
 @app.post("/api/channels", status_code=201)
 async def create_channel(body: ChannelIn):
@@ -4249,13 +4243,6 @@ async def tunarr_import_preview(body: dict | None = None):
     linked_tunarr_ids = {r["tunarr_id"] for r in links}
     linked_cp_numbers = {r["channel_number"] for r in links}
 
-    # If DB is empty, use static CHANNELS
-    if not cp_by_number:
-        from channels import CHANNELS
-        for ch in CHANNELS:
-            cp_by_number[ch["number"]] = ch
-            cp_by_name[ch["name"].lower()] = ch
-
     preview = []
     for tc in tunarr_channels:
         tid = tc.get("id", "")
@@ -4356,13 +4343,6 @@ async def tunarr_export_channels(body: TunarrExportRequest):
             ).fetchall()]
         existing_links = {r["channel_number"]: dict(r) for r in conn.execute("SELECT * FROM tunarr_channel_links").fetchall()}
 
-    # If DB channels empty, use static CHANNELS
-    if not cp_channels:
-        from channels import CHANNELS
-        if body.channel_numbers == "all":
-            cp_channels = CHANNELS
-        else:
-            cp_channels = [c for c in CHANNELS if c["number"] in body.channel_numbers]
 
     # Fetch existing Tunarr channels for matching
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -5022,12 +5002,17 @@ def export_channel(channel_number: int):
         "channel_collections": collections,
     }
 
+def _presets_dir() -> Path:
+    """User-writable preset directory in the data volume.
+    Users can drop custom lineup JSON files here to make them importable."""
+    d = DB_PATH.parent / "presets"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
 @app.get("/api/presets/lineups")
 def list_preset_lineups():
-    """List available preset lineup JSON files shipped with Linearr."""
-    presets_dir = Path(__file__).parent / "presets"
-    if not presets_dir.exists():
-        return []
+    """List lineup JSON files in the user's data/presets/ directory."""
+    presets_dir = _presets_dir()
     out = []
     for p in presets_dir.glob("*.json"):
         try:
@@ -5050,8 +5035,7 @@ async def import_preset_lineup(lineup_id: str, request: Request):
     # Sanitize lineup_id to prevent path traversal
     if not lineup_id.replace("-", "").replace("_", "").isalnum():
         raise HTTPException(400, "Invalid lineup id")
-    presets_dir = Path(__file__).parent / "presets"
-    file_path = presets_dir / f"{lineup_id}.json"
+    file_path = _presets_dir() / f"{lineup_id}.json"
     if not file_path.exists():
         raise HTTPException(404, f"Preset lineup '{lineup_id}' not found")
     try:

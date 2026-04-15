@@ -18,8 +18,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py channels.py schedule_templates.json network_blocks.json ./
-COPY presets/ ./presets/
+COPY main.py schedule_templates.json network_blocks.json ./
 
 # Copy built React app
 COPY --from=frontend-builder /build/dist ./dist
