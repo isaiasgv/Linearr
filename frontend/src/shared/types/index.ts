@@ -212,6 +212,9 @@ export interface AppLog {
   category: string
   message: string
   detail: string | null
+  duration_ms: number | null
+  request_path: string | null
+  metadata: string | null
 }
 
 export interface AiSuggestion {

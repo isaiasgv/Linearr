@@ -744,43 +744,85 @@ export function SettingsView() {
 
 function LogsPanelContainer() {
   const [logTab, setLogTab] = useState<'app' | 'ai'>('app')
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [autoRefresh, setAutoRefresh] = useState(false)
   const { data: aiLogs = [] } = useAiLogs()
   const clearAiLogs = useClearAiLogs()
-  const { data: appLogs = [] } = useAppLogs()
+  const { data: appLogs = [], refetch: refetchApp } = useAppLogs()
   const clearAppLogs = useClearAppLogs()
+
+  // Auto-refresh
+  useEffect(() => {
+    if (!autoRefresh) return
+    const id = setInterval(() => refetchApp(), 10_000)
+    return () => clearInterval(id)
+  }, [autoRefresh, refetchApp])
 
   const logs = logTab === 'app' ? appLogs : aiLogs
   const clear = logTab === 'app' ? clearAppLogs : clearAiLogs
 
+  // Category options for app logs
+  const appCategories = ['all', ...new Set(appLogs.map((l) => l.category))]
+  const filteredAppLogs =
+    categoryFilter === 'all' ? appLogs : appLogs.filter((l) => l.category === categoryFilter)
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
-          {(['app', 'ai'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setLogTab(t)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                logTab === t ? 'bg-slate-700 text-slate-100' : 'text-slate-500 hover:text-slate-300'
-              }`}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
+            {(['app', 'ai'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setLogTab(t)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                  logTab === t
+                    ? 'bg-slate-700 text-slate-100'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {t === 'app' ? `App (${appLogs.length})` : `AI (${aiLogs.length})`}
+              </button>
+            ))}
+          </div>
+          {logTab === 'app' && appCategories.length > 2 && (
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300"
             >
-              {t === 'app' ? `App (${appLogs.length})` : `AI (${aiLogs.length})`}
-            </button>
-          ))}
+              {appCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c === 'all' ? 'All categories' : c}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
-        <button
-          onClick={() => clear.mutate()}
-          disabled={clear.isPending || logs.length === 0}
-          className="flex items-center gap-1 px-2.5 py-1 bg-red-900/30 hover:bg-red-900/50 disabled:opacity-40 border border-red-800/50 text-red-400 rounded text-xs font-medium transition"
-        >
-          {clear.isPending && <Spinner size="sm" />}
-          Clear
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="w-3 h-3 accent-indigo-500"
+            />
+            Auto-refresh
+          </label>
+          <button
+            onClick={() => clear.mutate()}
+            disabled={clear.isPending || logs.length === 0}
+            className="flex items-center gap-1 px-2.5 py-1 bg-red-900/30 hover:bg-red-900/50 disabled:opacity-40 border border-red-800/50 text-red-400 rounded text-xs font-medium transition"
+          >
+            {clear.isPending && <Spinner size="sm" />}
+            Clear
+          </button>
+        </div>
       </div>
       {logs.length === 0 ? (
         <p className="text-center py-12 text-slate-500 text-sm">No {logTab} logs yet</p>
       ) : logTab === 'app' ? (
-        <AppLogsTable logs={appLogs} />
+        <AppLogsTable logs={filteredAppLogs} />
       ) : (
         <AiLogsTable logs={aiLogs} />
       )}
@@ -789,6 +831,31 @@ function LogsPanelContainer() {
 }
 
 function AppLogsTable({ logs }: { logs: AppLog[] }) {
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+
+  const categoryColor = (cat: string) => {
+    switch (cat) {
+      case 'auth':
+        return 'text-blue-400'
+      case 'channel':
+        return 'text-indigo-400'
+      case 'assignment':
+        return 'text-purple-400'
+      case 'tunarr':
+        return 'text-emerald-400'
+      case 'plex':
+        return 'text-amber-400'
+      case 'system':
+        return 'text-cyan-400'
+      case 'logs':
+        return 'text-slate-400'
+      case 'icons':
+        return 'text-pink-400'
+      default:
+        return 'text-slate-400'
+    }
+  }
+
   return (
     <div className="border border-slate-700 rounded-lg overflow-auto max-h-[60vh]">
       <table className="w-full text-xs">
@@ -798,24 +865,72 @@ function AppLogsTable({ logs }: { logs: AppLog[] }) {
             <th className="text-left px-3 py-2 text-slate-400 font-medium">Level</th>
             <th className="text-left px-3 py-2 text-slate-400 font-medium">Category</th>
             <th className="text-left px-3 py-2 text-slate-400 font-medium">Message</th>
+            <th className="text-right px-3 py-2 text-slate-400 font-medium">Duration</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-800">
           {logs.map((l) => (
-            <tr key={l.id} className="hover:bg-slate-800/50">
-              <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
-                {formatDate(l.created_at)}
-              </td>
-              <td className="px-3 py-2">
-                <span
-                  className={`px-1.5 py-0.5 rounded border text-[10px] font-medium uppercase ${levelBadge(l.level)}`}
-                >
-                  {l.level}
-                </span>
-              </td>
-              <td className="px-3 py-2 text-slate-400 font-mono">{l.category}</td>
-              <td className="px-3 py-2 text-slate-300">{l.message}</td>
-            </tr>
+            <Fragment key={l.id}>
+              <tr
+                className="hover:bg-slate-800/50 cursor-pointer"
+                onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
+              >
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
+                  {formatDate(l.created_at)}
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={`px-1.5 py-0.5 rounded border text-[10px] font-medium uppercase ${levelBadge(l.level)}`}
+                  >
+                    {l.level}
+                  </span>
+                </td>
+                <td className={`px-3 py-2 font-mono ${categoryColor(l.category)}`}>{l.category}</td>
+                <td className="px-3 py-2 text-slate-300 truncate max-w-[300px]">{l.message}</td>
+                <td className="px-3 py-2 text-right text-slate-400 font-mono">
+                  {l.duration_ms != null ? `${(l.duration_ms / 1000).toFixed(1)}s` : '—'}
+                </td>
+              </tr>
+              {expandedId === l.id && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-3 bg-slate-900/50">
+                    <div className="space-y-2">
+                      {l.detail && (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-400 mb-1">Detail</p>
+                          <pre className="text-xs text-slate-500 bg-slate-950 rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap">
+                            {l.detail}
+                          </pre>
+                        </div>
+                      )}
+                      {l.request_path && (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-400 mb-1">Request Path</p>
+                          <p className="text-xs text-slate-500 font-mono">{l.request_path}</p>
+                        </div>
+                      )}
+                      {l.metadata && (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-400 mb-1">Metadata</p>
+                          <pre className="text-xs text-slate-500 bg-slate-950 rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap">
+                            {(() => {
+                              try {
+                                return JSON.stringify(JSON.parse(l.metadata), null, 2)
+                              } catch {
+                                return l.metadata
+                              }
+                            })()}
+                          </pre>
+                        </div>
+                      )}
+                      {!l.detail && !l.request_path && !l.metadata && (
+                        <p className="text-xs text-slate-600 italic">No additional details</p>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
