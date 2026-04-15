@@ -173,7 +173,7 @@ export function SettingsView() {
     'w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500'
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden relative">
       {/* Header */}
       <div className="px-6 py-4 border-b border-slate-800 shrink-0">
         <div className="flex items-center justify-between">
@@ -195,17 +195,6 @@ export function SettingsView() {
               Manage connections, integrations, and system configuration
             </p>
           </div>
-          {/* Save button in header for config tabs */}
-          {(tab === 'plex' || tab === 'ai' || tab === 'tunarr') && (
-            <button
-              onClick={handleSave}
-              disabled={saveSettings.isPending}
-              className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-lg text-sm font-medium transition"
-            >
-              {saveSettings.isPending && <Spinner size="sm" />}
-              Save Settings
-            </button>
-          )}
         </div>
       </div>
 
@@ -227,7 +216,7 @@ export function SettingsView() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div className="flex-1 overflow-auto px-6 py-4 pb-24 relative">
         {isLoading ? (
           <div className="flex justify-center py-8">
             <Spinner />
@@ -736,6 +725,23 @@ export function SettingsView() {
           </div>
         )}
       </div>
+
+      {/* Floating save bar — visible only on config tabs */}
+      {(tab === 'plex' || tab === 'ai' || tab === 'tunarr') && (
+        <div className="absolute bottom-0 left-0 right-0 pointer-events-none p-4 z-10">
+          <div className="pointer-events-auto max-w-2xl mx-auto flex items-center justify-between gap-3 bg-slate-800/95 backdrop-blur-md border border-slate-700 rounded-xl px-4 py-3 shadow-2xl">
+            <p className="text-xs text-slate-400">Changes are saved to all tabs at once.</p>
+            <button
+              onClick={handleSave}
+              disabled={saveSettings.isPending}
+              className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-lg text-sm font-medium transition shrink-0"
+            >
+              {saveSettings.isPending && <Spinner size="sm" />}
+              Save Settings
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
