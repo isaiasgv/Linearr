@@ -22,12 +22,12 @@ function StatusBadge({
   const dotColor = connected === null ? 'bg-slate-500' : connected ? 'bg-green-400' : 'bg-red-400'
   return (
     <div
-      className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5 text-xs"
+      className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-full px-3 py-1 text-sm"
       title={detail || label}
     >
-      {icon && <img src={icon} alt="" className="w-3 h-3 rounded-sm" />}
-      <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-      <span className="hidden lg:inline text-slate-400">{label}</span>
+      {icon && <img src={icon} alt="" className="w-4 h-4 rounded-sm" />}
+      <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+      <span className="hidden lg:inline text-slate-300">{label}</span>
     </div>
   )
 }
