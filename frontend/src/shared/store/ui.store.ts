@@ -38,6 +38,9 @@ interface UIState {
   tunarrPreviewData: unknown | null
   iconPickerCallback: ((dataUrl: string) => void) | null
   iconEditorCallback: ((dataUrl: string, composition?: unknown) => void) | null
+  iconEditorComposition: unknown | null
+  iconEditorId: number | null
+  iconEditorName: string | null
 
   // Actions
   selectChannel: (channel: Channel | null) => void
@@ -87,6 +90,9 @@ export const useUIStore = create<UIState>((set) => ({
   tunarrPreviewData: null,
   iconPickerCallback: null,
   iconEditorCallback: null,
+  iconEditorComposition: null,
+  iconEditorId: null,
+  iconEditorName: null,
 
   // Close sidebar on mobile when navigating
   selectChannel: (channel) =>

@@ -9,6 +9,7 @@ import {
   useImportFromTunarr,
 } from '../hooks'
 import { useChannels } from '@/features/channels/hooks'
+import { useUIStore } from '@/shared/store/ui.store'
 import { useToastStore } from '@/shared/store/toast.store'
 import type { SavedIcon } from '../api'
 import { IconEditor } from '../editor/IconEditor'
@@ -63,6 +64,7 @@ export function IconLibraryView() {
   const importTunarr = useImportFromTunarr()
 
   const addToast = useToastStore((s) => s.addToast)
+  const openModal = useUIStore((s) => s.openModal)
 
   const [tab, setTab] = useState<'library' | 'editor' | 'presets'>('library')
   const [iconName, setIconName] = useState('New Icon')
@@ -200,6 +202,11 @@ export function IconLibraryView() {
                       className="w-full aspect-square rounded-lg object-contain bg-slate-900"
                     />
                     <p className="text-xs text-slate-400 text-center truncate mt-1">{icon.name}</p>
+                    {icon.category === 'projects' && (
+                      <span className="absolute bottom-7 left-1 text-[9px] bg-indigo-600/80 text-white rounded px-1 py-0">
+                        Project
+                      </span>
+                    )}
                     {/* Preview button */}
                     <button
                       onClick={(e) => {
@@ -219,6 +226,40 @@ export function IconLibraryView() {
                         <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
                       </svg>
                     </button>
+                    {/* Edit button (only for project icons with composition) */}
+                    {icon.composition && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          let comp: unknown = icon.composition
+                          if (typeof comp === 'string') {
+                            try {
+                              comp = JSON.parse(comp)
+                            } catch {
+                              return
+                            }
+                          }
+                          openModal('iconEditor', {
+                            iconEditorComposition: comp,
+                            iconEditorId: icon.id,
+                            iconEditorName: icon.name,
+                          })
+                        }}
+                        className="absolute top-1 right-1 w-5 h-5 bg-indigo-600/90 rounded text-white text-xs opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
+                        title="Edit in editor"
+                      >
+                        <svg
+                          className="w-3 h-3"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </button>
+                    )}
                     {/* Delete button */}
                     <button
                       onClick={(e) => {

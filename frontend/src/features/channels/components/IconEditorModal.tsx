@@ -30,6 +30,9 @@ export function IconEditorModal() {
   const closeModal = useUIStore((s) => s.closeModal)
   const selectedChannel = useUIStore((s) => s.selectedChannel)
   const iconEditorCallback = useUIStore((s) => s.iconEditorCallback)
+  const incomingComposition = useUIStore((s) => s.iconEditorComposition)
+  const incomingId = useUIStore((s) => s.iconEditorId)
+  const incomingName = useUIStore((s) => s.iconEditorName)
   const queryClient = useQueryClient()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -44,6 +47,18 @@ export function IconEditorModal() {
 
   useEffect(() => {
     if (open) {
+      // If opening with an existing project composition, restore it
+      if (incomingComposition && typeof incomingComposition === 'object') {
+        const comp = incomingComposition as Composition
+        if (comp.layers && comp.layers.length > 0) {
+          setComposition(comp)
+          setSelectedId(comp.layers[0].id)
+          setEditingId(incomingId ?? null)
+          setIconName(incomingName || 'Untitled')
+          return
+        }
+      }
+      // Otherwise seed with channel name
       if (composition.layers.length === 0 && selectedChannel) {
         const layer = newTextLayer(selectedChannel.name)
         setComposition((c) => ({ ...c, layers: [layer] }))
