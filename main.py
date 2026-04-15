@@ -1720,6 +1720,7 @@ async def plex_sessions():
         media = (s.get("Media") or [{}])[0]
         transcode = s.get("TranscodeSession", {})
         sessions.append({
+            "rating_key": str(s.get("ratingKey") or s.get("grandparentRatingKey", "")),
             "title": s.get("grandparentTitle") or s.get("title", ""),
             "subtitle": s.get("title") if s.get("grandparentTitle") else None,
             "type": s.get("type", ""),

@@ -136,6 +136,7 @@ function popular(limit = 30): Promise<PlexPopularItem[]> {
 }
 
 interface PlexSession {
+  rating_key: string
   title: string
   subtitle: string | null
   type: string

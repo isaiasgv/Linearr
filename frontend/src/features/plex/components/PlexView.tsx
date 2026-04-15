@@ -306,6 +306,7 @@ export function PlexView() {
   const { data: historyItems = [] } = usePlexHistory(30)
   const { data: playlists = [] } = usePlexPlaylists()
   const scanLibrary = useScanLibrary()
+  const openModal = useUIStore((s) => s.openModal)
   const { data: hubsData } = usePlexHubs()
   const { data: plexEvents = [] } = usePlexEvents(undefined, 20)
   const clearEvents = useClearPlexEvents()
@@ -395,7 +396,10 @@ export function PlexView() {
               {sessions.map((s, i) => (
                 <div
                   key={i}
-                  className="bg-gradient-to-r from-slate-800 to-slate-900 border border-slate-700 rounded-xl overflow-hidden"
+                  onClick={() => {
+                    if (s.rating_key) openModal('itemDetail', { itemDetailRatingKey: s.rating_key })
+                  }}
+                  className="bg-gradient-to-r from-slate-800 to-slate-900 border border-slate-700 rounded-xl overflow-hidden cursor-pointer hover:border-slate-500 transition-colors"
                 >
                   <div className="flex gap-3 p-3">
                     {/* Poster */}
