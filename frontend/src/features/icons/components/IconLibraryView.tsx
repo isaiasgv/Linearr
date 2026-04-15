@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import {
   useSavedIcons,
@@ -8,13 +9,27 @@ import {
   useSeedIconPack,
   useImportFromTunarr,
 } from '../hooks'
+import { iconsApi } from '../api'
 import { useChannels } from '@/features/channels/hooks'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useToastStore } from '@/shared/store/toast.store'
 import type { SavedIcon } from '../api'
 import { IconEditor } from '../editor/IconEditor'
-import { defaultComposition, newTextLayer, type Composition } from '../editor/types'
-import { compositionToPngDataUrl } from '../editor/render'
+import { defaultComposition, newTextLayer, type Composition, type ColorMode } from '../editor/types'
+import {
+  compositionToPngDataUrl,
+  applyColorMode,
+  renderSVGWithFonts,
+  rasterizeToPng,
+  blobToDataUrl,
+} from '../editor/render'
+
+const COLOR_VARIANTS: Array<{ id: ColorMode; suffix: string }> = [
+  { id: 'original', suffix: '' },
+  { id: 'all-black', suffix: '-black' },
+  { id: 'all-white', suffix: '-white' },
+  { id: 'text-white-image-original', suffix: '-text-white' },
+]
 
 const PRESET_GRADIENTS: [string, string, string][] = [
   ['Indigo', '#4f46e5', '#818cf8'],
@@ -76,18 +91,96 @@ export function IconLibraryView() {
   // Composition state for the shared IconEditor
   const [composition, setComposition] = useState<Composition>(defaultComposition())
   const [editorSelectedId, setEditorSelectedId] = useState<string | null>(null)
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false)
+  const [editorBusy, setEditorBusy] = useState(false)
+  const exportDropRef = useRef<HTMLDivElement>(null)
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (exportDropRef.current && !exportDropRef.current.contains(e.target as Node))
+        setExportDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const categories = ['all', ...new Set(icons.map((i) => i.category))]
   const filteredIcons =
     categoryFilter === 'all' ? icons : icons.filter((i) => i.category === categoryFilter)
 
-  // ── Editor save handler (uses shared composition) ──
-  async function handleEditorSave() {
+  // ── Editor save/export handlers ──
+  async function handleSaveProjectOnly() {
+    if (composition.layers.length === 0) return
+    setEditorBusy(true)
     try {
       const dataUrl = await compositionToPngDataUrl(composition)
-      saveIcon.mutate({ name: iconName, category: 'custom', data: dataUrl, composition })
+      await new Promise<void>((resolve, reject) => {
+        saveIcon.mutate(
+          { name: iconName || 'Untitled', category: 'projects', data: dataUrl, composition },
+          { onSuccess: () => resolve(), onError: (e) => reject(e) },
+        )
+      })
+      addToast('Project saved')
     } catch (e) {
       addToast(e instanceof Error ? e.message : 'Save failed', true)
+    } finally {
+      setEditorBusy(false)
+    }
+  }
+
+  async function handleEditorExport(mode: 'png' | 'svg' | 'all') {
+    if (composition.layers.length === 0) return
+    setEditorBusy(true)
+    setExportDropdownOpen(false)
+    try {
+      const baseName = iconName || 'Untitled'
+      const thumbDataUrl = await compositionToPngDataUrl(composition)
+      let savedCount = 0
+
+      // Always save project
+      await new Promise<void>((resolve, reject) => {
+        saveIcon.mutate(
+          { name: baseName, category: 'projects', data: thumbDataUrl, composition },
+          { onSuccess: () => resolve(), onError: (e) => reject(e) },
+        )
+      })
+      savedCount++
+
+      if (mode === 'png' || mode === 'all') {
+        for (const v of COLOR_VARIANTS) {
+          const recolored = applyColorMode(composition, v.id)
+          const svg = await renderSVGWithFonts(recolored)
+          const blob = await rasterizeToPng(svg, composition.size)
+          const dataUrl = await blobToDataUrl(blob)
+          await iconsApi.saveIcon({
+            name: `${baseName}${v.suffix}`,
+            category: 'png',
+            data: dataUrl,
+          })
+          savedCount++
+        }
+      }
+      if (mode === 'svg' || mode === 'all') {
+        for (const v of COLOR_VARIANTS) {
+          const recolored = applyColorMode(composition, v.id)
+          const svg = await renderSVGWithFonts(recolored)
+          const svgDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
+          await iconsApi.saveIcon({
+            name: `${baseName}${v.suffix}`,
+            category: 'svg',
+            data: svgDataUrl,
+          })
+          savedCount++
+        }
+      }
+
+      void queryClient.invalidateQueries({ queryKey: ['icons', 'library'] })
+      addToast(`Saved ${savedCount} item${savedCount !== 1 ? 's' : ''} to library`)
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Export failed', true)
+    } finally {
+      setEditorBusy(false)
     }
   }
 
@@ -347,16 +440,71 @@ export function IconLibraryView() {
         {/* ── Editor tab — uses shared IconEditor component ── */}
         {tab === 'editor' && (
           <div className="flex flex-col h-full">
-            {/* Save bar */}
+            {/* Save bar — matches IconEditorModal */}
             <div className="flex items-center justify-end gap-2 px-4 py-2 border-b border-slate-800 shrink-0">
               <button
-                onClick={handleEditorSave}
-                disabled={saveIcon.isPending || composition.layers.length === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded"
+                onClick={handleSaveProjectOnly}
+                disabled={editorBusy || composition.layers.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded disabled:opacity-50"
               >
-                {saveIcon.isPending && <Spinner size="sm" />}
-                Save to Library
+                {editorBusy && <Spinner size="sm" />}
+                Save Project
               </button>
+              <div className="relative" ref={exportDropRef}>
+                <div className="flex">
+                  <button
+                    onClick={() => handleEditorExport('png')}
+                    disabled={editorBusy || composition.layers.length === 0}
+                    className="flex items-center gap-1.5 pl-3 pr-2 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-l disabled:opacity-50"
+                  >
+                    {editorBusy && <Spinner size="sm" />}
+                    Export to Galaxy
+                  </button>
+                  <button
+                    onClick={() => setExportDropdownOpen((v) => !v)}
+                    disabled={editorBusy || composition.layers.length === 0}
+                    className="flex items-center px-1.5 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded-r border-l border-indigo-500 disabled:opacity-50"
+                  >
+                    <svg
+                      className={`w-3 h-3 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </button>
+                </div>
+                {exportDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-56 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-50 py-1">
+                    <button
+                      onClick={() => handleEditorExport('png')}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                    >
+                      <span className="w-5 text-center text-indigo-400 font-bold">P</span>
+                      Save PNG to Library
+                      <span className="ml-auto text-[10px] text-slate-500">default</span>
+                    </button>
+                    <button
+                      onClick={() => handleEditorExport('svg')}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                    >
+                      <span className="w-5 text-center text-emerald-400 font-bold">S</span>
+                      Save SVG to Library
+                    </button>
+                    <div className="border-t border-slate-700 my-1" />
+                    <button
+                      onClick={() => handleEditorExport('all')}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                    >
+                      <span className="w-5 text-center text-amber-400 font-bold">A</span>
+                      Save All Variants
+                      <span className="ml-auto text-[10px] text-slate-500">PNG + SVG</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <IconEditor
               composition={composition}
