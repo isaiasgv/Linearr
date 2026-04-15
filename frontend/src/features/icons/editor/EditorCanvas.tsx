@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Composition, Layer, ImageLayer, TextLayer } from './types'
-import { CANVAS_SIZE } from './types'
+import { CANVAS_SIZE, autoFitLayers } from './types'
 import { renderSVG } from './render'
 import { ensureFontLoaded } from './fonts'
 
@@ -157,9 +157,29 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
 
   return (
     <div
-      className="flex-1 flex items-center justify-center bg-[repeating-conic-gradient(#1e293b_0%_25%,#0f172a_0%_50%)] bg-[length:24px_24px] overflow-auto p-6"
+      className="flex-1 flex flex-col items-center justify-center bg-[repeating-conic-gradient(#1e293b_0%_25%,#0f172a_0%_50%)] bg-[length:24px_24px] overflow-auto p-6 gap-3"
       onClick={() => onSelect(null)}
     >
+      {/* Toolbar */}
+      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={() => onChange(autoFitLayers(composition))}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded-lg transition"
+          title="Auto-fit all layers to fill canvas"
+        >
+          <svg
+            className="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+          </svg>
+          Auto-fit
+        </button>
+      </div>
+
       {/* tabIndex makes the div focusable so it can receive keyboard events */}
       <div
         ref={wrapperRef}
@@ -178,6 +198,25 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
           onClick={(e) => e.stopPropagation()}
           dangerouslySetInnerHTML={{ __html: svgString.replace(/^<svg[^>]*>|<\/svg>$/g, '') }}
         />
+        {/* Edge guide — safe zone indicator */}
+        <svg
+          viewBox={`0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}`}
+          width={480}
+          height={480}
+          className="absolute inset-0 pointer-events-none"
+        >
+          <rect
+            x={12}
+            y={12}
+            width={CANVAS_SIZE - 24}
+            height={CANVAS_SIZE - 24}
+            fill="none"
+            stroke="#334155"
+            strokeWidth={1}
+            strokeDasharray="8 6"
+            opacity={0.6}
+          />
+        </svg>
         {/* Selection overlay */}
         {bbox && selected && (
           <svg

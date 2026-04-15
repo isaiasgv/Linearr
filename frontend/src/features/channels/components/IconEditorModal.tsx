@@ -8,7 +8,12 @@ import { useToastStore } from '@/shared/store/toast.store'
 import { useSaveIcon, useAssignIconToChannel } from '@/features/icons/hooks'
 import { iconsApi } from '@/features/icons/api'
 import { IconEditor } from '@/features/icons/editor/IconEditor'
-import { defaultComposition, newTextLayer, type Composition } from '@/features/icons/editor/types'
+import {
+  defaultComposition,
+  newTextLayer500,
+  newTextLayer400,
+  type Composition,
+} from '@/features/icons/editor/types'
 import {
   compositionToPngDataUrl,
   applyColorMode,
@@ -72,11 +77,25 @@ export function IconEditorModal() {
           return
         }
       }
-      if (composition.layers.length === 0 && selectedChannel) {
-        const layer = newTextLayer(selectedChannel.name)
-        setComposition((c) => ({ ...c, layers: [layer] }))
-        setSelectedId(layer.id)
-        setIconName(selectedChannel.name)
+      if (composition.layers.length === 0) {
+        // Default: two text layers (weight 500 + 400)
+        let line1 = 'Galaxy'
+        let line2 = 'Channel'
+        if (selectedChannel) {
+          const words = selectedChannel.name.split(/\s+/)
+          if (words.length >= 2) {
+            line1 = words[0]
+            line2 = words.slice(1).join(' ')
+          } else {
+            line1 = 'Galaxy'
+            line2 = selectedChannel.name
+          }
+          setIconName(selectedChannel.name)
+        }
+        const l1 = newTextLayer500(line1)
+        const l2 = newTextLayer400(line2)
+        setComposition((c) => ({ ...c, layers: [l1, l2] }))
+        setSelectedId(l1.id)
       }
     } else {
       setComposition(defaultComposition())
@@ -124,6 +143,23 @@ export function IconEditorModal() {
       )
     })
     return 1
+  }
+
+  /** Save project only (no variant export) */
+  async function handleSaveProjectOnly() {
+    if (composition.layers.length === 0) return
+    setBusy(true)
+    try {
+      const baseName = iconName || 'Untitled'
+      const thumbDataUrl = await compositionToPngDataUrl(composition)
+      await saveProject(baseName, thumbDataUrl)
+      void queryClient.invalidateQueries({ queryKey: ['icons', 'library'] })
+      addToast('Project saved')
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Failed to save project', true)
+    } finally {
+      setBusy(false)
+    }
   }
 
   /** Main save handler */
@@ -208,6 +244,15 @@ export function IconEditorModal() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {/* Save project only */}
+            <button
+              onClick={handleSaveProjectOnly}
+              disabled={disabled}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded disabled:opacity-50"
+            >
+              {busy && <Spinner size="sm" />}
+              Save Project
+            </button>
             {/* Export to Galaxy — button with dropdown */}
             <div className="relative" ref={dropdownRef}>
               <div className="flex">
