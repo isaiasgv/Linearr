@@ -158,17 +158,18 @@ def init_db():
             """)
         except sqlite3.OperationalError:
             pass
-        # Seed channels from channels.py if table is empty
+        # Seed a single example channel on fresh install. Users can import
+        # the full Galaxy Network lineup via the Cable Plex view if they want.
         try:
             count = conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0]
             if count == 0:
-                for ch in CHANNELS:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
-                        (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"),
-                         ch.get("vibe", ""), ch.get("mode", "Shuffle"),
-                         ch.get("style", ""), ch.get("color", "blue"))
-                    )
+                conn.execute(
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    (100, "My First Channel", "Galaxy Main", "Everyday cable comfort",
+                     "Shuffle",
+                     "Your example channel. Edit this, create new ones, or import the Galaxy Network lineup from Cable Plex.",
+                     "blue"),
+                )
         except sqlite3.OperationalError:
             pass
         try:
@@ -5020,6 +5021,119 @@ def export_channel(channel_number: int):
         "block_slots": slots,
         "channel_collections": collections,
     }
+
+@app.get("/api/presets/lineups")
+def list_preset_lineups():
+    """List available preset lineup JSON files shipped with Linearr."""
+    presets_dir = Path(__file__).parent / "presets"
+    if not presets_dir.exists():
+        return []
+    out = []
+    for p in presets_dir.glob("*.json"):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            out.append({
+                "id": p.stem,
+                "name": data.get("name", p.stem),
+                "description": data.get("description", ""),
+                "channel_count": len(data.get("channels", [])),
+            })
+        except Exception:
+            continue
+    return out
+
+@app.post("/api/presets/lineups/{lineup_id}/import")
+async def import_preset_lineup(lineup_id: str, request: Request):
+    """Import a shipped preset lineup (e.g., the Galaxy Network lineup).
+    Body: {mode: 'merge'|'replace'} (default 'merge')."""
+    # Sanitize lineup_id to prevent path traversal
+    if not lineup_id.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(400, "Invalid lineup id")
+    presets_dir = Path(__file__).parent / "presets"
+    file_path = presets_dir / f"{lineup_id}.json"
+    if not file_path.exists():
+        raise HTTPException(404, f"Preset lineup '{lineup_id}' not found")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to read preset: {e}")
+
+    body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
+    mode = body.get("mode", "merge")
+    return _import_lineup_data(data, mode)
+
+def _import_lineup_data(data: dict, mode: str) -> dict:
+    """Shared lineup import logic used by both /api/import/lineup and preset imports."""
+    channels = data.get("channels", [])
+    assignments = data.get("assignments", [])
+    blocks = data.get("blocks", [])
+    block_slots = data.get("block_slots", [])
+
+    stats = {"channels_added": 0, "assignments_added": 0, "blocks_added": 0, "slots_added": 0}
+    with get_db() as conn:
+        if mode == "replace":
+            conn.execute("DELETE FROM block_slots")
+            conn.execute("DELETE FROM blocks")
+            conn.execute("DELETE FROM assignments")
+            conn.execute("DELETE FROM channels")
+
+        for ch in channels:
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, icon) VALUES (?,?,?,?,?,?,?,?)",
+                    (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"), ch.get("vibe", ""),
+                     ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue"),
+                     ch.get("icon")),
+                )
+                stats["channels_added"] += 1
+            except Exception:
+                pass
+
+        block_id_map = {}
+        for blk in blocks:
+            try:
+                old_id = blk.get("id")
+                cur = conn.execute(
+                    "INSERT INTO blocks (name, channel_number, days, start_time, end_time, content_type, notes, order_index) VALUES (?,?,?,?,?,?,?,?)",
+                    (blk["name"], blk.get("channel_number"), blk.get("days", "[]"),
+                     blk.get("start_time", "00:00"), blk.get("end_time", "23:59"),
+                     blk.get("content_type", "both"), blk.get("notes", ""), blk.get("order_index", 0)),
+                )
+                if old_id is not None:
+                    block_id_map[old_id] = cur.lastrowid
+                stats["blocks_added"] += 1
+            except Exception:
+                pass
+
+        for slot in block_slots:
+            try:
+                block_id = block_id_map.get(slot.get("block_id"), slot.get("block_id"))
+                if block_id is None:
+                    continue
+                conn.execute(
+                    "INSERT INTO block_slots (block_id, slot_time, plex_rating_key, plex_title, plex_type, plex_thumb, plex_year, duration_minutes) VALUES (?,?,?,?,?,?,?,?)",
+                    (block_id, slot["slot_time"], slot["plex_rating_key"], slot["plex_title"],
+                     slot["plex_type"], slot.get("plex_thumb"), slot.get("plex_year"),
+                     slot.get("duration_minutes", 60)),
+                )
+                stats["slots_added"] += 1
+            except Exception:
+                pass
+
+        for a in assignments:
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO assignments (channel_number, plex_rating_key, plex_title, plex_type, plex_thumb, plex_year) VALUES (?,?,?,?,?,?)",
+                    (a["channel_number"], a["plex_rating_key"], a["plex_title"], a["plex_type"],
+                     a.get("plex_thumb"), a.get("plex_year")),
+                )
+                stats["assignments_added"] += 1
+            except Exception:
+                pass
+
+    return {"ok": True, "mode": mode, "stats": stats}
 
 @app.post("/api/import/lineup")
 async def import_lineup(request: Request):

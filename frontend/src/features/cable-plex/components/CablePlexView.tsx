@@ -447,6 +447,60 @@ export function CablePlexView() {
               }}
             />
           </label>
+          <button
+            onClick={async () => {
+              const { isConfirmed } = await Swal.fire({
+                title: 'Load Galaxy Network Lineup?',
+                html: 'This will import 29 curated channels (Galaxy ONE, Cartoon Network, Disney, Nickelodeon, etc.) into your lineup.<br/><br/>Existing channels will be kept — only new numbers will be added.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Load Lineup',
+                cancelButtonText: 'Cancel',
+                background: '#1e293b',
+                color: '#e2e8f0',
+                confirmButtonColor: '#4f46e5',
+              })
+              if (!isConfirmed) return
+              const res = await fetch('/api/presets/lineups/galaxy-lineup/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: 'merge' }),
+              })
+              if (res.ok) {
+                const result = await res.json()
+                await Swal.fire({
+                  icon: 'success',
+                  title: 'Galaxy Lineup Loaded',
+                  html: `Added <b>${result.stats.channels_added}</b> channels to your lineup.`,
+                  background: '#1e293b',
+                  color: '#e2e8f0',
+                  confirmButtonColor: '#4f46e5',
+                })
+                window.location.reload()
+              } else {
+                await Swal.fire({
+                  icon: 'error',
+                  title: 'Failed to load lineup',
+                  background: '#1e293b',
+                  color: '#e2e8f0',
+                })
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 border border-indigo-600 text-white rounded-lg transition-colors"
+            title="Import the full Galaxy Network lineup (29 curated channels)"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+            </svg>
+            Load Galaxy Lineup
+          </button>
         </div>
 
         {/* Tier filter tabs */}

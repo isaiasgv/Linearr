@@ -1,0 +1,302 @@
+{
+  "version": 1,
+  "name": "Galaxy Network Lineup",
+  "description": "The full Galaxy Network channel lineup — 29 curated channels with tiers, vibes, and styles.",
+  "exported_at": "2026-04-15T19:16:04.743662+00:00",
+  "channels": [
+    {
+      "number": 100,
+      "name": "Galaxy ONE",
+      "tier": "Galaxy Main",
+      "vibe": "Flagship / Big Tent",
+      "mode": "Flex",
+      "style": "Curated best-of — hand-picked, every slot intentional",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 101,
+      "name": "Galaxy 2",
+      "tier": "Galaxy Main",
+      "vibe": "Everyday cable comfort",
+      "mode": "Shuffle",
+      "style": "The 'always on' channel — comfortable, familiar, zero commitment",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 102,
+      "name": "Galaxy Premium",
+      "tier": "Galaxy Main",
+      "vibe": "Elevated cable drama",
+      "mode": "Flex",
+      "style": "AMC/FX energy — prestige-adjacent but accessible",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 103,
+      "name": "Galaxy Action",
+      "tier": "Galaxy Main",
+      "vibe": "Adrenaline / Franchise",
+      "mode": "Shuffle",
+      "style": "Big, loud, fun. Franchise-driven. The popcorn channel.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 104,
+      "name": "Galaxy Thrills",
+      "tier": "Galaxy Main",
+      "vibe": "Tension / Dark energy",
+      "mode": "Shuffle",
+      "style": "Morning = suspense. Night = full horror. Escalates through the day.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 105,
+      "name": "Galaxy Crime",
+      "tier": "Galaxy Main",
+      "vibe": "Investigation / Obsession",
+      "mode": "Flex",
+      "style": "Bingeable cases and cops. Obsessive, detail-driven 'one more episode' energy.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 106,
+      "name": "Galaxy Romance",
+      "tier": "Galaxy Main",
+      "vibe": "Cozy / Emotional",
+      "mode": "Shuffle",
+      "style": "Feelings-first. Light mornings, epic love stories at prime, steamy late night.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 107,
+      "name": "Galaxy Now",
+      "tier": "Galaxy Main",
+      "vibe": "Modern / Trending / Competitive",
+      "mode": "Shuffle",
+      "style": "Buzz and chaos. Channel surfing energy. Always something happening.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 108,
+      "name": "Galaxy Comedy",
+      "tier": "Galaxy Main",
+      "vibe": "Light / Rewatchable",
+      "mode": "Shuffle",
+      "style": "Easy laughs all day. Classic mornings, movies afternoon, stand-up headliner at prime.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 109,
+      "name": "Galaxy Puerto Rico",
+      "tier": "Galaxy Main",
+      "vibe": "Cultural / Regional",
+      "mode": "Shuffle",
+      "style": "Island identity and community. Music-heavy. Cultural pride all day.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 110,
+      "name": "Galaxy Yaideliz",
+      "tier": "Galaxy Main",
+      "vibe": "Personal / Curated",
+      "mode": "Sequential",
+      "style": "Your channel, your rules. No formula. Pure taste. Update frequently.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 112,
+      "name": "Galaxy Kids",
+      "tier": "Galaxy Main",
+      "vibe": "Bright / Parent-safe",
+      "mode": "Shuffle",
+      "style": "Parent-safe 24/7. Preschool mornings, big movies at night. Nothing scary.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 113,
+      "name": "Galaxy Toons",
+      "tier": "Galaxy Main",
+      "vibe": "All-ages cartoon fun",
+      "mode": "Shuffle",
+      "style": "Catch-all cartoon channel. Lighter and broader than Animated. Pure toon energy.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 114,
+      "name": "Galaxy WBToons",
+      "tier": "Galaxy Main",
+      "vibe": "WB cartoon legacy / DCAU",
+      "mode": "Shuffle",
+      "style": "Full WB animation legacy. Looney Tunes mornings, Kids' WB midday, DCAU at night.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 115,
+      "name": "Galaxy Animated",
+      "tier": "Galaxy Main",
+      "vibe": "Stylized storytelling",
+      "mode": "Flex",
+      "style": "Day = family-friendly animation. Night = adult animation, anime, mature storytelling.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 116,
+      "name": "Galaxy Anime",
+      "tier": "Galaxy Main",
+      "vibe": "Anime / Japanese animation",
+      "mode": "Flex",
+      "style": "Shonen energy during the day, deeper mature titles after 10PM. Anime-only channel.",
+      "color": "blue",
+      "icon": null
+    },
+    {
+      "number": 120,
+      "name": "Cartoon Network",
+      "tier": "Classics",
+      "vibe": "90s/00s cartoon energy",
+      "mode": "Shuffle",
+      "style": "CN golden era — Dexter's Lab through Adventure Time.",
+      "color": "amber",
+      "icon": null
+    },
+    {
+      "number": 121,
+      "name": "Boomerang",
+      "tier": "Classics",
+      "vibe": "Retro Hanna-Barbera classics",
+      "mode": "Shuffle",
+      "style": "Pure nostalgia archive. Nothing post-2000. Grandparent-safe and childhood-core.",
+      "color": "amber",
+      "icon": null
+    },
+    {
+      "number": 122,
+      "name": "Disney Channel",
+      "tier": "Classics",
+      "vibe": "Tween nostalgia / wholesome",
+      "mode": "Shuffle",
+      "style": "DCOMs prime time, sitcom afternoons, animated mornings.",
+      "color": "amber",
+      "icon": null
+    },
+    {
+      "number": 123,
+      "name": "Disney XD",
+      "tier": "Classics",
+      "vibe": "Action-adventure toons",
+      "mode": "Shuffle",
+      "style": "Boy-skewing action and adventure. More kinetic and plot-driven than Disney Channel.",
+      "color": "amber",
+      "icon": null
+    },
+    {
+      "number": 124,
+      "name": "Nickelodeon",
+      "tier": "Classics",
+      "vibe": "Slime-era kids channel",
+      "mode": "Shuffle",
+      "style": "Nick Jr. mornings, Nicktoons midday, live-action afternoon, Avatar late night.",
+      "color": "amber",
+      "icon": null
+    },
+    {
+      "number": 125,
+      "name": "Nicktoons",
+      "tier": "Classics",
+      "vibe": "Nick animation deep cuts",
+      "mode": "Shuffle",
+      "style": "Animation-only Nick. No live-action. Pure Nicktoons catalog — deep cuts and fan favorites.",
+      "color": "amber",
+      "icon": null
+    },
+    {
+      "number": 126,
+      "name": "MTV",
+      "tier": "Classics",
+      "vibe": "Youth culture / Music",
+      "mode": "Shuffle",
+      "style": "Buzz and chaos. TRL energy. Music videos to reality TV to Jackass.",
+      "color": "amber",
+      "icon": null
+    },
+    {
+      "number": 140,
+      "name": "Galaxy Premieres",
+      "tier": "Galaxy Premium",
+      "vibe": "Prestige / Event TV",
+      "mode": "Flex",
+      "style": "HBO flagship energy. Everything should feel like an event. Only the best.",
+      "color": "purple",
+      "icon": null
+    },
+    {
+      "number": 141,
+      "name": "Galaxy Cinema",
+      "tier": "Galaxy Premium",
+      "vibe": "Pure movies",
+      "mode": "Flex",
+      "style": "The all-day movie channel. Wide variety, well-slotted by time of day.",
+      "color": "purple",
+      "icon": null
+    },
+    {
+      "number": 142,
+      "name": "Galaxy Hits",
+      "tier": "Galaxy Premium",
+      "vibe": "Crowd-pleasers",
+      "mode": "Shuffle",
+      "style": "Movies everyone has seen and wants to see again. Pure comfort blockbusters.",
+      "color": "purple",
+      "icon": null
+    },
+    {
+      "number": 143,
+      "name": "Galaxy Thriller",
+      "tier": "Galaxy Premium",
+      "vibe": "Suspense / Edge",
+      "mode": "Shuffle",
+      "style": "Premium tension. Smarter, slower-burn than Galaxy Thrills. Films that reward attention.",
+      "color": "purple",
+      "icon": null
+    },
+    {
+      "number": 144,
+      "name": "Galaxy Vault",
+      "tier": "Galaxy Premium",
+      "vibe": "Timeless / Library prestige",
+      "mode": "Shuffle",
+      "style": "Heritage cinema. Pre-2000 only. Black & white welcome. Prestige and history.",
+      "color": "purple",
+      "icon": null
+    },
+    {
+      "number": 145,
+      "name": "Galaxy After Dark",
+      "tier": "Galaxy Premium",
+      "vibe": "Mature / Bold",
+      "mode": "Shuffle",
+      "style": "Late-night freedom. The channel where anything goes. Peak hours 10PM-4AM.",
+      "color": "purple",
+      "icon": null
+    }
+  ],
+  "assignments": [],
+  "blocks": [],
+  "block_slots": [],
+  "channel_collections": []
+}
