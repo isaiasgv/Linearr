@@ -6,6 +6,7 @@
 *.md
 !requirements.txt
 data/
+test-data/
 presets/
 channels.py
 landing/
