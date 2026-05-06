@@ -325,6 +325,33 @@ To test a release candidate before it goes stable:
 image: ghcr.io/isaiasgv/linearr:rc
 ```
 
+### Versioning
+
+Linearr uses [semantic-release](https://semantic-release.gitbook.io/) driven by [Conventional Commits](https://www.conventionalcommits.org/). Every push to `main` or `release/*` automatically:
+
+- Determines if a release is needed (no release for `chore`, `docs`, `style`, `test`, `build`, `ci` commits)
+- Bumps the version (default: **patch only**, even for `feat:` and `BREAKING CHANGE:`)
+- Updates `CHANGELOG.md`
+- Tags the release (`linearr-vX.Y.Z`)
+- Builds and pushes the Docker image
+
+#### Bumping minor or major
+
+Two ways to override the patch-only default:
+
+**1. Workflow dispatch (recommended for releases):**
+- Go to GitHub → Actions → CI → "Run workflow"
+- Pick `minor` or `major` from the dropdown
+- Click "Run workflow"
+
+**2. Per-commit override:**
+- Add `release-as: minor` or `release-as: major` to the commit body:
+```
+feat: add monthly stable release
+
+release-as: minor
+```
+
 ---
 
 ## Contributing

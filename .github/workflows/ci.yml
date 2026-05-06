@@ -5,6 +5,17 @@ on:
     branches: [main, 'release/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_level:
+        description: 'Release level for this run (auto-pushes always use patch)'
+        type: choice
+        required: true
+        default: 'patch'
+        options:
+          - patch
+          - minor
+          - major
 
 env:
   REGISTRY: ghcr.io
@@ -39,101 +50,59 @@ jobs:
       - name: Build
         run: npm run build
 
-  # ── Release candidate: push to release/* branch ───────────────────────────
-  rc:
-    needs: ci
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Compute RC version
-        id: version
-        run: |
-          BASE=$(node -p "require('./frontend/package.json').version")
-          # Count commits on this branch since it diverged from main
-          COMMIT_COUNT=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "1")
-          VERSION="${BASE}-rc.${COMMIT_COUNT}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=linearr-v${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "RC version: $VERSION"
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rc
-
-      - name: Create RC pre-release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: Linearr v${{ steps.version.outputs.version }}
-          body: "Release candidate `${{ steps.version.outputs.version }}` — built from `${{ github.ref_name }}` branch."
-          draft: false
-          prerelease: true
-          target_commitish: ${{ github.sha }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ── Stable release: merge to main ─────────────────────────────────────────
+  # ── Release: runs on push to main or release/*, or workflow_dispatch ──────
   release:
     needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, 'chore(release)')
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))) ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
+      issues: write
+      pull-requests: write
+    outputs:
+      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
+      new_release_git_tag: ${{ steps.semantic.outputs.new_release_git_tag }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
+      - name: Run semantic-release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/changelog
+            @semantic-release/exec
+            @semantic-release/git
+            conventional-changelog-conventionalcommits
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_LEVEL: ${{ inputs.release_level || 'patch' }}
 
-      - name: Read version and generate changelog
-        id: version
-        working-directory: frontend
-        run: |
-          npx standard-version --release-as patch --skip.bump
-          VERSION=$(node -p "require('./package.json').version")
-          TAG="linearr-v${VERSION}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+  # ── Docker: only runs if a new release was published ─────────────────────
+  docker:
+    needs: release
+    if: needs.release.outputs.new_release_published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
-      - name: Push changelog and tag
-        run: git push --follow-tags origin main
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.new_release_git_tag }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -142,42 +111,53 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine image tags
+        id: tags
+        run: |
+          VERSION="${{ needs.release.outputs.new_release_version }}"
+          if [[ "$VERSION" == *"-rc."* ]]; then
+            {
+              echo "tags<<EOF"
+              echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+              echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rc"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "tags<<EOF"
+              echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+              echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ steps.tags.outputs.tags }}
 
-      - name: Extract changelog for release
-        id: changelog
-        working-directory: frontend
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          BODY=$(awk '/^## \[?'"$VERSION"'/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md)
-          if [ -z "$BODY" ]; then
-            BODY="Release v${VERSION}"
-          fi
-          echo "$BODY" > /tmp/release-notes.md
+  # ── Cleanup: when a stable release ships, delete RC pre-releases for it ──
+  cleanup_rcs:
+    needs: [release, docker]
+    if: |
+      needs.release.outputs.new_release_published == 'true' &&
+      !contains(needs.release.outputs.new_release_version, '-rc.')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Delete RC pre-releases for this version
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          gh release list --limit 50 --json tagName,isPrerelease -q ".[] | select(.isPrerelease and (.tagName | startswith(\"linearr-v${VERSION}-rc\"))) | .tagName" | while read tag; do
-            gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
-          done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: Linearr v${{ steps.version.outputs.version }}
-          body_path: /tmp/release-notes.md
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.new_release_version }}
+        run: |
+          gh release list --limit 100 --json tagName,isPrerelease \
+            -q ".[] | select(.isPrerelease and (.tagName | startswith(\"linearr-v${VERSION}-rc\"))) | .tagName" \
+            | while read tag; do
+              echo "Deleting RC: $tag"
+              gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+            done

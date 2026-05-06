@@ -13,9 +13,7 @@
     "format:check": "prettier --check 'src/**/*.{ts,tsx}'",
     "typecheck": "tsc --noEmit",
     "generate-icons": "node scripts/generate-icons.mjs",
-    "release": "standard-version",
-    "release:minor": "standard-version --release-as minor",
-    "release:major": "standard-version --release-as major",
+    "release:dry-run": "cd .. && npx semantic-release --dry-run",
     "setup": "cd .. && git config core.hooksPath .githooks && echo 'Git hooks configured'"
   },
   "dependencies": {
@@ -39,7 +37,6 @@
     "postcss": "^8.4.45",
     "prettier": "^3.8.1",
     "sharp": "^0.34.5",
-    "standard-version": "^9.5.0",
     "tailwindcss": "^3.4.11",
     "to-ico": "^1.1.5",
     "typescript": "^5.5.3",
