@@ -1,6 +1,10 @@
 <div align="center">
 
-<img src="frontend/public/logo.svg" width="80" height="80" alt="Linearr logo" />
+<!-- repo-standards:logo -->
+<picture>
+  <img alt="Linearr" src="assets/logo.svg" width="80" height="80">
+</picture>
+<!-- /repo-standards:logo -->
 
 # Linearr
 
@@ -8,10 +12,12 @@
 
 Build, manage, and push programming schedules for your personal TV network — complete with an AI advisor, EPG generation, and a real-time schedule editor.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/isaiasgv/linearr/ci.yml?label=CI)](https://github.com/isaiasgv/linearr/actions)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker)](https://ghcr.io/isaiasgv/linearr)
-[![Release](https://img.shields.io/github/v/release/isaiasgv/linearr?label=latest)](https://github.com/isaiasgv/linearr/releases)
+<!-- repo-standards:badges -->
+[![CI](https://github.com/isaiasgv/Linearr/actions/workflows/ci.yml/badge.svg)](https://github.com/isaiasgv/Linearr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/isaiasgv/Linearr?include_prereleases&sort=semver)](https://github.com/isaiasgv/Linearr/releases)
+[![License](https://img.shields.io/github/license/isaiasgv/Linearr)](./LICENSE)
+[![GHCR](https://img.shields.io/badge/ghcr-isaiasgv%2FLinearr-blue?logo=docker)](https://github.com/isaiasgv/Linearr/pkgs/container/linearr)
+<!-- /repo-standards:badges -->
 
 [Features](#features) &bull; [Quick Start](#-quick-start) &bull; [Screenshots](#-how-it-works) &bull; [Stack](#-stack) &bull; [API Docs](#-api-documentation) &bull; [Contributing](#-contributing)
 
