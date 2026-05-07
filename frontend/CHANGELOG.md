@@ -1,3 +1,9 @@
+## [1.0.0-rc.2](https://github.com/isaiasgv/Linearr/compare/linearr-v1.0.0-rc.1...linearr-v1.0.0-rc.2) (2026-05-07)
+
+### Features
+
+* **seo:** add full SEO to landing/, noindex frontend/ ([c2ddc0a](https://github.com/isaiasgv/Linearr/commit/c2ddc0aab08512c24c168acd64568a4d95dbecc3))
+
 ## 1.0.0-rc.1 (2026-05-06)
 
 ### Features
