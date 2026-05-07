@@ -16,7 +16,7 @@ const VALID_LEVELS = ['patch', 'minor', 'major']
 const level = VALID_LEVELS.includes(RELEASE_LEVEL) ? RELEASE_LEVEL : 'patch'
 
 module.exports = {
-  tagFormat: 'linearr-v${version}',
+  tagFormat: 'v${version}',
   branches: [
     'main',
     { name: 'release/*', prerelease: 'rc' },
