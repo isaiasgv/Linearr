@@ -4,6 +4,22 @@ Self-hosted TV channel schedule manager for Plex and Tunarr (Galaxy Network). Ru
 
 ---
 
+<!-- repo-standards:branch-flow -->
+## Branch + release flow
+
+- `main` — stable. Tags like `linearr-v1.2.3` are cut from here.
+- `release/<M.N>` — prerelease branch for an in-progress version. Publishes `-rc.N` images to GHCR (e.g. `linearr-v1.0.0-rc.4`).
+- `dev` — continuous integration branch. Publishes `-dev.N` prerelease images.
+- Feature branches → PR into `dev` (or `release/<M.N>` for a near-cut release).
+- Versioning is **patch-only by default**. Minor/major bumps require either:
+  - workflow_dispatch with `release_level=minor|major`, or
+  - commit body containing `release-as: minor` / `release-as: major`.
+- Container images are published only from `main` and `release/*` (the `dev` channel publishes prerelease tags but not `latest`).
+- See `.releaserc.js` for the full semantic-release config.
+<!-- /repo-standards:branch-flow -->
+
+---
+
 ## Stack
 
 | Layer | Technology |

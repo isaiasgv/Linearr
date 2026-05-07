@@ -88,12 +88,16 @@
   <!-- Alpine.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
-  <!-- Inter font -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-
+  <!-- Inter font (self-hosted variable, no third-party request) -->
   <style>
+    @font-face {
+      font-family: 'Inter Variable';
+      font-style: normal;
+      font-display: swap;
+      font-weight: 100 900;
+      src: url('fonts/inter-variable.woff2') format('woff2-variations');
+    }
+    body, .font-sans { font-family: 'Inter Variable', Inter, system-ui, sans-serif; }
     [x-cloak] { display: none !important; }
     .gradient-text {
       background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);

@@ -20,6 +20,7 @@ module.exports = {
   branches: [
     'main',
     { name: 'release/*', prerelease: 'rc' },
+    { name: 'dev', prerelease: 'dev' },
   ],
   plugins: [
     [
