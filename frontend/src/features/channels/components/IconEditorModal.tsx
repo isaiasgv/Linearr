@@ -1,369 +1,364 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
-import { useUIStore } from '@/shared/store/ui.store'
+import { useEffect, useState, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import Swal from 'sweetalert2'
+import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
+import { Spinner } from '@/shared/components/ui/Spinner'
+import { useUIStore } from '@/shared/store/ui.store'
 import { useToastStore } from '@/shared/store/toast.store'
-import { post, del } from '@/shared/api/client'
+import { useSaveIcon, useAssignIconToChannel } from '@/features/icons/hooks'
+import { iconsApi } from '@/features/icons/api'
+import { IconEditor } from '@/features/icons/editor/IconEditor'
+import {
+  defaultComposition,
+  newTextLayer500,
+  newTextLayer400,
+  type Composition,
+} from '@/features/icons/editor/types'
+import {
+  compositionToPngDataUrl,
+  applyColorMode,
+  renderSVGWithFonts,
+  rasterizeToPng,
+  blobToDataUrl,
+} from '@/features/icons/editor/render'
+import type { ColorMode } from '@/features/icons/editor/types'
 
-const FONTS = [
-  'Arial',
-  'Helvetica',
-  'Impact',
-  'Georgia',
-  'Courier New',
-  'Trebuchet MS',
-  'Verdana',
-  'Palatino',
-  'Garamond',
-  'Comic Sans MS',
+const COLOR_VARIANTS: Array<{ id: ColorMode; label: string; suffix: string }> = [
+  { id: 'original', label: 'Original', suffix: '' },
+  { id: 'all-black', label: 'All Black', suffix: '-black' },
+  { id: 'all-white', label: 'All White', suffix: '-white' },
+  { id: 'text-white-image-original', label: 'Text White', suffix: '-text-white' },
 ]
 
-const CANVAS_SIZE = 512
-const PREVIEW_SIZES = [192, 64, 32]
-
-const TIER_GRADIENTS: Record<string, [string, string]> = {
-  'Galaxy Main': ['#4f46e5', '#6366f1'],
-  Classics: ['#d97706', '#f59e0b'],
-  'Galaxy Premium': ['#7c3aed', '#a855f7'],
-}
+type SaveMode = 'png' | 'svg' | 'all'
 
 export function IconEditorModal() {
-  const { modals, closeModal, selectedChannel } = useUIStore()
-  const open = modals.iconEditor ?? false
+  const open = useUIStore((s) => s.modals.iconEditor)
+  const closeModal = useUIStore((s) => s.closeModal)
+  const selectedChannel = useUIStore((s) => s.selectedChannel)
+  const iconEditorCallback = useUIStore((s) => s.iconEditorCallback)
+  const incomingComposition = useUIStore((s) => s.iconEditorComposition)
+  const incomingId = useUIStore((s) => s.iconEditorId)
+  const incomingName = useUIStore((s) => s.iconEditorName)
   const queryClient = useQueryClient()
   const addToast = useToastStore((s) => s.addToast)
 
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [text, setText] = useState('')
-  const [font, setFont] = useState('Impact')
-  const [fontSize, setFontSize] = useState(72)
-  const [textColor, setTextColor] = useState('#ffffff')
-  const [bgType, setBgType] = useState<'transparent' | 'solid' | 'gradient'>('gradient')
-  const [bgColor, setBgColor] = useState('#1e1b4b')
-  const [saving, setSaving] = useState(false)
+  const saveIcon = useSaveIcon()
+  const assignToChannel = useAssignIconToChannel()
 
-  // Init text from channel name
+  const [composition, setComposition] = useState<Composition>(defaultComposition())
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [iconName, setIconName] = useState('Untitled')
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown on outside click
   useEffect(() => {
-    if (open && selectedChannel) {
-      setText(selectedChannel.name)
-      const tier = selectedChannel.tier
-      if (TIER_GRADIENTS[tier]) {
-        setBgColor(TIER_GRADIENTS[tier][0])
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false)
       }
     }
-  }, [open, selectedChannel])
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
-  const drawCanvas = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-
-    // Background
-    if (bgType === 'solid') {
-      ctx.fillStyle = bgColor
-      ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-    } else if (bgType === 'gradient') {
-      const tier = selectedChannel?.tier ?? 'Galaxy Main'
-      const [c1, c2] = TIER_GRADIENTS[tier] ?? [bgColor, '#6366f1']
-      const grad = ctx.createLinearGradient(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-      grad.addColorStop(0, c1)
-      grad.addColorStop(1, c2)
-      ctx.fillStyle = grad
-      ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-    }
-
-    // Text
-    if (text) {
-      ctx.fillStyle = textColor
-      ctx.font = `bold ${fontSize}px "${font}", sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-
-      // Word wrap
-      const words = text.split(' ')
-      const lines: string[] = []
-      let currentLine = ''
-      const maxWidth = CANVAS_SIZE * 0.85
-
-      for (const word of words) {
-        const testLine = currentLine ? `${currentLine} ${word}` : word
-        const metrics = ctx.measureText(testLine)
-        if (metrics.width > maxWidth && currentLine) {
-          lines.push(currentLine)
-          currentLine = word
-        } else {
-          currentLine = testLine
+  useEffect(() => {
+    if (open) {
+      if (incomingComposition && typeof incomingComposition === 'object') {
+        const comp = incomingComposition as Composition
+        if (comp.layers && comp.layers.length > 0) {
+          setComposition(comp)
+          setSelectedId(comp.layers[0].id)
+          setEditingId(incomingId ?? null)
+          setIconName(incomingName || 'Untitled')
+          return
         }
       }
-      if (currentLine) lines.push(currentLine)
-
-      const lineHeight = fontSize * 1.2
-      const totalHeight = lines.length * lineHeight
-      const startY = (CANVAS_SIZE - totalHeight) / 2 + lineHeight / 2
-
-      lines.forEach((line, i) => {
-        ctx.fillText(line, CANVAS_SIZE / 2, startY + i * lineHeight, maxWidth)
-      })
-    }
-  }, [text, font, fontSize, textColor, bgType, bgColor, selectedChannel])
-
-  useEffect(() => {
-    drawCanvas()
-  }, [drawCanvas])
-
-  async function handleSave() {
-    if (!canvasRef.current || !selectedChannel) return
-    setSaving(true)
-    try {
-      const dataUrl = canvasRef.current.toDataURL('image/png')
-      await post(`/api/channels/${selectedChannel.number}/icon`, { icon: dataUrl })
-      queryClient.invalidateQueries({ queryKey: ['channels'] })
-      addToast('Icon saved')
-      closeModal('iconEditor')
-    } catch (e: any) {
-      addToast(e.message || 'Failed to save icon', true)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleRemove() {
-    if (!selectedChannel) return
-    await del(`/api/channels/${selectedChannel.number}/icon`)
-    queryClient.invalidateQueries({ queryKey: ['channels'] })
-    addToast('Icon removed')
-    closeModal('iconEditor')
-  }
-
-  function handleImportImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const img = new Image()
-      img.onload = () => {
-        const canvas = canvasRef.current
-        if (!canvas) return
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-        ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-        // Draw image centered and scaled to fit
-        const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height)
-        const w = img.width * scale
-        const h = img.height * scale
-        ctx.drawImage(img, (CANVAS_SIZE - w) / 2, (CANVAS_SIZE - h) / 2, w, h)
+      if (composition.layers.length === 0) {
+        // Default: two text layers (weight 500 + 400)
+        let line1 = 'Galaxy'
+        let line2 = 'Channel'
+        if (selectedChannel) {
+          const words = selectedChannel.name.split(/\s+/)
+          if (words.length >= 2) {
+            line1 = words[0]
+            line2 = words.slice(1).join(' ')
+          } else {
+            line1 = 'Galaxy'
+            line2 = selectedChannel.name
+          }
+          setIconName(selectedChannel.name)
+        }
+        const l1 = newTextLayer500(line1)
+        const l2 = newTextLayer400(line2)
+        setComposition((c) => ({ ...c, layers: [l1, l2] }))
+        setSelectedId(l1.id)
       }
-      img.src = reader.result as string
+    } else {
+      setComposition(defaultComposition())
+      setSelectedId(null)
+      setIconName('Untitled')
+      setEditingId(null)
+      setDropdownOpen(false)
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const handleClose = () => closeModal('iconEditor')
+
+  /** Save project file (composition JSON + thumbnail) */
+  async function saveProject(baseName: string, thumbDataUrl: string) {
+    if (editingId) {
+      const { isConfirmed, isDismissed } = await Swal.fire({
+        title: 'Project exists',
+        text: 'Overwrite or save as new?',
+        icon: 'question',
+        showDenyButton: true,
+        showCancelButton: true,
+        confirmButtonText: 'Save as New',
+        denyButtonText: 'Overwrite',
+        cancelButtonText: 'Cancel',
+        background: '#1e293b',
+        color: '#e2e8f0',
+        confirmButtonColor: '#4f46e5',
+        denyButtonColor: '#475569',
+      })
+      if (isDismissed) return 0
+      if (!isConfirmed) {
+        await iconsApi.updateIcon(editingId, {
+          name: baseName,
+          data: thumbDataUrl,
+          composition,
+        })
+        return 1
+      }
+    }
+    await new Promise<void>((resolve, reject) => {
+      saveIcon.mutate(
+        { name: baseName, category: 'projects', data: thumbDataUrl, composition },
+        { onSuccess: () => resolve(), onError: (e) => reject(e) },
+      )
+    })
+    return 1
   }
 
-  function handleExportPng() {
-    if (!canvasRef.current) return
-    const url = canvasRef.current.toDataURL('image/png')
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${selectedChannel?.name ?? 'channel'}-icon.png`
-    a.click()
+  /** Save project only (no variant export) */
+  async function handleSaveProjectOnly() {
+    if (composition.layers.length === 0) return
+    setBusy(true)
+    try {
+      const baseName = iconName || 'Untitled'
+      const thumbDataUrl = await compositionToPngDataUrl(composition)
+      await saveProject(baseName, thumbDataUrl)
+      void queryClient.invalidateQueries({ queryKey: ['icons', 'library'] })
+      addToast('Project saved')
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Failed to save project', true)
+    } finally {
+      setBusy(false)
+    }
   }
+
+  /** Main save handler */
+  async function handleExport(mode: SaveMode, assign: boolean) {
+    if (composition.layers.length === 0) return
+    setBusy(true)
+    setDropdownOpen(false)
+    try {
+      const baseName = iconName || 'Untitled'
+      const thumbDataUrl = await compositionToPngDataUrl(composition)
+      let savedCount = 0
+
+      // Always save the project file
+      savedCount += await saveProject(baseName, thumbDataUrl)
+
+      // Save PNG variants
+      if (mode === 'png' || mode === 'all') {
+        for (const v of COLOR_VARIANTS) {
+          const recolored = applyColorMode(composition, v.id)
+          const svg = await renderSVGWithFonts(recolored)
+          const blob = await rasterizeToPng(svg, composition.size)
+          const dataUrl = await blobToDataUrl(blob)
+          await iconsApi.saveIcon({
+            name: `${baseName}${v.suffix}`,
+            category: 'png',
+            data: dataUrl,
+          })
+          savedCount++
+        }
+      }
+
+      // Save SVG variants
+      if (mode === 'svg' || mode === 'all') {
+        for (const v of COLOR_VARIANTS) {
+          const recolored = applyColorMode(composition, v.id)
+          const svg = await renderSVGWithFonts(recolored)
+          const svgDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
+          await iconsApi.saveIcon({
+            name: `${baseName}${v.suffix}`,
+            category: 'svg',
+            data: svgDataUrl,
+          })
+          savedCount++
+        }
+      }
+
+      void queryClient.invalidateQueries({ queryKey: ['icons', 'library'] })
+      addToast(`Saved ${savedCount} item${savedCount !== 1 ? 's' : ''} to library`)
+
+      if (iconEditorCallback) {
+        iconEditorCallback(thumbDataUrl, composition)
+      } else if (assign && selectedChannel) {
+        await new Promise<void>((resolve, reject) => {
+          assignToChannel.mutate(
+            { channelNumber: selectedChannel.number, iconData: thumbDataUrl },
+            { onSuccess: () => resolve(), onError: (e) => reject(e) },
+          )
+        })
+        void queryClient.invalidateQueries({ queryKey: ['channels'] })
+      }
+      handleClose()
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Failed to save icon', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const disabled = busy || composition.layers.length === 0
 
   return (
-    <ModalWrapper open={open} onClose={() => closeModal('iconEditor')} maxWidth="max-w-2xl">
-      <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-slate-100">
-          Channel Icon — {selectedChannel?.name ?? ''}
-        </h2>
-        <button
-          onClick={() => closeModal('iconEditor')}
-          className="text-slate-500 hover:text-slate-300 transition-colors"
-        >
-          <svg
-            className="w-5 h-5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <div className="p-6 flex gap-6">
-        {/* Canvas preview */}
-        <div className="shrink-0">
-          <canvas
-            ref={canvasRef}
-            width={CANVAS_SIZE}
-            height={CANVAS_SIZE}
-            className="w-48 h-48 rounded-xl border border-slate-700 bg-[repeating-conic-gradient(#334155_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]"
-          />
-          {/* Size previews */}
-          <div className="flex items-center gap-3 mt-3">
-            {PREVIEW_SIZES.map((s) => (
-              <div key={s} className="text-center">
-                <canvas
-                  width={s}
-                  height={s}
-                  className="rounded border border-slate-700"
-                  style={{ width: s / 2, height: s / 2 }}
-                  ref={(el) => {
-                    if (el && canvasRef.current) {
-                      const ctx = el.getContext('2d')
-                      if (ctx) {
-                        ctx.clearRect(0, 0, s, s)
-                        ctx.drawImage(canvasRef.current, 0, 0, s, s)
-                      }
-                    }
-                  }}
-                />
-                <span className="text-xs text-slate-600 block mt-0.5">{s}px</span>
-              </div>
-            ))}
+    <ModalWrapper open={open} onClose={handleClose} maxWidth="max-w-7xl">
+      <div className="flex flex-col h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-slate-100">Icon Editor</h2>
+            {editingId && (
+              <span className="text-xs bg-amber-900/40 text-amber-300 rounded-full px-2 py-0.5">
+                Editing project
+              </span>
+            )}
           </div>
-        </div>
-
-        {/* Controls */}
-        <div className="flex-1 space-y-4">
-          {/* Text */}
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Text</label>
-            <input
-              type="text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-
-          {/* Font + Size */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Font</label>
-              <select
-                value={font}
-                onChange={(e) => setFont(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
-              >
-                {FONTS.map((f) => (
-                  <option key={f} value={f} style={{ fontFamily: f }}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Size: {fontSize}px</label>
-              <input
-                type="range"
-                min={24}
-                max={160}
-                value={fontSize}
-                onChange={(e) => setFontSize(Number(e.target.value))}
-                className="w-full accent-indigo-500"
-              />
-            </div>
-          </div>
-
-          {/* Colors */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Text Color</label>
-              <input
-                type="color"
-                value={textColor}
-                onChange={(e) => setTextColor(e.target.value)}
-                className="w-full h-9 bg-slate-900 border border-slate-600 rounded-lg cursor-pointer"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Background</label>
-              <div className="flex gap-1">
-                {(['transparent', 'solid', 'gradient'] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setBgType(t)}
-                    className={`flex-1 px-2 py-1.5 text-xs rounded transition ${
-                      bgType === t
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
+          <div className="flex items-center gap-2">
+            {/* Save project only */}
+            <button
+              onClick={handleSaveProjectOnly}
+              disabled={disabled}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded disabled:opacity-50"
+            >
+              {busy && <Spinner size="sm" />}
+              Save Project
+            </button>
+            {/* Export to Galaxy — button with dropdown */}
+            <div className="relative" ref={dropdownRef}>
+              <div className="flex">
+                {/* Main button — PNG (default) */}
+                <button
+                  onClick={() => handleExport('png', false)}
+                  disabled={disabled}
+                  className="flex items-center gap-1.5 pl-3 pr-2 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-l disabled:opacity-50"
+                >
+                  {busy && <Spinner size="sm" />}
+                  Export to Galaxy
+                </button>
+                {/* Dropdown toggle */}
+                <button
+                  onClick={() => setDropdownOpen((v) => !v)}
+                  disabled={disabled}
+                  className="flex items-center px-1.5 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded-r border-l border-indigo-500 disabled:opacity-50"
+                >
+                  <svg
+                    className={`w-3 h-3 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
                   >
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </button>
-                ))}
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
               </div>
-              {bgType === 'solid' && (
-                <input
-                  type="color"
-                  value={bgColor}
-                  onChange={(e) => setBgColor(e.target.value)}
-                  className="w-full h-8 mt-1 bg-slate-900 border border-slate-600 rounded cursor-pointer"
-                />
+              {/* Dropdown menu */}
+              {dropdownOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-50 py-1">
+                  <button
+                    onClick={() => handleExport('png', false)}
+                    disabled={disabled}
+                    className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                  >
+                    <span className="w-5 text-center text-indigo-400 font-bold">P</span>
+                    Save PNG to Library
+                    <span className="ml-auto text-[10px] text-slate-500">default</span>
+                  </button>
+                  <button
+                    onClick={() => handleExport('svg', false)}
+                    disabled={disabled}
+                    className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                  >
+                    <span className="w-5 text-center text-emerald-400 font-bold">S</span>
+                    Save SVG to Library
+                  </button>
+                  <div className="border-t border-slate-700 my-1" />
+                  <button
+                    onClick={() => handleExport('all', false)}
+                    disabled={disabled}
+                    className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                  >
+                    <span className="w-5 text-center text-amber-400 font-bold">A</span>
+                    Save All Variants to Library
+                    <span className="ml-auto text-[10px] text-slate-500">PNG + SVG</span>
+                  </button>
+                </div>
               )}
             </div>
-          </div>
 
-          {/* Import image */}
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Or import image</label>
-            <label className="flex items-center gap-2 px-3 py-2 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition-colors cursor-pointer w-fit">
+            {/* Assign to channel */}
+            {selectedChannel && !iconEditorCallback && (
+              <button
+                onClick={() => handleExport('png', true)}
+                disabled={disabled}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 text-white rounded disabled:opacity-50"
+              >
+                {busy && <Spinner size="sm" />}
+                Assign to CH {selectedChannel.number}
+              </button>
+            )}
+            {iconEditorCallback && (
+              <button
+                onClick={() => handleExport('png', false)}
+                disabled={disabled}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 text-white rounded disabled:opacity-50"
+              >
+                {busy && <Spinner size="sm" />}
+                Use Icon
+              </button>
+            )}
+            <button onClick={handleClose} className="text-slate-400 hover:text-slate-200 px-2">
               <svg
-                className="w-3.5 h-3.5"
+                className="w-5 h-5"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={2}
               >
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                <path d="M18 6L6 18M6 6l12 12" />
               </svg>
-              Upload PNG/SVG
-              <input
-                type="file"
-                accept=".png,.svg,.jpg,.jpeg,.webp"
-                className="hidden"
-                onChange={handleImportImage}
-              />
-            </label>
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <div className="px-6 py-4 border-t border-slate-700 flex items-center justify-between">
-        <div className="flex gap-2">
-          <button
-            onClick={handleExportPng}
-            className="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition-colors"
-          >
-            Export PNG
-          </button>
-          <button
-            onClick={handleRemove}
-            className="px-3 py-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 border border-red-800/50 text-red-400 rounded-lg transition-colors"
-          >
-            Remove Icon
-          </button>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => closeModal('iconEditor')}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 hover:bg-slate-700 rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-lg font-medium transition-colors"
-          >
-            {saving ? 'Saving...' : 'Save Icon'}
-          </button>
-        </div>
+        <IconEditor
+          composition={composition}
+          onChange={setComposition}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          iconName={iconName}
+          onNameChange={setIconName}
+        />
       </div>
     </ModalWrapper>
   )

@@ -42,7 +42,26 @@ export interface PlexItem {
   thumb: string | null
   summary: string
   duration_ms?: number
+  duration_minutes?: number
   child_count?: number
+  leaf_count?: number
+  studio?: string
+  content_rating?: string
+  genres?: string[]
+  user_rating?: number
+  audience_rating?: number
+  rating?: number
+  originally_available_at?: string
+  media_info?: {
+    resolution?: string
+    video_codec?: string
+    audio_codec?: string
+    audio_channels?: number
+    bitrate?: number
+    container?: string
+  }
+  subtitles?: string[]
+  plex_web_url?: string
 }
 
 export interface PlexSeason {
@@ -104,6 +123,7 @@ export interface ChannelCollection {
   plex_type: 'movie' | 'show'
   collection_rating_key: string
   collection_title: string
+  assigned?: { added: number; skipped: number }
 }
 
 export interface CollectionStatusEntry {
@@ -192,6 +212,9 @@ export interface AppLog {
   category: string
   message: string
   detail: string | null
+  duration_ms: number | null
+  request_path: string | null
+  metadata: string | null
 }
 
 export interface AiSuggestion {
@@ -273,3 +296,4 @@ export type ModalName =
   | 'templatesLibrary'
   | 'tunarrCollectionPicker'
   | 'iconEditor'
+  | 'iconPicker'

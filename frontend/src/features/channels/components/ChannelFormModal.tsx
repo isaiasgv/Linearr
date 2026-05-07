@@ -1,8 +1,17 @@
-import { useState, useEffect, type FormEvent } from 'react'
+import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react'
 import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
+import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
-import { useCreateChannel, useUpdateChannel } from '@/features/channels/hooks'
-import type { Channel } from '@/shared/types'
+import { useChannels, useCreateChannel, useUpdateChannel } from '@/features/channels/hooks'
+import { useAiSuggestChannels, use247Suggestions } from '@/features/ai/hooks'
+import type { AiChannelSuggestion, Suggestion247, Channel } from '@/shared/types'
+import {
+  NETWORK_PRESETS,
+  NETWORK_CATEGORIES,
+  type NetworkPreset,
+} from '@/features/channels/presets/networks'
+import { VIBE_TEMPLATES, STYLE_TEMPLATES } from '@/features/channels/presets/templates'
+import { nextAvailableNumber } from '@/features/channels/presets/numbering'
 
 const TIERS: Channel['tier'][] = ['Galaxy Main', 'Classics', 'Galaxy Premium']
 const MODES = ['Shuffle', 'Flex', 'Sequential']
@@ -12,36 +21,350 @@ const TIER_COLORS: Record<string, string> = {
   'Galaxy Premium': 'purple',
 }
 
+type QuickStartMode = 'collapsed' | 'presets' | 'ai' | '247'
+
+interface QuickStartProps {
+  mode: QuickStartMode
+  setMode: (m: QuickStartMode) => void
+  presetSearch: string
+  setPresetSearch: (s: string) => void
+  presetCategory: string
+  setPresetCategory: (s: string) => void
+  filteredPresets: NetworkPreset[]
+  applyPreset: (p: NetworkPreset) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  aiSuggest: any
+  aiChannels: AiChannelSuggestion[]
+  applyAiSuggestion: (s: AiChannelSuggestion) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  suggest247: any
+  suggestions247: Suggestion247[]
+  apply247: (s: Suggestion247) => void
+}
+
+function QuickStart({
+  mode,
+  setMode,
+  presetSearch,
+  setPresetSearch,
+  presetCategory,
+  setPresetCategory,
+  filteredPresets,
+  applyPreset,
+  aiSuggest,
+  aiChannels,
+  applyAiSuggestion,
+  suggest247,
+  suggestions247,
+  apply247,
+}: QuickStartProps) {
+  return (
+    <div className="border border-slate-700 rounded-lg">
+      {/* Header tabs */}
+      <div className="flex items-center bg-slate-900/60 rounded-t-lg">
+        <button
+          type="button"
+          onClick={() => setMode(mode === 'presets' ? 'collapsed' : 'presets')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium border-r border-slate-700 transition-colors ${
+            mode === 'presets'
+              ? 'bg-slate-800 text-slate-100'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <svg
+            className="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
+          Network Presets
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode(mode === 'ai' ? 'collapsed' : 'ai')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+            mode === 'ai'
+              ? 'bg-slate-800 text-slate-100'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <svg
+            className="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+          </svg>
+          AI Suggestions
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setMode(mode === '247' ? 'collapsed' : '247')
+            if (!suggest247.data && !suggest247.isPending) suggest247.mutate()
+          }}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+            mode === '247'
+              ? 'bg-slate-800 text-slate-100'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <svg
+            className="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 6v6l4 2" />
+          </svg>
+          24/7 Channels
+        </button>
+      </div>
+
+      {/* Collapsible body */}
+      {mode === 'presets' && (
+        <div className="p-3 border-t border-slate-700 bg-slate-900/30 rounded-b-lg">
+          <div className="flex gap-2 mb-3">
+            <input
+              type="text"
+              value={presetSearch}
+              onChange={(e) => setPresetSearch(e.target.value)}
+              placeholder="Search HBO, Disney, FX…"
+              className="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+            />
+            <select
+              value={presetCategory}
+              onChange={(e) => setPresetCategory(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-300"
+            >
+              <option value="all">All categories</option>
+              {NETWORK_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-[10px] text-slate-500 mb-1.5">
+            {filteredPresets.length} preset{filteredPresets.length !== 1 ? 's' : ''}
+          </p>
+          <div className="flex flex-col gap-1 max-h-56 overflow-y-auto pr-1">
+            {filteredPresets.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-4">
+                No presets match. Try a different search or category.
+              </p>
+            ) : (
+              filteredPresets.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyPreset(p)}
+                  className="w-full text-left px-3 py-2 bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 rounded transition-colors"
+                  title={p.style}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs font-medium text-slate-100 truncate flex-1">
+                      {p.name}
+                    </span>
+                    <span className="text-[10px] text-slate-500 shrink-0">{p.tier}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                    {p.category} · {p.vibe}
+                  </p>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {mode === 'ai' && (
+        <div className="p-3 border-t border-slate-700 bg-slate-900/30">
+          {!aiSuggest.data && !aiSuggest.isPending && !aiSuggest.isError && (
+            <button
+              type="button"
+              onClick={() => aiSuggest.mutate()}
+              className="w-full px-3 py-2 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium"
+            >
+              Generate suggestions from your library
+            </button>
+          )}
+          {aiSuggest.isPending && (
+            <div className="flex items-center gap-2 text-xs text-slate-400 py-2 justify-center">
+              <Spinner size="sm" />
+              Analyzing your Plex library…
+            </div>
+          )}
+          {aiSuggest.isError && (
+            <div className="text-xs text-red-400 text-center py-2">
+              AI suggestion failed. Check your AI settings.
+            </div>
+          )}
+          {aiChannels.length > 0 && (
+            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+              {aiChannels.map((s, i) => (
+                <button
+                  key={`${s.number}-${i}`}
+                  type="button"
+                  onClick={() => applyAiSuggestion(s)}
+                  className="w-full text-left px-2.5 py-2 bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 rounded transition-colors group"
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[10px] font-mono text-slate-500">CH {s.number}</span>
+                    <span className="text-xs font-medium text-slate-100 truncate flex-1">
+                      {s.name}
+                    </span>
+                    <span className="text-[10px] text-slate-500 shrink-0">{s.tier}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{s.description}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === '247' && (
+        <div className="p-3 border-t border-slate-700 bg-slate-900/30 rounded-b-lg">
+          {suggest247.isPending && (
+            <div className="flex items-center gap-2 text-xs text-slate-400 py-2 justify-center">
+              <Spinner size="sm" />
+              Scanning your Plex library for 24/7 channel candidates…
+            </div>
+          )}
+          {suggest247.isError && (
+            <div className="text-xs text-red-400 text-center py-2">Failed to scan library.</div>
+          )}
+          {!suggest247.data && !suggest247.isPending && !suggest247.isError && (
+            <button
+              type="button"
+              onClick={() => suggest247.mutate()}
+              className="w-full px-3 py-2 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium"
+            >
+              Scan library for 24/7 channel candidates
+            </button>
+          )}
+          {suggestions247.length > 0 && (
+            <>
+              <p className="text-[10px] text-slate-500 mb-1.5">
+                {suggestions247.length} shows/franchises with enough content for a dedicated channel
+              </p>
+              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                {suggestions247.map((s) => (
+                  <button
+                    key={s.rating_key}
+                    type="button"
+                    onClick={() => apply247(s)}
+                    className="w-full text-left flex items-center gap-2.5 px-2.5 py-2 bg-slate-800 hover:bg-emerald-700/20 hover:border-emerald-500 border border-slate-700 rounded transition-colors"
+                  >
+                    {s.thumb && (
+                      <img
+                        src={`/api/plex/thumb?path=${encodeURIComponent(s.thumb)}`}
+                        alt=""
+                        className="w-10 h-14 rounded object-cover shrink-0 bg-slate-900"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs font-medium text-slate-100 truncate flex-1">
+                          {s.channel_name}
+                        </span>
+                        <span className="text-[10px] text-emerald-400 shrink-0">
+                          {Math.round(s.hours)}h
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate">{s.title}</p>
+                      <p className="text-[10px] text-slate-500">
+                        {s.seasons > 0 ? `${s.seasons} seasons · ` : ''}
+                        {s.episodes} episode{s.episodes !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {suggest247.data && suggestions247.length === 0 && (
+            <p className="text-xs text-slate-500 text-center py-4">
+              No shows or franchises with enough content found in your Plex library.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ChannelFormModal() {
-  const { modals, editingChannel, closeModal } = useUIStore()
+  const { modals, editingChannel, closeModal, openModal } = useUIStore()
   const open = modals.channelForm
   const isEditing = editingChannel !== null
 
   const createChannel = useCreateChannel()
   const updateChannel = useUpdateChannel()
+  const aiSuggest = useAiSuggestChannels()
+  const { data: existingChannels = [] } = useChannels()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [number, setNumber] = useState<string>('')
+  const [numberTouched, setNumberTouched] = useState(false)
   const [name, setName] = useState('')
   const [tier, setTier] = useState<Channel['tier']>('Galaxy Main')
   const [vibe, setVibe] = useState('')
   const [mode, setMode] = useState('Shuffle')
   const [style, setStyle] = useState('')
   const [color, setColor] = useState('')
+  const [icon, setIcon] = useState<string | null>(null)
   const [autoAssign, setAutoAssign] = useState(false)
   const [createTunarr, setCreateTunarr] = useState(false)
+
+  // Smart channel creation: preset picker + AI suggestions
+  const [presetCategory, setPresetCategory] = useState<string>('all')
+  const [presetSearch, setPresetSearch] = useState('')
+  const [quickStartMode, setQuickStartMode] = useState<QuickStartMode>('collapsed')
+  const suggest247 = use247Suggestions()
+  const suggestions247: Suggestion247[] = suggest247.data ?? []
+
+  const existingNumbers = useMemo(() => existingChannels.map((c) => c.number), [existingChannels])
+
+  const filteredPresets = useMemo(() => {
+    return NETWORK_PRESETS.filter((p) => {
+      if (presetCategory !== 'all' && p.category !== presetCategory) return false
+      if (presetSearch && !p.name.toLowerCase().includes(presetSearch.toLowerCase())) return false
+      return true
+    })
+  }, [presetCategory, presetSearch])
+
+  const aiChannels: AiChannelSuggestion[] = aiSuggest.data?.suggestions?.channels ?? []
 
   // Sync form state when editingChannel changes or modal opens
   useEffect(() => {
     if (open) {
+      const initialTier = editingChannel?.tier ?? 'Galaxy Main'
       setNumber(editingChannel?.number?.toString() ?? '')
+      setNumberTouched(false)
       setName(editingChannel?.name ?? '')
-      setTier(editingChannel?.tier ?? 'Galaxy Main')
+      setTier(initialTier)
       setVibe(editingChannel?.vibe ?? '')
       setMode(editingChannel?.mode ?? 'Shuffle')
       setStyle(editingChannel?.style ?? '')
       setColor(editingChannel?.color ?? '')
+      setIcon(editingChannel?.icon ?? null)
       setAutoAssign(false)
       setCreateTunarr(false)
+      setPresetCategory('all')
+      setPresetSearch('')
+      setQuickStartMode('collapsed')
     }
   }, [open, editingChannel])
 
@@ -51,6 +374,59 @@ export function ChannelFormModal() {
       setColor(TIER_COLORS[tier] ?? 'blue')
     }
   }, [tier, isEditing])
+
+  // Auto-suggest channel number based on tier (create mode, only if user hasn't typed)
+  useEffect(() => {
+    if (open && !isEditing && !numberTouched && existingChannels.length >= 0) {
+      const next = nextAvailableNumber(existingNumbers, tier)
+      setNumber(String(next))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEditing, tier, existingChannels.length])
+
+  // Apply a preset to the form
+  function applyPreset(p: NetworkPreset) {
+    setName(p.name)
+    setTier(p.tier)
+    setVibe(p.vibe)
+    setMode(p.mode)
+    setStyle(p.style)
+    setColor(p.color)
+    if (!numberTouched) {
+      setNumber(String(nextAvailableNumber(existingNumbers, p.tier)))
+    }
+    setQuickStartMode('collapsed')
+  }
+
+  // Apply an AI suggestion to the form
+  function applyAiSuggestion(s: AiChannelSuggestion) {
+    setName(s.name)
+    if (s.tier === 'Galaxy Main' || s.tier === 'Classics' || s.tier === 'Galaxy Premium') {
+      setTier(s.tier)
+    }
+    setVibe(s.vibe)
+    setStyle(s.description)
+    if (!numberTouched && s.number) {
+      setNumber(String(s.number))
+    }
+    setQuickStartMode('collapsed')
+  }
+
+  // Apply a 24/7 suggestion to the form
+  function apply247(s: Suggestion247) {
+    setName(s.channel_name)
+    setTier('Galaxy Main')
+    setVibe(`24/7 ${s.type === 'shows' ? 'show' : 'movie'} loop`)
+    setMode('Shuffle')
+    setStyle(
+      s.description ||
+        `24/7 loop of ${s.title}. ${s.episodes} episode${s.episodes !== 1 ? 's' : ''}, ${Math.round(s.hours)} hours of content.`,
+    )
+    if (!numberTouched) {
+      setNumber(String(nextAvailableNumber(existingNumbers, 'Galaxy Main')))
+    }
+    setQuickStartMode('collapsed')
+  }
 
   function handleClose() {
     closeModal('channelForm')
@@ -66,6 +442,7 @@ export function ChannelFormModal() {
       mode,
       style,
       color,
+      icon,
     }
 
     if (isEditing) {
@@ -101,7 +478,99 @@ export function ChannelFormModal() {
           </button>
         </div>
 
-        <div className="px-6 py-4 flex flex-col gap-4">
+        <div className="px-6 py-4 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
+          {/* Quick start — create mode only */}
+          {!isEditing && (
+            <QuickStart
+              mode={quickStartMode}
+              setMode={setQuickStartMode}
+              presetSearch={presetSearch}
+              setPresetSearch={setPresetSearch}
+              presetCategory={presetCategory}
+              setPresetCategory={setPresetCategory}
+              filteredPresets={filteredPresets}
+              applyPreset={applyPreset}
+              aiSuggest={aiSuggest}
+              aiChannels={aiChannels}
+              applyAiSuggestion={applyAiSuggestion}
+              suggest247={suggest247}
+              suggestions247={suggestions247}
+              apply247={apply247}
+            />
+          )}
+
+          {/* Icon */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Channel Icon</label>
+            <div className="flex items-center gap-3">
+              {icon ? (
+                <img
+                  src={icon}
+                  alt="Icon"
+                  className="w-16 h-16 rounded-lg border border-slate-700 object-contain bg-slate-900"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-600 text-[10px]">
+                  No icon
+                </div>
+              )}
+              <div className="flex flex-wrap gap-1.5 flex-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openModal('iconPicker', {
+                      iconPickerCallback: (dataUrl: string) => setIcon(dataUrl),
+                    })
+                  }
+                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded"
+                >
+                  Pick from Library
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openModal('iconEditor', {
+                      iconEditorCallback: (dataUrl: string) => setIcon(dataUrl),
+                    })
+                  }
+                  className="px-2.5 py-1 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded"
+                >
+                  Create New
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded"
+                >
+                  Upload
+                </button>
+                {icon && (
+                  <button
+                    type="button"
+                    onClick={() => setIcon(null)}
+                    className="px-2.5 py-1 text-xs bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-400 rounded"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = () => setIcon(reader.result as string)
+                  reader.readAsDataURL(file)
+                  e.target.value = ''
+                }}
+              />
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             {/* Channel Number */}
             <div>
@@ -109,7 +578,10 @@ export function ChannelFormModal() {
               <input
                 type="number"
                 value={number}
-                onChange={(e) => setNumber(e.target.value)}
+                onChange={(e) => {
+                  setNumber(e.target.value)
+                  setNumberTouched(true)
+                }}
                 required
                 min={1}
                 max={9999}
@@ -185,13 +657,48 @@ export function ChannelFormModal() {
               value={vibe}
               onChange={(e) => setVibe(e.target.value)}
               placeholder="e.g. Cozy crime procedurals"
+              list="vibe-templates"
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
+            <datalist id="vibe-templates">
+              {VIBE_TEMPLATES.map((v) => (
+                <option key={v} value={v} />
+              ))}
+            </datalist>
           </div>
 
           {/* Style */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Style</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-slate-400">Style</label>
+              <details className="relative">
+                <summary className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer list-none">
+                  Quick templates ▾
+                </summary>
+                <div className="absolute right-0 top-5 z-10 w-72 bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-2 max-h-64 overflow-y-auto">
+                  <div className="flex flex-col gap-1">
+                    {STYLE_TEMPLATES.map((t) => (
+                      <button
+                        key={t.label}
+                        type="button"
+                        onClick={(e) => {
+                          setStyle(t.text)
+                          // close the <details> wrapper
+                          const det =
+                            (e.currentTarget.closest('details') as HTMLDetailsElement) ?? null
+                          if (det) det.open = false
+                        }}
+                        className="text-left px-2 py-1 text-xs hover:bg-slate-800 rounded"
+                        title={t.text}
+                      >
+                        <span className="text-slate-200 font-medium">{t.label}</span>
+                        <p className="text-[11px] text-slate-500 truncate">{t.text}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            </div>
             <textarea
               value={style}
               onChange={(e) => setStyle(e.target.value)}

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { TopBar } from './TopBar'
-import { ToastContainer } from '@/shared/components/ui/Toast'
+
 import { useUIStore } from '@/shared/store/ui.store'
 
 interface AppLayoutProps {
@@ -45,8 +45,6 @@ export function AppLayout({ sidebar, children }: AppLayoutProps) {
 
         <main className="flex-1 flex flex-col overflow-hidden">{children}</main>
       </div>
-
-      <ToastContainer />
     </div>
   )
 }

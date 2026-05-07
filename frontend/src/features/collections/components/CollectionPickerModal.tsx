@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
@@ -11,6 +11,10 @@ export function CollectionPickerModal() {
   const open = modals.collectionPicker
 
   const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    if (open) setSearch('')
+  }, [open])
 
   const { data: collections = [], isLoading } = usePlexCollections()
   const linkCollection = useLinkCollection()

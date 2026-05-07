@@ -3,11 +3,70 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Linearr — Self-hosted TV Schedule Manager</title>
+  <title>Linearr — Self-hosted TV Schedule Manager for Plex &amp; Tunarr</title>
   <meta name="description" content="Build, manage, and push programming schedules for your personal cable network. Plex + Tunarr integration, AI advisor, and a real-time schedule editor." />
+  <meta name="robots" content="index,follow" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="canonical" href="https://linearr.oribion.com/" />
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="/og/apple-180.png" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Linearr" />
+  <meta property="og:title" content="Linearr — Self-hosted TV Schedule Manager for Plex &amp; Tunarr" />
+  <meta property="og:description" content="Build, manage, and push programming schedules for your personal cable network. Plex + Tunarr integration, AI advisor, and a real-time schedule editor." />
+  <meta property="og:url" content="https://linearr.oribion.com/" />
+  <meta property="og:image" content="https://linearr.oribion.com/og/default.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Linearr — self-hosted TV channel scheduler for Plex and Tunarr" />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Linearr — Self-hosted TV Schedule Manager" />
+  <meta name="twitter:description" content="Build, manage, and push programming schedules for your personal cable network. Plex + Tunarr integration." />
+  <meta name="twitter:image" content="https://linearr.oribion.com/og/default.png" />
+
+  <!-- JSON-LD: Organization + WebSite + SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://linearr.oribion.com/#organization",
+        "name": "Linearr",
+        "url": "https://linearr.oribion.com/",
+        "logo": "https://linearr.oribion.com/favicon.svg",
+        "sameAs": ["https://github.com/isaiasgv/Linearr"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://linearr.oribion.com/#website",
+        "url": "https://linearr.oribion.com/",
+        "name": "Linearr",
+        "publisher": { "@id": "https://linearr.oribion.com/#organization" },
+        "inLanguage": "en-US"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "Linearr",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Linux, Windows, macOS (Docker)",
+        "description": "Self-hosted TV channel schedule manager for Plex and Tunarr. Build cable-style channels, schedule blocks, and push EPG data.",
+        "url": "https://linearr.oribion.com/",
+        "downloadUrl": "https://github.com/isaiasgv/Linearr",
+        "softwareVersion": "1.0.0-rc.1",
+        "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    ]
+  }
+  </script>
 
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -29,12 +88,16 @@
   <!-- Alpine.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
-  <!-- Inter font -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-
+  <!-- Inter font (self-hosted variable, no third-party request) -->
   <style>
+    @font-face {
+      font-family: 'Inter Variable';
+      font-style: normal;
+      font-display: swap;
+      font-weight: 100 900;
+      src: url('fonts/inter-variable.woff2') format('woff2-variations');
+    }
+    body, .font-sans { font-family: 'Inter Variable', Inter, system-ui, sans-serif; }
     [x-cloak] { display: none !important; }
     .gradient-text {
       background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);

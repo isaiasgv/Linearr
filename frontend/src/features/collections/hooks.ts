@@ -61,7 +61,12 @@ export function useLinkCollection() {
         }),
       )
       void queryClient.invalidateQueries({ queryKey: ['collection-status', channelNumber] })
-      addToast('Collection linked successfully')
+      void queryClient.invalidateQueries({ queryKey: ['assignments'] })
+      if (data.assigned && data.assigned.added > 0) {
+        addToast(`Collection linked — ${data.assigned.added} items assigned`)
+      } else {
+        addToast('Collection linked successfully')
+      }
     },
     onError: (error: Error) => {
       addToast(error.message || 'Failed to link collection', true)

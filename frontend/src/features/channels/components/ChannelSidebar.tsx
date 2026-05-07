@@ -3,6 +3,7 @@ import { useUIStore, type TierFilter } from '@/shared/store/ui.store'
 import { useChannels } from '@/features/channels/hooks'
 import { useAssignments } from '@/features/assignments/hooks'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
+import { usePlexSessions } from '@/features/plex/hooks'
 import { tierColor } from '@/shared/components/ui/TierBadge'
 import type { Channel } from '@/shared/types'
 
@@ -39,6 +40,7 @@ export function ChannelSidebar() {
   const { data: channels = [] } = useChannels()
   const { data: assignmentsMap = {} } = useAssignments()
   const { data: tunarrLinks = [] } = useTunarrLinks()
+  const { data: plexSessions = [] } = usePlexSessions()
 
   const tunarrLinkedCount = tunarrLinks.length
 
@@ -127,16 +129,14 @@ export function ChannelSidebar() {
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent'
           }`}
         >
-          <svg
-            className="w-4 h-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-          </svg>
+          <img src="/plex.svg" alt="Plex" className="w-4 h-4 rounded-sm" />
           Plex
+          {plexSessions.length > 0 && (
+            <span className="ml-auto flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-xs text-green-400">{plexSessions.length}</span>
+            </span>
+          )}
         </button>
 
         <button
@@ -193,15 +193,7 @@ export function ChannelSidebar() {
           }`}
         >
           <span className="flex items-center gap-2">
-            <svg
-              className="w-4 h-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
+            <img src="/tunarr.svg" alt="Tunarr" className="w-4 h-4 rounded-sm" />
             Tunarr
           </span>
           {tunarrLinkedCount > 0 && (
@@ -292,11 +284,26 @@ export function ChannelSidebar() {
                   : 'border-l-2 border-transparent hover:bg-slate-800'
               }`}
             >
-              <span
-                className={`flex-shrink-0 w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}
-              >
-                {ch.number}
-              </span>
+              {ch.icon ? (
+                <div className="relative shrink-0">
+                  <img
+                    src={ch.icon}
+                    alt=""
+                    className="w-8 h-8 rounded-lg object-cover bg-slate-900"
+                  />
+                  <span
+                    className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded px-1 leading-tight shadow ${tierNumberColor(ch.tier)}`}
+                  >
+                    {ch.number}
+                  </span>
+                </div>
+              ) : (
+                <span
+                  className={`flex-shrink-0 w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}
+                >
+                  {ch.number}
+                </span>
+              )}
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">

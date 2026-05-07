@@ -1,6 +1,10 @@
 <div align="center">
 
-<img src="frontend/public/logo.svg" width="80" height="80" alt="Linearr logo" />
+<!-- repo-standards:logo -->
+<picture>
+  <img alt="Linearr" src="assets/logo.svg" width="80" height="80">
+</picture>
+<!-- /repo-standards:logo -->
 
 # Linearr
 
@@ -8,10 +12,12 @@
 
 Build, manage, and push programming schedules for your personal TV network — complete with an AI advisor, EPG generation, and a real-time schedule editor.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/isaiasgv/linearr/ci.yml?label=CI)](https://github.com/isaiasgv/linearr/actions)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker)](https://ghcr.io/isaiasgv/linearr)
-[![Release](https://img.shields.io/github/v/release/isaiasgv/linearr?label=latest)](https://github.com/isaiasgv/linearr/releases)
+<!-- repo-standards:badges -->
+[![CI](https://github.com/isaiasgv/Linearr/actions/workflows/ci.yml/badge.svg)](https://github.com/isaiasgv/Linearr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/isaiasgv/Linearr?include_prereleases&sort=semver)](https://github.com/isaiasgv/Linearr/releases)
+[![License](https://img.shields.io/github/license/isaiasgv/Linearr)](./LICENSE)
+[![GHCR](https://img.shields.io/badge/ghcr-isaiasgv%2FLinearr-blue?logo=docker)](https://github.com/isaiasgv/Linearr/pkgs/container/linearr)
+<!-- /repo-standards:badges -->
 
 [Features](#features) &bull; [Quick Start](#-quick-start) &bull; [Screenshots](#-how-it-works) &bull; [Stack](#-stack) &bull; [API Docs](#-api-documentation) &bull; [Contributing](#-contributing)
 
@@ -323,6 +329,33 @@ To test a release candidate before it goes stable:
 
 ```yaml
 image: ghcr.io/isaiasgv/linearr:rc
+```
+
+### Versioning
+
+Linearr uses [semantic-release](https://semantic-release.gitbook.io/) driven by [Conventional Commits](https://www.conventionalcommits.org/). Every push to `main` or `release/*` automatically:
+
+- Determines if a release is needed (no release for `chore`, `docs`, `style`, `test`, `build`, `ci` commits)
+- Bumps the version (default: **patch only**, even for `feat:` and `BREAKING CHANGE:`)
+- Updates `CHANGELOG.md`
+- Tags the release (`linearr-vX.Y.Z`)
+- Builds and pushes the Docker image
+
+#### Bumping minor or major
+
+Two ways to override the patch-only default:
+
+**1. Workflow dispatch (recommended for releases):**
+- Go to GitHub → Actions → CI → "Run workflow"
+- Pick `minor` or `major` from the dropdown
+- Click "Run workflow"
+
+**2. Per-commit override:**
+- Add `release-as: minor` or `release-as: major` to the commit body:
+```
+feat: add monthly stable release
+
+release-as: minor
 ```
 
 ---

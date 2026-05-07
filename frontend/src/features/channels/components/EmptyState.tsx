@@ -62,18 +62,18 @@ export function EmptyState() {
         </button>
 
         <button
+          onClick={() => setActiveView('plex')}
+          className="flex items-center gap-2 px-4 py-2 bg-orange-900/30 hover:bg-orange-900/50 border border-orange-700/50 hover:border-orange-600 text-orange-300 rounded-lg text-sm font-medium transition-colors"
+        >
+          <img src="/plex.svg" alt="Plex" className="w-4 h-4" />
+          Plex
+        </button>
+
+        <button
           onClick={() => setActiveView('tunarr')}
           className="flex items-center gap-2 px-4 py-2 bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-700/50 hover:border-emerald-600 text-emerald-300 rounded-lg text-sm font-medium transition-colors"
         >
-          <svg
-            className="w-4 h-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
+          <img src="/tunarr.svg" alt="Tunarr" className="w-4 h-4" />
           Tunarr
         </button>
       </div>

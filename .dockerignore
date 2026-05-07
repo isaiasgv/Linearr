@@ -6,6 +6,9 @@
 *.md
 !requirements.txt
 data/
+test-data/
+presets/
+channels.py
 landing/
 node_modules/
 frontend/node_modules/

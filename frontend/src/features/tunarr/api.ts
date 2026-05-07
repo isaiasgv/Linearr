@@ -152,6 +152,122 @@ function getGuide(hours = 24): Promise<{ channels: GuideChannel[] }> {
   return get<{ channels: GuideChannel[] }>(`/api/tunarr/guide?hours=${hours}`)
 }
 
+interface ImportPreviewChannel {
+  tunarr_id: string
+  tunarr_name: string
+  tunarr_number: number
+  match: 'number' | 'name' | 'already_linked' | null
+  cable_plex_channel: { number: number; name: string } | null
+}
+
+function importPreview(channelIds?: string[]): Promise<{ channels: ImportPreviewChannel[] }> {
+  return post<{ channels: ImportPreviewChannel[] }>('/api/tunarr/import-channels/preview', {
+    channel_ids: channelIds ?? 'all',
+  })
+}
+
+interface ImportAction {
+  tunarr_id: string
+  action: 'link' | 'create' | 'skip'
+  cable_plex_number?: number
+}
+
+interface ImportResult {
+  linked: number
+  created: number
+  skipped: number
+  details: Array<{ tunarr_id: string; action: string; channel_number?: number }>
+}
+
+function importChannels(actions: ImportAction[]): Promise<ImportResult> {
+  return post<ImportResult>('/api/tunarr/import-channels', { actions })
+}
+
+interface ExportResult {
+  exported: number
+  linked: number
+  created: number
+  skipped: number
+  details: Array<{ channel_number: number; action: string; tunarr_id?: string }>
+}
+
+function exportChannels(
+  channelNumbers: number[] | 'all',
+  syncCollections = false,
+): Promise<ExportResult> {
+  return post<ExportResult>('/api/tunarr/export-channels', {
+    channel_numbers: channelNumbers,
+    sync_collections: syncCollections,
+  })
+}
+
+// ── XMLTV/M3U ───────────────────────────────────────────────────────────────
+
+interface XmltvSettings {
+  refreshHours?: number
+  enableImageCache?: boolean
+  programmingHours?: number
+  useShowPoster?: boolean
+}
+
+function getXmltvSettings(): Promise<XmltvSettings> {
+  return get<XmltvSettings>('/api/tunarr/xmltv-settings')
+}
+
+function updateXmltvSettings(body: Partial<XmltvSettings>): Promise<{ ok: boolean }> {
+  return put<{ ok: boolean }>('/api/tunarr/xmltv-settings', body)
+}
+
+function refreshXmltv(): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>('/api/tunarr/xmltv/refresh')
+}
+
+// ── Sessions ─────────────────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getSessions(): Promise<Record<string, any>> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return get<Record<string, any>>('/api/tunarr/sessions')
+}
+
+function killSessions(channelId: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/api/tunarr/sessions/${encodeURIComponent(channelId)}`)
+}
+
+// ── Filler Lists ─────────────────────────────────────────────────────────────
+
+interface FillerList {
+  id: string
+  name: string
+  count?: number
+}
+
+function getFillerLists(): Promise<FillerList[]> {
+  return get<FillerList[]>('/api/tunarr/filler-lists')
+}
+
+function getFillerList(id: string): Promise<FillerList> {
+  return get<FillerList>(`/api/tunarr/filler-lists/${encodeURIComponent(id)}`)
+}
+
+function createFillerList(body: { name: string }): Promise<FillerList> {
+  return post<FillerList>('/api/tunarr/filler-lists', body)
+}
+
+function updateFillerList(id: string, body: Partial<FillerList>): Promise<FillerList> {
+  return put<FillerList>(`/api/tunarr/filler-lists/${encodeURIComponent(id)}`, body)
+}
+
+function deleteFillerList(id: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/api/tunarr/filler-lists/${encodeURIComponent(id)}`)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getFillerListPrograms(id: string): Promise<any[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return get<any[]>(`/api/tunarr/filler-lists/${encodeURIComponent(id)}/programs`)
+}
+
 export const tunarrApi = {
   getChannels,
   getChannelLinks,
@@ -174,6 +290,30 @@ export const tunarrApi = {
   syncCollections,
   pushSchedule,
   getGuide,
+  importPreview,
+  importChannels,
+  exportChannels,
+  // XMLTV/M3U
+  getXmltvSettings,
+  updateXmltvSettings,
+  refreshXmltv,
+  // Sessions
+  getSessions,
+  killSessions,
+  // Filler lists
+  getFillerLists,
+  getFillerList,
+  createFillerList,
+  updateFillerList,
+  deleteFillerList,
+  getFillerListPrograms,
 }
 
-export type { GuideChannel, VersionCheck }
+export type {
+  GuideChannel,
+  VersionCheck,
+  ImportPreviewChannel,
+  ImportAction,
+  ImportResult,
+  ExportResult,
+}
