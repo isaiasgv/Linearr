@@ -40,6 +40,8 @@ const EXTRA_ICONS = {
   'Toonami': 'toonami-1997-seeklogo.png',
   '4Kids TV': '4kids-tv-seeklogo.png',
   'Back to the Future': 'back-to-the-future-seeklogo.png',
+  'Plex': 'plex.svg',
+  'Tunarr': 'tunarr.svg',
 }
 
 function toDataUrl(filePath) {

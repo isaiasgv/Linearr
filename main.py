@@ -23,15 +23,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("linearr")
 
-from channels import CHANNELS, CHANNELS_BY_NUMBER
-
 def _get_channel(channel_number: int) -> dict | None:
-    """Look up a channel from DB first, then fall back to static CHANNELS list."""
+    """Look up a channel from DB."""
     with get_db() as conn:
         row = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
-    if row:
-        return dict(row)
-    return CHANNELS_BY_NUMBER.get(channel_number)
+    return dict(row) if row else None
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -49,7 +45,7 @@ APP_SECRET   = os.getenv("APP_SECRET", "default-secret-change-me")
 def _session_token() -> str:
     return hmac.new(APP_SECRET.encode(), f"{APP_USERNAME}:{APP_PASSWORD}".encode(), hashlib.sha256).hexdigest()
 
-_PUBLIC_PATHS = {"/", "/api/auth/login", "/api/health", "/docs", "/openapi.json"}
+_PUBLIC_PATHS = {"/", "/api/auth/login", "/api/health", "/docs", "/openapi.json", "/api/plex/webhook"}
 
 # ── Rate limiting (login) ────────────────────────────────────────────────────
 _login_attempts: dict[str, list[float]] = defaultdict(list)
@@ -158,17 +154,18 @@ def init_db():
             """)
         except sqlite3.OperationalError:
             pass
-        # Seed channels from channels.py if table is empty
+        # Seed a single example channel on fresh install. Users can import
+        # the full Galaxy Network lineup via the Cable Plex view if they want.
         try:
             count = conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0]
             if count == 0:
-                for ch in CHANNELS:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
-                        (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"),
-                         ch.get("vibe", ""), ch.get("mode", "Shuffle"),
-                         ch.get("style", ""), ch.get("color", "blue"))
-                    )
+                conn.execute(
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    (100, "My First Channel", "Galaxy Main", "Everyday cable comfort",
+                     "Shuffle",
+                     "Your example channel. Edit this, create new ones, or import the Galaxy Network lineup from Cable Plex.",
+                     "blue"),
+                )
         except sqlite3.OperationalError:
             pass
         try:
@@ -223,18 +220,62 @@ def init_db():
             """)
         except sqlite3.OperationalError:
             pass
+        try:
+            conn.execute("ALTER TABLE saved_icons ADD COLUMN composition TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS plex_events (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type  TEXT NOT NULL,
+                    rating_key  TEXT,
+                    title       TEXT,
+                    plex_type   TEXT,
+                    user_name   TEXT,
+                    player      TEXT,
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+        except sqlite3.OperationalError:
+            pass
+        # App log columns
+        for col in ["duration_ms INTEGER", "request_path TEXT", "metadata TEXT"]:
+            try:
+                conn.execute(f"ALTER TABLE app_logs ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
 
-def _log_app(category: str, message: str, level: str = "info", detail: str | None = None):
-    """Insert an app-level log entry."""
+def _log_app(category: str, message: str, level: str = "info", detail: str | None = None,
+             duration_ms: int | None = None, path: str | None = None, metadata: dict | None = None):
+    """Insert an app-level log entry with optional timing and context."""
     try:
+        import json as _j
+        meta_str = _j.dumps(metadata) if metadata else None
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO app_logs (level, category, message, detail) VALUES (?, ?, ?, ?)",
-                (level, category, message, detail),
+                "INSERT INTO app_logs (level, category, message, detail, duration_ms, request_path, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (level, category, message, detail, duration_ms, path, meta_str),
             )
         log.info("[%s] %s", category, message)
     except Exception as e:
         log.warning("Failed to write app log: %s", e)
+
+def _purge_old_logs():
+    """Purge logs older than retention period and trim to max rows."""
+    try:
+        with get_db() as conn:
+            settings = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings").fetchall()}
+            days = int(settings.get("log_retention_days", "30"))
+            max_rows = int(settings.get("log_max_rows", "5000"))
+            # Delete old logs
+            conn.execute(f"DELETE FROM app_logs WHERE created_at < datetime('now', '-{days} days')")
+            conn.execute(f"DELETE FROM ai_logs WHERE created_at < datetime('now', '-{days} days')")
+            # Trim to max rows
+            conn.execute(f"DELETE FROM app_logs WHERE id NOT IN (SELECT id FROM app_logs ORDER BY created_at DESC LIMIT {max_rows})")
+            conn.execute(f"DELETE FROM ai_logs WHERE id NOT IN (SELECT id FROM ai_logs ORDER BY created_at DESC LIMIT {max_rows})")
+    except Exception as e:
+        log.warning("Log purge failed: %s", e)
 
 def get_plex_config():
     with get_db() as conn:
@@ -248,6 +289,7 @@ def get_plex_config():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    _purge_old_logs()
     _log_app("system", "Linearr started")
     yield
 
@@ -343,7 +385,7 @@ def login(body: LoginIn, request: Request):
         raise HTTPException(429, "Too many login attempts. Try again later.")
     _login_attempts[ip].append(now)
 
-    if body.username != APP_USERNAME or body.password != APP_PASSWORD:
+    if body.username.lower() != APP_USERNAME.lower() or body.password != APP_PASSWORD:
         log.info("Failed login from %s", ip)
         _log_app("auth", f"Failed login attempt from {ip}", "warn")
         raise HTTPException(401, "Invalid credentials")
@@ -369,38 +411,114 @@ class ChannelIn(BaseModel):
     mode: str = "Shuffle"
     style: str = ""
     color: str = "blue"
+    icon: str | None = None
 
 @app.get("/api/channels")
 def list_channels():
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM channels ORDER BY number").fetchall()
-    if rows:
-        return [dict(r) for r in rows]
-    return CHANNELS
+    return [dict(r) for r in rows]
 
 @app.post("/api/channels", status_code=201)
-def create_channel(body: ChannelIn):
+async def create_channel(body: ChannelIn):
     with get_db() as conn:
         try:
             conn.execute(
-                "INSERT INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
-                (body.number, body.name, body.tier, body.vibe, body.mode, body.style, body.color)
+                "INSERT INTO channels (number, name, tier, vibe, mode, style, color, icon) VALUES (?,?,?,?,?,?,?,?)",
+                (body.number, body.name, body.tier, body.vibe, body.mode, body.style, body.color, body.icon)
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, f"Channel {body.number} already exists")
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
-    return dict(row)
+    result = dict(row)
+    _log_app("channel", f"Created channel {body.number}: {body.name}", metadata={"number": body.number, "name": body.name, "tier": body.tier})
+    # Auto-create in Tunarr
+    sync = await _sync_channel_to_tunarr(body.number)
+    result["tunarr_sync"] = sync
+    return result
+
+async def _sync_channel_to_tunarr(channel_number: int):
+    """Sync Cable Plex channel metadata to linked Tunarr channel.
+    If no link exists, creates a new Tunarr channel and links it.
+    Returns {"synced": True/False, "action": "updated"|"created"|"error", ...}"""
+    with get_db() as conn:
+        ch = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
+        link = conn.execute("SELECT * FROM tunarr_channel_links WHERE channel_number=?", (channel_number,)).fetchone()
+    if not ch:
+        return {"synced": False, "action": "error", "message": "Channel not found"}
+    ch = dict(ch)
+    url = get_tunarr_url()
+    if not url:
+        return {"synced": False, "action": "error", "message": "Tunarr not configured"}
+
+    # Build metadata payload for Tunarr
+    update_data = {
+        "name": ch.get("name", ""),
+        "number": ch.get("number", 0),
+        "groupTitle": ch.get("tier", "Linearr"),
+    }
+    # Sync icon if present
+    icon_data = ch.get("icon")
+    if icon_data and icon_data.startswith("data:"):
+        update_data["icon"] = {"path": icon_data, "duration": 0, "width": 0, "position": "bottom-right"}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            if link:
+                # Update existing Tunarr channel
+                tunarr_id = link["tunarr_id"]
+                r = await client.put(f"{url}/api/channels/{tunarr_id}", json=update_data)
+                if r.status_code in (200, 204):
+                    # Update cached name/number in link
+                    with get_db() as conn:
+                        conn.execute(
+                            "UPDATE tunarr_channel_links SET tunarr_name=?, tunarr_number=? WHERE channel_number=?",
+                            (ch.get("name"), ch.get("number"), channel_number)
+                        )
+                    return {"synced": True, "action": "updated", "tunarr_id": tunarr_id}
+                return {"synced": False, "action": "error", "message": f"Tunarr {r.status_code}"}
+            else:
+                # Create new Tunarr channel
+                ffmpeg_r = await client.get(f"{url}/api/ffmpeg-settings")
+                transcode_id = None
+                if ffmpeg_r.status_code == 200:
+                    transcode_id = ffmpeg_r.json().get("defaultTranscodeConfigId") or ffmpeg_r.json().get("configId")
+                payload = {
+                    **update_data,
+                    "startTime": _previous_sunday_midnight_ms(),
+                    "transcoding": {"targetResolution": "1920x1080"},
+                    "offline": {"mode": "pic"},
+                    "stealth": False,
+                    "disableFillerOverlay": True,
+                    "guideMinimumDuration": 30000,
+                    "streamMode": "hls",
+                }
+                if transcode_id:
+                    payload["transcodeConfigId"] = transcode_id
+                r = await client.post(f"{url}/api/channels", json=payload)
+                if r.status_code in (200, 201):
+                    new_ch = r.json()
+                    with get_db() as conn:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO tunarr_channel_links VALUES (?,?,?,?)",
+                            (channel_number, new_ch["id"], new_ch.get("name"), new_ch.get("number"))
+                        )
+                    return {"synced": True, "action": "created", "tunarr_id": new_ch["id"]}
+                return {"synced": False, "action": "error", "message": f"Tunarr {r.status_code}"}
+    except Exception as e:
+        log.warning("Tunarr sync failed for CH %s: %s", channel_number, e)
+        return {"synced": False, "action": "error", "message": str(e)}
 
 @app.put("/api/channels/{channel_number}")
-def update_channel(channel_number: int, body: ChannelIn):
+async def update_channel(channel_number: int, body: ChannelIn):
     with get_db() as conn:
         existing = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
         if not existing:
             raise HTTPException(404, "Channel not found")
         conn.execute(
-            """UPDATE channels SET name=?, tier=?, vibe=?, mode=?, style=?, color=?
+            """UPDATE channels SET name=?, tier=?, vibe=?, mode=?, style=?, color=?, icon=?
                WHERE number=?""",
-            (body.name, body.tier, body.vibe, body.mode, body.style, body.color, channel_number)
+            (body.name, body.tier, body.vibe, body.mode, body.style, body.color, body.icon, channel_number)
         )
         # If channel number changed, update all related tables
         if body.number != channel_number:
@@ -411,7 +529,19 @@ def update_channel(channel_number: int, body: ChannelIn):
                 except sqlite3.OperationalError:
                     pass
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
-    return dict(row)
+    result = dict(row)
+    # Auto-sync metadata to Tunarr (creates channel if not linked)
+    sync = await _sync_channel_to_tunarr(body.number)
+    result["tunarr_sync"] = sync
+    return result
+
+@app.post("/api/channels/{channel_number}/sync-tunarr")
+async def sync_channel_to_tunarr(channel_number: int):
+    """Manually sync a Cable Plex channel to Tunarr. Creates if not linked."""
+    result = await _sync_channel_to_tunarr(channel_number)
+    if result.get("action") == "error":
+        raise HTTPException(502, result.get("message", "Sync failed"))
+    return result
 
 @app.delete("/api/channels/{channel_number}")
 def delete_channel(channel_number: int):
@@ -432,13 +562,15 @@ async def set_channel_icon(channel_number: int, request: Request):
         cur = conn.execute("UPDATE channels SET icon=? WHERE number=?", (icon_data, channel_number))
     if cur.rowcount == 0:
         raise HTTPException(404, "Channel not found")
-    return {"ok": True}
+    sync = await _sync_channel_to_tunarr(channel_number)
+    return {"ok": True, "tunarr_sync": sync}
 
 @app.delete("/api/channels/{channel_number}/icon")
-def delete_channel_icon(channel_number: int):
+async def delete_channel_icon(channel_number: int):
     """Remove channel icon."""
     with get_db() as conn:
         conn.execute("UPDATE channels SET icon=NULL WHERE number=?", (channel_number,))
+    await _sync_channel_to_tunarr(channel_number)
     return {"ok": True}
 
 @app.get("/api/icons/export")
@@ -479,12 +611,15 @@ async def save_icon(request: Request):
     name = body.get("name", "Untitled")
     category = body.get("category", "custom")
     data = body.get("data", "")
+    composition = body.get("composition")
     if not data:
         raise HTTPException(400, "Icon data required")
+    # Composition may be a dict — store as JSON string
+    comp_str = json.dumps(composition) if isinstance(composition, dict) else composition
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO saved_icons (name, category, data) VALUES (?, ?, ?)",
-            (name, category, data),
+            "INSERT INTO saved_icons (name, category, data, composition) VALUES (?, ?, ?, ?)",
+            (name, category, data, comp_str),
         )
         row = conn.execute("SELECT * FROM saved_icons WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
@@ -502,6 +637,10 @@ async def update_saved_icon(icon_id: int, request: Request):
             conn.execute("UPDATE saved_icons SET category=? WHERE id=?", (body["category"], icon_id))
         if "data" in body:
             conn.execute("UPDATE saved_icons SET data=? WHERE id=?", (body["data"], icon_id))
+        if "composition" in body:
+            comp = body["composition"]
+            comp_str = json.dumps(comp) if isinstance(comp, dict) else comp
+            conn.execute("UPDATE saved_icons SET composition=? WHERE id=?", (comp_str, icon_id))
         row = conn.execute("SELECT * FROM saved_icons WHERE id=?", (icon_id,)).fetchone()
     return dict(row)
 
@@ -611,6 +750,8 @@ def bulk_assignments(body: BulkAssignmentIn):
             "SELECT * FROM assignments WHERE channel_number=? ORDER BY plex_title",
             (body.channel_number,)
         ).fetchall()
+    _log_app("assignment", f"Bulk assign to ch {body.channel_number}: {added} added, {skipped} skipped",
+             metadata={"channel": body.channel_number, "added": added, "skipped": skipped})
     return {"added": added, "skipped": skipped, "assignments": [dict(r) for r in rows]}
 
 # ── Settings ──────────────────────────────────────────────────────────────────
@@ -690,19 +831,48 @@ async def plex_libraries():
             if d["type"] in ("movie", "show")]
 
 @app.get("/api/plex/library/{section_id}")
-async def plex_library(section_id: str, type_filter: str = Query("all")):
+async def plex_library(section_id: str, type_filter: str = Query("all"),
+                        genre: str | None = Query(None), year: int | None = Query(None),
+                        content_rating: str | None = Query(None)):
     url, token = get_plex_config()
     if not token:
         raise HTTPException(400, "Plex token not configured — open Settings")
+    params = {}
+    if genre:
+        params["genre"] = genre
+    if year:
+        params["year"] = str(year)
+    if content_rating:
+        params["contentRating"] = content_rating
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
             f"{url}/library/sections/{section_id}/all",
             headers=plex_headers(token),
+            params=params,
         )
     if resp.status_code != 200:
         raise HTTPException(resp.status_code, "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", [])
     return _format_items(items, type_filter)
+
+@app.get("/api/plex/library/{section_id}/filters")
+async def plex_library_filters(section_id: str):
+    """Return available filter values (genres, years, content ratings) for a library."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    result = {"genres": [], "years": [], "content_ratings": []}
+    async with httpx.AsyncClient(timeout=15) as client:
+        for facet, key in [("genre", "genres"), ("year", "years"), ("contentRating", "content_ratings")]:
+            try:
+                r = await client.get(f"{url}/library/sections/{section_id}/{facet}", headers=hdrs)
+                if r.status_code == 200:
+                    dirs = r.json().get("MediaContainer", {}).get("Directory", [])
+                    result[key] = [d.get("title") or d.get("key") for d in dirs if d.get("title") or d.get("key")]
+            except Exception:
+                pass
+    return result
 
 @app.get("/api/plex/search")
 async def plex_search(q: str = Query(..., min_length=1), type_filter: str = Query("all")):
@@ -745,6 +915,9 @@ def _format_items(items: list, type_filter: str) -> list:
             "year": m.get("year"),
             "thumb": m.get("thumb"),
             "summary": (m.get("summary") or "")[:200],
+            "genres": [g.get("tag") for g in m.get("Genre", []) if g.get("tag")],
+            "content_rating": m.get("contentRating"),
+            "user_rating": m.get("userRating"),
         })
     return out
 
@@ -763,6 +936,41 @@ async def plex_item(rating_key: str):
         raise HTTPException(404, "Item not found")
     m = meta[0]
     dur = m.get("duration")
+    # Extract media quality info
+    media = (m.get("Media") or [{}])[0] if m.get("Media") else {}
+    media_info = None
+    subtitles = []
+    if media:
+        media_info = {
+            "resolution": media.get("videoResolution"),
+            "video_codec": media.get("videoCodec"),
+            "audio_codec": media.get("audioCodec"),
+            "audio_channels": media.get("audioChannels"),
+            "bitrate": media.get("bitrate"),
+            "container": media.get("container"),
+        }
+        # Extract subtitle languages from streams
+        parts = media.get("Part", [])
+        if parts:
+            for stream in parts[0].get("Stream", []):
+                if stream.get("streamType") == 3:  # subtitle stream
+                    lang = stream.get("language") or stream.get("languageCode") or stream.get("displayTitle")
+                    if lang and lang not in subtitles:
+                        subtitles.append(lang)
+
+    # Build Plex web URL for playback
+    plex_web_url = None
+    try:
+        async with httpx.AsyncClient(timeout=5) as mc:
+            idr = await mc.get(f"{url}/identity", headers=hdrs)
+            if idr.status_code == 200:
+                machine_id = idr.json().get("MediaContainer", {}).get("machineIdentifier", "")
+                if machine_id:
+                    plex_web_url = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}&context=library%3Acontent.library"
+                    log.info("Plex web URL for %s: machineId=%s ratingKey=%s url=%s", m.get("title"), machine_id, rating_key, plex_web_url)
+    except Exception as e:
+        log.warning("Failed to build Plex web URL: %s", e)
+
     return {
         "rating_key": m.get("ratingKey"),
         "title": m.get("title"),
@@ -776,6 +984,40 @@ async def plex_item(rating_key: str):
         "content_rating": m.get("contentRating"),
         "child_count": m.get("childCount"),
         "leaf_count": m.get("leafCount"),
+        "genres": [g.get("tag") for g in m.get("Genre", []) if g.get("tag")],
+        "user_rating": m.get("userRating"),
+        "audience_rating": m.get("audienceRating"),
+        "rating": m.get("rating"),
+        "originally_available_at": m.get("originallyAvailableAt"),
+        "media_info": media_info,
+        "subtitles": subtitles,
+        "plex_web_url": plex_web_url,
+    }
+
+@app.get("/api/plex/stream/{rating_key}")
+async def plex_stream_url(rating_key: str):
+    """Return playback URLs for a Plex item (web app + direct server).
+    Works for movies, episodes, and any playable content."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    # Get machine ID for web URL
+    machine_id = ""
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            idr = await client.get(f"{url}/identity", headers=hdrs)
+            if idr.status_code == 200:
+                machine_id = idr.json().get("MediaContainer", {}).get("machineIdentifier", "")
+        except Exception:
+            pass
+
+    # Plex web app URL — works from anywhere (local + remote), opens in browser
+    plex_web_url = f"https://app.plex.tv/desktop#!/server/{machine_id}/details?key=%2Flibrary%2Fmetadata%2F{rating_key}&context=library%3Acontent.library" if machine_id else None
+
+    return {
+        "plex_web": plex_web_url,
+        "rating_key": rating_key,
     }
 
 @app.get("/api/plex/show/{rating_key}/seasons")
@@ -957,6 +1199,68 @@ async def plex_recently_added(limit: int = Query(20)):
     items.sort(key=lambda x: x.get("added_at") or 0, reverse=True)
     return items[:limit]
 
+@app.get("/api/plex/on-deck")
+async def plex_on_deck(limit: int = Query(20)):
+    """Return on-deck (continue watching) items from Plex."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{url}/library/onDeck", headers=hdrs,
+                             params={"X-Plex-Container-Size": str(limit)})
+        if r.status_code != 200:
+            return []
+    items = []
+    for m in r.json().get("MediaContainer", {}).get("Metadata", []) or []:
+        items.append({
+            "rating_key": m.get("ratingKey"),
+            "title": m.get("grandparentTitle") or m.get("title"),
+            "subtitle": m.get("title") if m.get("grandparentTitle") else None,
+            "type": m.get("type", ""),
+            "year": m.get("year"),
+            "thumb": m.get("grandparentThumb") or m.get("thumb"),
+            "added_at": m.get("addedAt"),
+        })
+    return items[:limit]
+
+@app.get("/api/plex/popular")
+async def plex_popular(limit: int = Query(30)):
+    """Return most-watched items across all movie and show libraries."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    items = []
+    async with httpx.AsyncClient(timeout=15) as client:
+        sec_resp = await client.get(f"{url}/library/sections", headers=hdrs)
+        if sec_resp.status_code != 200:
+            return []
+        sections = sec_resp.json().get("MediaContainer", {}).get("Directory", [])
+        for s in sections:
+            if s.get("type") not in ("movie", "show"):
+                continue
+            r = await client.get(
+                f"{url}/library/sections/{s['key']}/all",
+                headers=hdrs,
+                params={"sort": "viewCount:desc", "X-Plex-Container-Size": str(limit)},
+            )
+            if r.status_code == 200:
+                for m in r.json().get("MediaContainer", {}).get("Metadata", []) or []:
+                    vc = m.get("viewCount", 0)
+                    if not vc:
+                        continue
+                    items.append({
+                        "rating_key": m.get("ratingKey"),
+                        "title": m.get("title"),
+                        "type": m.get("type", ""),
+                        "year": m.get("year"),
+                        "thumb": m.get("thumb"),
+                        "view_count": vc,
+                    })
+    items.sort(key=lambda x: x.get("view_count", 0), reverse=True)
+    return items[:limit]
+
 @app.post("/api/plex/auth/start")
 async def plex_auth_start():
     """Request a PIN from plex.tv and return the auth URL for the popup."""
@@ -1055,7 +1359,7 @@ def get_channel_collections(channel_number: int):
 
 
 @app.post("/api/channel-collections/{channel_number}", status_code=201)
-def link_channel_collection(channel_number: int, body: ChannelCollectionIn):
+async def link_channel_collection(channel_number: int, body: ChannelCollectionIn):
     with get_db() as conn:
         conn.execute(
             """INSERT INTO channel_collections (channel_number, plex_type, collection_rating_key, collection_title)
@@ -1069,7 +1373,40 @@ def link_channel_collection(channel_number: int, body: ChannelCollectionIn):
             "SELECT * FROM channel_collections WHERE channel_number=? AND plex_type=?",
             (channel_number, body.plex_type),
         ).fetchone()
-    return dict(row)
+
+    # Auto-assign collection items to the channel
+    added = 0
+    skipped = 0
+    try:
+        url, token = get_plex_config()
+        if token:
+            hdrs = plex_headers(token)
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(f"{url}/library/collections/{body.collection_rating_key}/children", headers=hdrs)
+            if resp.status_code == 200:
+                items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+                with get_db() as conn:
+                    for m in items:
+                        t = m.get("type", "")
+                        if t not in ("movie", "show"):
+                            continue
+                        try:
+                            conn.execute(
+                                """INSERT INTO assignments
+                                   (channel_number, plex_rating_key, plex_title, plex_type, plex_thumb, plex_year)
+                                   VALUES (?, ?, ?, ?, ?, ?)""",
+                                (channel_number, m.get("ratingKey"), m.get("title"),
+                                 t, m.get("thumb"), m.get("year")),
+                            )
+                            added += 1
+                        except sqlite3.IntegrityError:
+                            skipped += 1
+    except Exception:
+        pass  # linking succeeded, assignment is best-effort
+
+    result = dict(row)
+    result["assigned"] = {"added": added, "skipped": skipped}
+    return result
 
 
 @app.delete("/api/channel-collections/{channel_number}/{plex_type}")
@@ -1373,15 +1710,385 @@ async def generate_collections(channel_number: int):
 
 
 @app.get("/api/plex/thumb")
-async def plex_thumb(path: str = Query(...)):
+async def plex_thumb(path: str = Query(...), w: int = Query(200), h: int = Query(300)):
     url, token = get_plex_config()
-    full_url = f"{url}{path}?X-Plex-Token={token}&width=200&height=300"
+    full_url = f"{url}{path}?X-Plex-Token={token}&width={w}&height={h}"
     async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
         resp = await client.get(full_url)
+    headers = {
+        "Cache-Control": "public, max-age=86400, immutable",
+        "Vary": "Accept",
+    }
     return StreamingResponse(
         resp.aiter_bytes(),
         media_type=resp.headers.get("content-type", "image/jpeg"),
+        headers=headers,
     )
+
+@app.get("/api/plex/sessions")
+async def plex_sessions():
+    """Return active Plex streams/sessions."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(f"{url}/status/sessions", headers=hdrs)
+    if resp.status_code != 200:
+        return []
+    items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+    sessions = []
+    for s in items:
+        user = s.get("User", {})
+        player = s.get("Player", {})
+        media = (s.get("Media") or [{}])[0]
+        transcode = s.get("TranscodeSession", {})
+        sessions.append({
+            "rating_key": str(s.get("ratingKey") or s.get("grandparentRatingKey", "")),
+            "title": s.get("grandparentTitle") or s.get("title", ""),
+            "subtitle": s.get("title") if s.get("grandparentTitle") else None,
+            "type": s.get("type", ""),
+            "thumb": s.get("grandparentThumb") or s.get("thumb"),
+            "user": user.get("title", ""),
+            "player": player.get("title", ""),
+            "platform": player.get("platform", ""),
+            "state": player.get("state", ""),
+            "progress_pct": round(int(s.get("viewOffset", 0)) / max(int(s.get("duration", 1)), 1) * 100),
+            "transcode": bool(transcode),
+            "transcode_decision": transcode.get("transcodeHwDecoding", "") if transcode else "",
+            "video_resolution": media.get("videoResolution", ""),
+            "bandwidth_kbps": int(transcode.get("bandwidth", 0)) if transcode else None,
+        })
+    return sessions
+
+@app.get("/api/plex/history")
+async def plex_history(limit: int = Query(50)):
+    """Return recent watch history."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            f"{url}/status/sessions/history/all",
+            headers=hdrs,
+            params={"sort": "viewedAt:desc", "X-Plex-Container-Start": 0, "X-Plex-Container-Size": limit},
+        )
+    if resp.status_code != 200:
+        return []
+    items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+    return [{
+        "rating_key": str(h.get("ratingKey", "")),
+        "title": h.get("grandparentTitle") or h.get("title", ""),
+        "subtitle": h.get("title") if h.get("grandparentTitle") else None,
+        "type": h.get("type", ""),
+        "thumb": h.get("grandparentThumb") or h.get("thumb"),
+        "viewed_at": h.get("viewedAt"),
+        "account_id": h.get("accountID"),
+    } for h in items]
+
+@app.get("/api/plex/playlists")
+async def plex_playlists():
+    """Return all Plex playlists."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(f"{url}/playlists", headers=hdrs)
+    if resp.status_code != 200:
+        return []
+    items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+    return [{
+        "rating_key": str(p.get("ratingKey", "")),
+        "title": p.get("title", ""),
+        "type": p.get("playlistType", ""),
+        "item_count": int(p.get("leafCount", 0)),
+        "duration_ms": int(p.get("duration", 0)),
+        "thumb": p.get("composite") or p.get("thumb"),
+        "smart": bool(p.get("smart")),
+    } for p in items]
+
+@app.post("/api/plex/scan-library/{section_id}")
+async def plex_scan_library(section_id: str):
+    """Trigger a library scan/refresh for a Plex section."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(f"{url}/library/sections/{section_id}/refresh", headers=hdrs)
+    if resp.status_code not in (200, 202):
+        raise HTTPException(resp.status_code, "Failed to trigger library scan")
+    return {"ok": True, "message": f"Library scan triggered for section {section_id}"}
+
+class PlexRateIn(BaseModel):
+    rating: float  # 0-10 (0 clears)
+
+@app.put("/api/plex/item/{rating_key}/rate")
+async def plex_rate_item(rating_key: str, body: PlexRateIn):
+    """Set user rating for a Plex item (0 clears, 1-10 sets)."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    params = {
+        "key": rating_key,
+        "identifier": "com.plexapp.plugins.library",
+        "rating": str(body.rating),
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.put(f"{url}/:/rate", headers=hdrs, params=params)
+    if resp.status_code not in (200, 204):
+        raise HTTPException(resp.status_code, "Failed to set rating")
+    return {"ok": True}
+
+@app.get("/api/plex/hubs")
+async def plex_hubs():
+    """Return Plex discovery hubs (Continue Watching, Recommended, etc.)."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(f"{url}/hubs", headers=hdrs)
+    if resp.status_code != 200:
+        return {"hubs": []}
+    hubs_raw = resp.json().get("MediaContainer", {}).get("Hub", [])
+    hubs = []
+    for h in hubs_raw:
+        items = []
+        for m in h.get("Metadata", []) or []:
+            t = m.get("type", "")
+            if t not in ("movie", "show", "episode"):
+                continue
+            items.append({
+                "rating_key": m.get("ratingKey"),
+                "title": m.get("grandparentTitle") or m.get("title"),
+                "subtitle": m.get("title") if m.get("grandparentTitle") else None,
+                "type": "show" if t == "episode" else t,
+                "year": m.get("year"),
+                "thumb": m.get("grandparentThumb") or m.get("thumb"),
+            })
+        if items:
+            hubs.append({
+                "title": h.get("title", ""),
+                "type": h.get("type", ""),
+                "hub_key": h.get("hubKey", ""),
+                "items": items,
+            })
+    return {"hubs": hubs}
+
+@app.get("/api/plex/hubs/library/{section_id}")
+async def plex_library_hubs(section_id: str):
+    """Return library-specific Plex hubs."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(f"{url}/hubs/sections/{section_id}", headers=hdrs)
+    if resp.status_code != 200:
+        return {"hubs": []}
+    hubs_raw = resp.json().get("MediaContainer", {}).get("Hub", [])
+    hubs = []
+    for h in hubs_raw:
+        items = []
+        for m in h.get("Metadata", []) or []:
+            t = m.get("type", "")
+            if t not in ("movie", "show", "episode"):
+                continue
+            items.append({
+                "rating_key": m.get("ratingKey"),
+                "title": m.get("grandparentTitle") or m.get("title"),
+                "subtitle": m.get("title") if m.get("grandparentTitle") else None,
+                "type": "show" if t == "episode" else t,
+                "year": m.get("year"),
+                "thumb": m.get("grandparentThumb") or m.get("thumb"),
+            })
+        if items:
+            hubs.append({
+                "title": h.get("title", ""),
+                "type": h.get("type", ""),
+                "hub_key": h.get("hubKey", ""),
+                "items": items,
+            })
+    return {"hubs": hubs}
+
+# ── Plex Webhooks ─────────────────────────────────────────────────────────────
+
+@app.post("/api/plex/webhook")
+async def plex_webhook(request: Request):
+    """Receive Plex webhook events. Requires Plex Pass on the Plex server side.
+    Plex sends multipart/form-data with a 'payload' JSON field."""
+    try:
+        form = await request.form()
+        payload_raw = form.get("payload", "")
+        if not payload_raw:
+            return {"ok": True}
+        payload = json.loads(str(payload_raw))
+        event_type = payload.get("event", "")
+        if not event_type:
+            return {"ok": True}
+
+        metadata = payload.get("Metadata", {})
+        account = payload.get("Account", {})
+        player = payload.get("Player", {})
+
+        rating_key = str(metadata.get("ratingKey", "")) if metadata.get("ratingKey") else None
+        title = metadata.get("grandparentTitle") or metadata.get("title") or ""
+        plex_type = metadata.get("type", "")
+        if plex_type == "episode":
+            plex_type = "show"
+        user_name = account.get("title", "")
+        player_title = player.get("title", "")
+
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO plex_events (event_type, rating_key, title, plex_type, user_name, player) VALUES (?,?,?,?,?,?)",
+                (event_type, rating_key, title, plex_type, user_name, player_title),
+            )
+        _log_app("plex-webhook", f"{event_type}: {title}" + (f" by {user_name}" if user_name else ""))
+    except Exception as e:
+        log.warning("Plex webhook parse error: %s", e)
+    # Always return 200 so Plex doesn't retry
+    return {"ok": True}
+
+@app.get("/api/plex/events")
+def plex_events(event_type: str | None = Query(None), limit: int = Query(50)):
+    """Return recent Plex webhook events."""
+    with get_db() as conn:
+        if event_type:
+            rows = conn.execute(
+                "SELECT * FROM plex_events WHERE event_type=? ORDER BY created_at DESC LIMIT ?",
+                (event_type, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM plex_events ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+@app.delete("/api/plex/events")
+def clear_plex_events():
+    """Clear all Plex webhook events."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM plex_events")
+    return {"ok": True}
+
+# ── Plex Collection CRUD ─────────────────────────────────────────────────────
+
+@app.post("/api/plex/collections")
+async def plex_create_collection(request: Request):
+    """Create a new Plex collection."""
+    body = await request.json()
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    title = body.get("title", "")
+    section_id = body.get("section_id", "")
+    collection_type = body.get("type", "movie")
+    if not title or not section_id:
+        raise HTTPException(400, "title and section_id required")
+    plex_type = "1" if collection_type == "movie" else "2"
+    async with httpx.AsyncClient(timeout=10) as client:
+        # Get machine ID for URI
+        identity_r = await client.get(f"{url}/identity", headers=hdrs)
+        machine_id = identity_r.json().get("MediaContainer", {}).get("machineIdentifier", "") if identity_r.status_code == 200 else ""
+        resp = await client.post(
+            f"{url}/library/collections",
+            headers=hdrs,
+            params={"type": plex_type, "title": title, "smart": "0", "sectionId": section_id},
+        )
+    if resp.status_code not in (200, 201):
+        raise HTTPException(resp.status_code, f"Plex error: {resp.text[:200]}")
+    coll = (resp.json().get("MediaContainer", {}).get("Metadata", [{}]) or [{}])[0]
+    return {
+        "rating_key": coll.get("ratingKey"),
+        "title": coll.get("title", title),
+        "type": collection_type,
+        "machine_id": machine_id,
+    }
+
+@app.delete("/api/plex/collections/{rating_key}")
+async def plex_delete_collection(rating_key: str):
+    """Delete a Plex collection."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.delete(f"{url}/library/collections/{rating_key}", headers=hdrs)
+    if resp.status_code not in (200, 204):
+        raise HTTPException(resp.status_code, "Failed to delete collection")
+    # Clean up any channel_collections references
+    with get_db() as conn:
+        conn.execute("DELETE FROM channel_collections WHERE collection_rating_key=?", (rating_key,))
+    return {"ok": True}
+
+@app.put("/api/plex/collections/{rating_key}/items")
+async def plex_add_collection_items(rating_key: str, request: Request):
+    """Add items to a Plex collection."""
+    body = await request.json()
+    item_keys = body.get("items", [])
+    if not item_keys:
+        raise HTTPException(400, "items list required")
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        identity_r = await client.get(f"{url}/identity", headers=hdrs)
+        machine_id = identity_r.json().get("MediaContainer", {}).get("machineIdentifier", "") if identity_r.status_code == 200 else ""
+        added = 0
+        for rk in item_keys:
+            uri = f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"
+            resp = await client.put(
+                f"{url}/library/collections/{rating_key}/items",
+                headers=hdrs,
+                params={"uri": uri},
+            )
+            if resp.status_code in (200, 201):
+                added += 1
+    return {"ok": True, "added": added}
+
+@app.delete("/api/plex/collections/{rating_key}/items/{item_key}")
+async def plex_remove_collection_item(rating_key: str, item_key: str):
+    """Remove an item from a Plex collection."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.delete(
+            f"{url}/library/collections/{rating_key}/items/{item_key}",
+            headers=hdrs,
+        )
+    if resp.status_code not in (200, 204):
+        raise HTTPException(resp.status_code, "Failed to remove item")
+    return {"ok": True}
+
+@app.put("/api/plex/collections/{rating_key}")
+async def plex_update_collection(rating_key: str, request: Request):
+    """Update a Plex collection's metadata (title, summary)."""
+    body = await request.json()
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    params = {}
+    if "title" in body:
+        params["title.value"] = body["title"]
+    if "summary" in body:
+        params["summary.value"] = body["summary"]
+    if not params:
+        return {"ok": True}
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.put(f"{url}/library/metadata/{rating_key}", headers=hdrs, params=params)
+    if resp.status_code not in (200, 204):
+        raise HTTPException(resp.status_code, "Failed to update collection")
+    return {"ok": True}
 
 # ── Blocks ────────────────────────────────────────────────────────────────────
 
@@ -1722,6 +2429,35 @@ def apply_block(block_id: int, channel_number: int):
     result["shows_added"] = shows_added
     return result
 
+# ── AI helpers ────────────────────────────────────────────────────────────────
+
+def _extract_ai_content(resp_json: dict) -> str:
+    """Extract and validate the AI response content. Raises HTTPException on failure."""
+    choice = resp_json.get("choices", [{}])[0]
+    finish = choice.get("finish_reason", "")
+    content = (choice.get("message") or {}).get("content") or ""
+    content = content.strip()
+    if not content:
+        if finish == "length":
+            raise HTTPException(502, "AI response was truncated (token limit reached). Try a simpler request or increase the model's token limit.")
+        if finish == "content_filter":
+            raise HTTPException(502, "AI response was blocked by content filter.")
+        raise HTTPException(502, "AI returned an empty response. The model may be overloaded — try again.")
+    return content
+
+def _parse_ai_json(content: str) -> dict | list:
+    """Strip markdown fences and parse JSON from AI response content."""
+    text = content
+    if "```" in text:
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.split("```")[0]
+    text = text.strip()
+    if not text:
+        raise HTTPException(502, "AI returned empty content after stripping markdown fences.")
+    return _json.loads(text)
+
 # ── AI channel & package suggestions ──────────────────────────────────────────
 
 @app.post("/api/channels/ai-suggest")
@@ -1817,13 +2553,8 @@ Reply with ONLY this JSON (no markdown, no text):
         ms = int((_t.monotonic() - t0) * 1000)
         if r.status_code != 200:
             raise HTTPException(502, f"AI error: {r.text[:200]}")
-        raw = r.json()["choices"][0]["message"]["content"].strip()
-        text = raw
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        data = _json.loads(text)
+        raw = _extract_ai_content(r.json())
+        data = _parse_ai_json(raw)
         return {"suggestions": data, "duration_ms": ms}
     except _json.JSONDecodeError as e:
         raise HTTPException(502, f"AI returned invalid JSON: {str(e)[:100]}")
@@ -1980,14 +2711,8 @@ Reply with ONLY this JSON (no markdown, no text):
         ms = int((_t.monotonic() - t0) * 1000)
         if r.status_code != 200:
             raise HTTPException(502, f"AI error: {r.text[:200]}")
-        raw = r.json()["choices"][0]["message"]["content"].strip()
-        text = raw
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.split("```")[0]
-        data = _json.loads(text.strip())
+        raw = _extract_ai_content(r.json())
+        data = _parse_ai_json(raw)
 
         # Build lookup from available Plex items
         plex_map = {str(p["rating_key"]): p for p in plex_items}
@@ -2166,14 +2891,8 @@ Reply with ONLY this JSON (no markdown):
         ms = int((_t.monotonic() - t0) * 1000)
         if r.status_code != 200:
             raise HTTPException(502, f"AI error: {r.text[:200]}")
-        raw = r.json()["choices"][0]["message"]["content"].strip()
-        text = raw
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.split("```")[0]
-        data = _json.loads(text.strip())
+        raw = _extract_ai_content(r.json())
+        data = _parse_ai_json(raw)
 
         # Enrich suggestions with plex metadata
         plex_map = {str(p["rating_key"]): p for p in plex_items}
@@ -2478,14 +3197,8 @@ Reply with ONLY this JSON (no markdown):
         ms = int((_time.monotonic() - t0) * 1000)
         if r.status_code != 200:
             raise HTTPException(502, f"AI API error: {r.text[:200]}")
-        raw = r.json()["choices"][0]["message"]["content"].strip()
-        # Parse JSON from response
-        text = raw
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        data = _json.loads(text)
+        raw = _extract_ai_content(r.json())
+        data = _parse_ai_json(raw)
         blocks = data.get("blocks", []) if isinstance(data, dict) else data
 
         # Log
@@ -2719,7 +3432,7 @@ Reply with ONLY this JSON (no markdown, no text before or after):
                 pass
             raise HTTPException(502, f"AI error: {error_msg}")
         resp_json = resp.json()
-        raw = resp_json["choices"][0]["message"]["content"].strip()
+        raw = _extract_ai_content(resp_json)
         cleaned = raw
         # Strip markdown code fences
         if "```" in cleaned:
@@ -2813,7 +3526,7 @@ async def ai_test(body: AITestIn):
         if resp.status_code != 200:
             detail = resp.json().get("error", {}).get("message", resp.text)
             raise HTTPException(502, detail)
-        reply = resp.json()["choices"][0]["message"]["content"].strip()
+        reply = _extract_ai_content(resp.json())
         return {"ok": True, "model": body.openai_model, "reply": reply, "duration_ms": duration_ms}
     except HTTPException:
         raise
@@ -2856,9 +3569,42 @@ def clear_app_logs():
         conn.execute("DELETE FROM app_logs")
     return {"ok": True}
 
+@app.post("/api/logs/purge")
+def purge_logs(days: int = Query(30)):
+    """Purge logs older than N days."""
+    with get_db() as conn:
+        conn.execute(f"DELETE FROM app_logs WHERE created_at < datetime('now', '-{days} days')")
+        conn.execute(f"DELETE FROM ai_logs WHERE created_at < datetime('now', '-{days} days')")
+    _log_app("logs", f"Purged logs older than {days} days")
+    return {"ok": True}
+
+@app.get("/api/logs/stats")
+def log_stats():
+    """Return log counts and oldest entries."""
+    with get_db() as conn:
+        app_count = conn.execute("SELECT COUNT(*) FROM app_logs").fetchone()[0]
+        ai_count = conn.execute("SELECT COUNT(*) FROM ai_logs").fetchone()[0]
+        app_oldest = conn.execute("SELECT MIN(created_at) FROM app_logs").fetchone()[0]
+        ai_oldest = conn.execute("SELECT MIN(created_at) FROM ai_logs").fetchone()[0]
+    return {
+        "app_logs": {"count": app_count, "oldest": app_oldest},
+        "ai_logs": {"count": ai_count, "oldest": ai_oldest},
+    }
+
 # ── Tunarr Integration ────────────────────────────────────────────────────────
 
 TUNARR_SUPPORTED_VERSION = "1.2.10"
+
+def _previous_sunday_midnight_ms() -> int:
+    """Return Unix epoch milliseconds for the most recent Sunday at 00:00:00 UTC."""
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    days_since_sunday = now.weekday() + 1  # Monday=0, Sunday=6 → +1 gives days since Sunday
+    if days_since_sunday == 7:
+        days_since_sunday = 0  # today is Sunday
+    sunday = now - timedelta(days=days_since_sunday)
+    midnight = sunday.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(midnight.timestamp() * 1000)
 
 def _parse_version(v: str) -> tuple[int, ...]:
     """Parse a version string like '1.2.10' or 'v1.2.10' into a tuple of ints."""
@@ -2882,33 +3628,33 @@ async def tunarr_test(body: TunarrTestIn | None = None):
     url = (body.url.rstrip("/") if body and body.url else None) or get_tunarr_url()
     t0 = _t.monotonic()
     # Try multiple paths — Tunarr version differences
-    for path in ("/health", "/api/health", "/api/channels"):
-        try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for path in ("/health", "/api/health", "/api/channels"):
+            try:
                 r = await client.get(f"{url}{path}")
-            ms = int((_t.monotonic() - t0) * 1000)
-            if r.status_code in (200, 204):
-                # Fetch extra info: version + channel count
-                version = ""
-                channel_count = 0
-                try:
-                    vr = await client.get(f"{url}/api/version")
-                    if vr.status_code == 200:
-                        version = vr.json().get("tunarr", vr.json().get("version", ""))
-                except Exception:
-                    pass
-                try:
-                    cr = await client.get(f"{url}/api/channels")
-                    if cr.status_code == 200:
-                        channel_count = len(cr.json()) if isinstance(cr.json(), list) else 0
-                except Exception:
-                    pass
-                return {"ok": True, "latency_ms": ms, "url": url, "path": path,
-                        "version": version, "channels": channel_count}
-        except (httpx.ConnectError, httpx.TimeoutException):
-            continue
-        except Exception:
-            continue
+                ms = int((_t.monotonic() - t0) * 1000)
+                if r.status_code in (200, 204):
+                    # Fetch extra info: version + channel count
+                    version = ""
+                    channel_count = 0
+                    try:
+                        vr = await client.get(f"{url}/api/version")
+                        if vr.status_code == 200:
+                            version = vr.json().get("tunarr", vr.json().get("version", ""))
+                    except Exception:
+                        pass
+                    try:
+                        cr = await client.get(f"{url}/api/channels")
+                        if cr.status_code == 200:
+                            channel_count = len(cr.json()) if isinstance(cr.json(), list) else 0
+                    except Exception:
+                        pass
+                    return {"ok": True, "latency_ms": ms, "url": url, "path": path,
+                            "version": version, "channels": channel_count}
+            except (httpx.ConnectError, httpx.TimeoutException):
+                continue
+            except Exception:
+                continue
     raise HTTPException(503, f"Cannot reach Tunarr at {url} — check the URL in Settings. If running in Docker use http://tunarr:8000 (not localhost)")
 
 @app.get("/api/tunarr/version-check")
@@ -3047,7 +3793,7 @@ async def tunarr_create_channel(body: dict):
                 "name": body.get("name", "New Channel"),
                 "number": body.get("number", 1),
                 "duration": 0,
-                "startTime": 0,
+                "startTime": _previous_sunday_midnight_ms(),
                 "groupTitle": body.get("groupTitle", "Galaxy Network"),
                 "icon": {"path": "", "duration": 0, "width": 0, "position": "bottom-right"},
                 "offline": {"mode": "pic"},
@@ -3082,24 +3828,284 @@ def _extract_schedule_items(data) -> list[dict]:
         return data
     if isinstance(data, dict):
         # Tunarr may return { "items": [...] }, { "programs": [...] }, or { "slots": [...] }
-        for key in ("items", "programs", "slots", "lineup"):
+        for key in ("items", "programs", "slots", "lineup", "schedule"):
             if key in data and isinstance(data[key], list):
                 return data[key]
-        # If it has schedule-like fields directly (startTime, duration), wrap it
-        if "startTime" in data or "start_time" in data:
+        # Programming endpoint returns {type: "time", timeSlots: [...], ...}
+        if "timeSlots" in data and isinstance(data["timeSlots"], list):
+            return data["timeSlots"]
+        # If it has schedule-like fields directly, wrap it
+        if "startTime" in data or "start_time" in data or "startTimeMs" in data:
             return [data]
     return []
 
 @app.get("/api/tunarr/channels/{tunarr_id}/schedule")
-async def tunarr_get_schedule(tunarr_id: str):
+async def tunarr_get_schedule(tunarr_id: str, hours: int = Query(6)):
+    """Get materialized lineup for a Tunarr channel (what's actually playing)."""
     url = get_tunarr_url()
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    date_from = now.isoformat()
+    date_to = (now + timedelta(hours=hours)).isoformat()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # 1. Try the guide API (returns lineup with startTimeMs)
+        try:
+            r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
+                                 params={"dateFrom": date_from, "dateTo": date_to})
+            if r.status_code == 200:
+                data = r.json()
+                programs = data.get("programs", []) if isinstance(data, dict) else []
+                if not programs and isinstance(data, list):
+                    programs = data
+                if programs:
+                    result = _normalize_guide_programs(programs)
+                    # If programs lack titles, try to enrich from programming endpoint
+                    if result and not result[0].get("title") or result[0].get("title") == "Program":
+                        try:
+                            pr = await client.get(f"{url}/api/channels/{tunarr_id}/programming")
+                            if pr.status_code == 200:
+                                prog_data = _extract_schedule_items(pr.json())
+                                enriched = _normalize_guide_programs(prog_data)
+                                if enriched and enriched[0].get("title") and enriched[0]["title"] != "Program":
+                                    return enriched
+                        except Exception:
+                            pass
+                    return result
+        except Exception as e:
+            log.warning("Tunarr guide API failed for %s: %s", tunarr_id, e)
+        # 2. Try the lineup API
+        try:
+            r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
+                                 params={"from": date_from, "to": date_to})
+            if r.status_code == 200:
+                raw = r.json()
+                items = raw if isinstance(raw, list) else raw.get("items", raw.get("programs", []))
+                if items:
+                    return _normalize_guide_programs(items)
+        except Exception as e:
+            log.warning("Tunarr lineup API failed for %s: %s", tunarr_id, e)
+        # 3. Try programming endpoint (often has titles)
+        try:
+            r = await client.get(f"{url}/api/channels/{tunarr_id}/programming")
+            if r.status_code == 200:
+                raw = r.json()
+                items = _extract_schedule_items(raw)
+                if items:
+                    return _normalize_guide_programs(items)
+        except Exception as e:
+            log.warning("Tunarr programming API failed for %s: %s", tunarr_id, e)
+        # 4. Last fallback: schedule config
+        try:
+            r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
+            if r.status_code == 200:
+                return _extract_schedule_items(r.json())
+        except Exception as e:
+            log.warning("Tunarr schedule API failed for %s: %s", tunarr_id, e)
+    return []
+
+def _normalize_guide_programs(programs: list) -> list[dict]:
+    """Normalize Tunarr guide/lineup programs to a consistent format.
+
+    Handles multiple Tunarr response formats:
+    - New format: {startTimeMs, lineupItem: {type, id, durationMs, title?, ...}, listing: {title, ...}}
+    - Old format: {start/startTime, duration, title, ...}
+    """
+    # Log first item for debugging
+    if programs:
+        sample = programs[0]
+        log.debug("Guide program sample keys: %s", list(sample.keys()) if isinstance(sample, dict) else type(sample).__name__)
+        lineup_sample = sample.get("lineupItem", {}) if isinstance(sample, dict) else {}
+        if lineup_sample:
+            log.debug("  lineupItem keys: %s", list(lineup_sample.keys()))
+        listing_sample = sample.get("listing", {}) if isinstance(sample, dict) else {}
+        if listing_sample:
+            log.debug("  listing keys: %s", list(listing_sample.keys()))
+
+    items = []
+    for p in programs:
+        lineup = p.get("lineupItem") or {}
+        listing = p.get("listing") or {}
+        program = p.get("program") or {}
+
+        # ── Start time ──
+        start_val = p.get("startTimeMs") or 0
+        if not start_val:
+            start = p.get("start") or p.get("startTime") or p.get("start_time") or ""
+            if isinstance(start, (int, float)):
+                start_val = int(start)
+            elif isinstance(start, str) and start:
+                try:
+                    from datetime import datetime
+                    start_val = int(datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp() * 1000)
+                except Exception:
+                    start_val = 0
+
+        # ── Duration ──
+        duration = lineup.get("durationMs") or p.get("duration") or p.get("durationMs") or 0
+        if not duration:
+            stop = p.get("stop") or p.get("endTime") or p.get("end_time") or ""
+            if stop and start_val:
+                try:
+                    from datetime import datetime
+                    e = datetime.fromisoformat(str(stop).replace("Z", "+00:00"))
+                    duration = int(e.timestamp() * 1000) - start_val
+                except Exception:
+                    pass
+
+        # ── Title (check all possible locations) ──
+        title = (
+            listing.get("title")
+            or listing.get("showTitle")
+            or program.get("title")
+            or program.get("showTitle")
+            or p.get("title")
+            or p.get("programTitle")
+            or p.get("showTitle")
+            or lineup.get("title")
+            or lineup.get("showTitle")
+            or lineup.get("programTitle")
+            or ""
+        )
+
+        # ── Episode info ──
+        episode = p.get("episode") or lineup.get("episode") or listing.get("episode")
+        ep_title = (
+            listing.get("episodeTitle")
+            or program.get("episodeTitle")
+            or p.get("episodeTitle")
+            or lineup.get("episodeTitle")
+            or listing.get("title")  # for episodes, listing.title is often the episode title
+            or ""
+        )
+        season_num = listing.get("seasonNumber") or program.get("seasonNumber") or lineup.get("seasonNumber") or p.get("season")
+        episode_num = listing.get("episodeNumber") or program.get("episodeNumber") or lineup.get("episodeNumber") or p.get("episode_number") or p.get("episodeNumber")
+
+        # For shows: if listing has showTitle, the title is the show, ep_title is the episode
+        show_title = listing.get("showTitle") or program.get("showTitle") or ""
+        if show_title and not title:
+            title = show_title
+        if show_title and ep_title and ep_title != show_title:
+            if not episode:
+                episode = {"title": ep_title, "season": season_num, "episode": episode_num}
+        elif not episode and (ep_title or season_num):
+            episode = {
+                "title": ep_title if ep_title != title else "",
+                "season": season_num,
+                "episode": episode_num,
+            }
+
+        # ── Type ──
+        item_type = lineup.get("type") or p.get("type") or listing.get("type") or ""
+
+        # If no title, build one from what we have
+        if not title:
+            if item_type == "flex":
+                title = "Flex"
+            elif item_type == "redirect":
+                title = "Redirect"
+            elif item_type == "offline":
+                title = "Offline"
+            else:
+                title = "Program"
+
+        items.append({
+            "startTime": start_val,
+            "duration": duration,
+            "type": item_type,
+            "title": title,
+            "episode": episode,
+        })
+    return items
+
+@app.get("/api/tunarr/debug")
+async def tunarr_debug_api():
+    """Debug: discover Tunarr API structure by probing many possible paths."""
+    url = get_tunarr_url()
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    date_from = now.isoformat()
+    date_to = (now + timedelta(hours=6)).isoformat()
+    with get_db() as conn:
+        links = [dict(r) for r in conn.execute("SELECT * FROM tunarr_channel_links").fetchall()]
+    tid = links[0]["tunarr_id"] if links else "unknown"
+
+    # Probe many possible API paths to discover which ones exist
+    probe_paths = [
+        # Root / version
+        ("GET /api", f"{url}/api", None),
+        ("GET /api/version", f"{url}/api/version", None),
+        ("GET /api/v2", f"{url}/api/v2", None),
+        # Channels
+        ("GET /api/channels", f"{url}/api/channels", None),
+        ("GET /api/v2/channels", f"{url}/api/v2/channels", None),
+        # Single channel
+        ("GET /api/channels/{id}", f"{url}/api/channels/{tid}", None),
+        ("GET /api/v2/channels/{id}", f"{url}/api/v2/channels/{tid}", None),
+        # Guide
+        ("GET /api/guide", f"{url}/api/guide", None),
+        ("GET /api/guide/channels", f"{url}/api/guide/channels", {"dateFrom": date_from, "dateTo": date_to}),
+        ("GET /api/guide/channels/{id}", f"{url}/api/guide/channels/{tid}", {"dateFrom": date_from, "dateTo": date_to}),
+        ("GET /api/v2/guide", f"{url}/api/v2/guide", None),
+        ("GET /api/v2/guide/channels", f"{url}/api/v2/guide/channels", {"dateFrom": date_from, "dateTo": date_to}),
+        # Programming / lineup / schedule
+        ("GET /api/channels/{id}/programming", f"{url}/api/channels/{tid}/programming", None),
+        ("GET /api/channels/{id}/lineup", f"{url}/api/channels/{tid}/lineup", {"from": date_from, "to": date_to}),
+        ("GET /api/channels/{id}/schedule", f"{url}/api/channels/{tid}/schedule", None),
+        ("GET /api/v2/channels/{id}/programming", f"{url}/api/v2/channels/{tid}/programming", None),
+        ("GET /api/v2/channels/{id}/lineup", f"{url}/api/v2/channels/{tid}/lineup", {"from": date_from, "to": date_to}),
+        ("GET /api/v2/channels/{id}/schedule", f"{url}/api/v2/channels/{tid}/schedule", None),
+        # Lineup with dateFrom (alt params)
+        ("GET /api/channels/{id}/lineup?dateFrom", f"{url}/api/channels/{tid}/lineup", {"dateFrom": date_from, "dateTo": date_to}),
+        # Shows
+        ("GET /api/channels/{id}/shows", f"{url}/api/channels/{tid}/shows", None),
+        ("GET /api/shows", f"{url}/api/shows", None),
+        # XMLTV / EPG
+        ("GET /api/xmltv.xml", f"{url}/api/xmltv.xml", None),
+        # Health
+        ("GET /api/health", f"{url}/api/health", None),
+        ("GET /health", f"{url}/health", None),
+    ]
+
+    results = {"tunarr_url": url, "channel_id_used": tid, "links_count": len(links)}
+    api_results = {}
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
-    if r.status_code == 404:
-        return []
-    if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr error")
-    return _extract_schedule_items(r.json())
+        for name, path, params in probe_paths:
+            try:
+                if params:
+                    r = await client.get(path, params=params)
+                else:
+                    r = await client.get(path)
+                info = {"status": r.status_code}
+                if r.status_code == 200:
+                    ct = r.headers.get("content-type", "")
+                    if "json" in ct:
+                        body = r.json()
+                        info["type"] = type(body).__name__
+                        if isinstance(body, list):
+                            info["count"] = len(body)
+                            if body:
+                                info["first_keys"] = list(body[0].keys()) if isinstance(body[0], dict) else str(type(body[0]))
+                                info["sample"] = body[0] if isinstance(body[0], dict) and len(str(body[0])) < 500 else "..."
+                        elif isinstance(body, dict):
+                            info["keys"] = list(body.keys())
+                            # Show short values
+                            for k, v in body.items():
+                                if isinstance(v, list):
+                                    info[f"len({k})"] = len(v)
+                                    if v and isinstance(v[0], dict) and len(str(v[0])) < 500:
+                                        info[f"first_{k}"] = v[0]
+                                elif isinstance(v, (str, int, float, bool)):
+                                    info[k] = v
+                    elif "xml" in ct:
+                        info["type"] = "xml"
+                        info["size"] = len(r.text)
+                    else:
+                        info["type"] = ct
+                api_results[name] = info
+            except Exception as e:
+                api_results[name] = {"status": "error", "error": str(e)[:100]}
+    results["api_probes"] = api_results
+    return results
 
 @app.get("/api/tunarr/channels/{tunarr_id}/shows")
 async def tunarr_get_channel_shows(tunarr_id: str):
@@ -3114,31 +4120,80 @@ async def tunarr_get_channel_shows(tunarr_id: str):
 
 @app.get("/api/tunarr/guide")
 async def tunarr_guide(hours: int = Query(24)):
-    """Fetch program guide data for all linked Tunarr channels."""
+    """Fetch materialized EPG data from Tunarr's guide API for all linked channels."""
+    from datetime import datetime, timezone, timedelta
     url = get_tunarr_url()
     with get_db() as conn:
         links = [dict(r) for r in conn.execute("SELECT * FROM tunarr_channel_links").fetchall()]
     if not links:
         return {"channels": []}
+
+    now = datetime.now(timezone.utc)
+    date_from = now.isoformat()
+    date_to = (now + timedelta(hours=hours)).isoformat()
+    link_by_tunarr_id = {l["tunarr_id"]: l for l in links}
+    linked_ids = set(link_by_tunarr_id.keys())
+
     guide_channels = []
     async with httpx.AsyncClient(timeout=15.0) as client:
+        # Strategy: fetch per-channel to avoid format guessing with the bulk API
         for link in links:
             tunarr_id = link["tunarr_id"]
-            try:
-                r = await client.get(f"{url}/api/channels/{tunarr_id}/schedule")
-                schedule = _extract_schedule_items(r.json()) if r.status_code == 200 else []
-            except Exception:
-                schedule = []
-            # Normalize schedule items
             items = []
-            for item in schedule:
-                items.append({
-                    "startTime": item.get("startTime") or item.get("start_time") or "",
-                    "duration": item.get("duration", 0),
-                    "type": item.get("type", ""),
-                    "title": item.get("title", "Unknown"),
-                    "episode": item.get("episode"),
-                })
+
+            # 1. Try per-channel guide API (most reliable)
+            try:
+                r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
+                                     params={"dateFrom": date_from, "dateTo": date_to})
+                if r.status_code == 200:
+                    data = r.json()
+                    log.debug("Tunarr guide response for %s: type=%s keys=%s",
+                              tunarr_id, type(data).__name__,
+                              list(data.keys())[:5] if isinstance(data, dict) else f"list[{len(data)}]" if isinstance(data, list) else "?")
+                    # Extract programs from various response shapes
+                    programs = []
+                    if isinstance(data, list):
+                        programs = data
+                    elif isinstance(data, dict):
+                        programs = data.get("programs", data.get("items", data.get("lineup", [])))
+                        if not programs and isinstance(programs, list):
+                            programs = []
+                    items = _normalize_guide_programs(programs)
+            except Exception as e:
+                log.warning("Tunarr guide for %s failed: %s", tunarr_id, e)
+
+            # 2. Fallback: channel lineup API
+            if not items:
+                try:
+                    r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
+                                         params={"from": date_from, "to": date_to})
+                    if r.status_code == 200:
+                        raw = r.json()
+                        raw_items = raw if isinstance(raw, list) else raw.get("items", raw.get("programs", []))
+                        items = _normalize_guide_programs(raw_items)
+                        if items:
+                            log.debug("Tunarr lineup fallback returned %d items for %s", len(items), tunarr_id)
+                except Exception as e:
+                    log.warning("Tunarr lineup for %s failed: %s", tunarr_id, e)
+
+            # 3. Last fallback: bulk guide API with channel filtering
+            if not items:
+                try:
+                    r = await client.get(f"{url}/api/guide/channels",
+                                         params={"dateFrom": date_from, "dateTo": date_to})
+                    if r.status_code == 200:
+                        bulk = r.json()
+                        log.debug("Tunarr bulk guide: type=%s", type(bulk).__name__)
+                        if isinstance(bulk, dict):
+                            # Dict keyed by channel UUID
+                            ch_data = bulk.get(tunarr_id, bulk.get("channels", {}).get(tunarr_id))
+                            if isinstance(ch_data, list):
+                                items = _normalize_guide_programs(ch_data)
+                            elif isinstance(ch_data, dict):
+                                items = _normalize_guide_programs(ch_data.get("programs", []))
+                except Exception:
+                    pass
+
             guide_channels.append({
                 "channel_number": link["channel_number"],
                 "tunarr_id": tunarr_id,
@@ -3146,7 +4201,357 @@ async def tunarr_guide(hours: int = Query(24)):
                 "tunarr_number": link.get("tunarr_number"),
                 "schedule": items,
             })
+            if items:
+                log.info("Guide: CH %s (%s) — %d programs", link["channel_number"], link.get("tunarr_name", ""), len(items))
+            else:
+                log.warning("Guide: CH %s (%s) — no programs found", link["channel_number"], link.get("tunarr_name", ""))
+
     return {"channels": guide_channels}
+
+# ── Tunarr channel import/export ─────────────────────────────────────────────
+
+class TunarrImportAction(BaseModel):
+    tunarr_id: str
+    action: str  # "link", "create", "skip"
+    cable_plex_number: int | None = None
+
+class TunarrImportRequest(BaseModel):
+    actions: list[TunarrImportAction]
+
+@app.post("/api/tunarr/import-channels/preview")
+async def tunarr_import_preview(body: dict | None = None):
+    """Preview how Tunarr channels would map to Cable Plex channels."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(f"{url}/api/channels")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "Could not fetch Tunarr channels")
+    tunarr_channels = r.json() if isinstance(r.json(), list) else []
+
+    # Filter by IDs if provided
+    channel_ids = (body or {}).get("channel_ids")
+    if channel_ids and channel_ids != "all":
+        id_set = set(channel_ids)
+        tunarr_channels = [c for c in tunarr_channels if c.get("id") in id_set]
+
+    # Load Cable Plex channels and existing links
+    with get_db() as conn:
+        cp_rows = conn.execute("SELECT * FROM channels").fetchall()
+        links = conn.execute("SELECT * FROM tunarr_channel_links").fetchall()
+    cp_by_number = {r["number"]: dict(r) for r in cp_rows}
+    cp_by_name = {r["name"].lower(): dict(r) for r in cp_rows}
+    linked_tunarr_ids = {r["tunarr_id"] for r in links}
+    linked_cp_numbers = {r["channel_number"] for r in links}
+
+    preview = []
+    for tc in tunarr_channels:
+        tid = tc.get("id", "")
+        tnum = tc.get("number", 0)
+        tname = tc.get("name", "")
+
+        if tid in linked_tunarr_ids:
+            match_type = "already_linked"
+            matched_channel = None
+        elif tnum in cp_by_number and tnum not in linked_cp_numbers:
+            match_type = "number"
+            matched_channel = cp_by_number[tnum]
+        elif tname.lower() in cp_by_name:
+            candidate = cp_by_name[tname.lower()]
+            if candidate["number"] not in linked_cp_numbers:
+                match_type = "name"
+                matched_channel = candidate
+            else:
+                match_type = None
+                matched_channel = None
+        else:
+            match_type = None
+            matched_channel = None
+
+        preview.append({
+            "tunarr_id": tid,
+            "tunarr_name": tname,
+            "tunarr_number": tnum,
+            "match": match_type,
+            "cable_plex_channel": {"number": matched_channel["number"], "name": matched_channel["name"]} if matched_channel else None,
+        })
+
+    return {"channels": preview}
+
+@app.post("/api/tunarr/import-channels")
+async def tunarr_import_channels(body: TunarrImportRequest):
+    """Execute channel import from Tunarr into Cable Plex."""
+    url = get_tunarr_url()
+    # Fetch Tunarr channel details for creates
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(f"{url}/api/channels")
+    tunarr_map = {}
+    if r.status_code == 200:
+        for c in (r.json() if isinstance(r.json(), list) else []):
+            tunarr_map[c.get("id", "")] = c
+
+    results = {"linked": 0, "created": 0, "skipped": 0, "details": []}
+
+    with get_db() as conn:
+        for act in body.actions:
+            if act.action == "skip":
+                results["skipped"] += 1
+                results["details"].append({"tunarr_id": act.tunarr_id, "action": "skipped"})
+                continue
+
+            tc = tunarr_map.get(act.tunarr_id, {})
+            tname = tc.get("name", "Channel")
+            tnum = tc.get("number", 0)
+
+            if act.action == "link" and act.cable_plex_number:
+                cp_num = act.cable_plex_number
+            elif act.action == "create":
+                cp_num = tnum or (max((r["number"] for r in conn.execute("SELECT number FROM channels")), default=99) + 1)
+                conn.execute(
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    (cp_num, tname, "Galaxy Main", "", "Shuffle", "", "blue"),
+                )
+                results["created"] += 1
+            else:
+                results["skipped"] += 1
+                continue
+
+            conn.execute(
+                "INSERT OR REPLACE INTO tunarr_channel_links (channel_number, tunarr_id, tunarr_name, tunarr_number) VALUES (?,?,?,?)",
+                (cp_num, act.tunarr_id, tname, tnum),
+            )
+            results["linked"] += 1
+            results["details"].append({"tunarr_id": act.tunarr_id, "action": act.action, "channel_number": cp_num})
+
+    return results
+
+class TunarrExportRequest(BaseModel):
+    channel_numbers: list[int] | str  # list of numbers or "all"
+    sync_collections: bool = False
+
+@app.post("/api/tunarr/export-channels")
+async def tunarr_export_channels(body: TunarrExportRequest):
+    """Export Cable Plex channels to Tunarr (create or link)."""
+    url = get_tunarr_url()
+
+    with get_db() as conn:
+        if body.channel_numbers == "all":
+            cp_channels = [dict(r) for r in conn.execute("SELECT * FROM channels").fetchall()]
+        else:
+            placeholders = ",".join("?" * len(body.channel_numbers))
+            cp_channels = [dict(r) for r in conn.execute(
+                f"SELECT * FROM channels WHERE number IN ({placeholders})", body.channel_numbers
+            ).fetchall()]
+        existing_links = {r["channel_number"]: dict(r) for r in conn.execute("SELECT * FROM tunarr_channel_links").fetchall()}
+
+
+    # Fetch existing Tunarr channels for matching
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(f"{url}/api/channels")
+    tunarr_channels = r.json() if r.status_code == 200 and isinstance(r.json(), list) else []
+    tunarr_by_number = {c.get("number"): c for c in tunarr_channels}
+
+    # Get ffmpeg settings for channel creation
+    ffmpeg_r = await httpx.AsyncClient(timeout=5).get(f"{url}/api/ffmpeg-settings")
+    transcode_id = None
+    if ffmpeg_r.status_code == 200:
+        transcode_id = ffmpeg_r.json().get("defaultTranscodeConfigId") or ffmpeg_r.json().get("configId")
+
+    results = {"exported": 0, "linked": 0, "created": 0, "skipped": 0, "details": []}
+
+    for cp in cp_channels:
+        cp_num = cp["number"]
+        if cp_num in existing_links:
+            results["skipped"] += 1
+            results["details"].append({"channel_number": cp_num, "action": "already_linked"})
+            continue
+
+        # Try match by number in Tunarr
+        if cp_num in tunarr_by_number:
+            tc = tunarr_by_number[cp_num]
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO tunarr_channel_links VALUES (?,?,?,?)",
+                    (cp_num, tc["id"], tc.get("name"), tc.get("number")),
+                )
+            results["linked"] += 1
+            results["details"].append({"channel_number": cp_num, "action": "linked", "tunarr_id": tc["id"]})
+        else:
+            # Create new Tunarr channel
+            payload = {
+                "name": cp.get("name", f"Channel {cp_num}"),
+                "number": cp_num,
+                "groupTitle": cp.get("tier", "Linearr"),
+                "startTime": _previous_sunday_midnight_ms(),
+                "transcoding": {"targetResolution": "1920x1080"},
+                "offline": {"mode": "pic"},
+                "stealth": False,
+                "disableFillerOverlay": True,
+                "guideMinimumDuration": 30000,
+                "streamMode": "hls",
+            }
+            if transcode_id:
+                payload["transcodeConfigId"] = transcode_id
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                cr = await client.post(f"{url}/api/channels", json=payload)
+            if cr.status_code in (200, 201):
+                new_ch = cr.json()
+                with get_db() as conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO tunarr_channel_links VALUES (?,?,?,?)",
+                        (cp_num, new_ch["id"], new_ch.get("name"), new_ch.get("number")),
+                    )
+                results["created"] += 1
+                results["details"].append({"channel_number": cp_num, "action": "created", "tunarr_id": new_ch["id"]})
+            else:
+                results["skipped"] += 1
+                results["details"].append({"channel_number": cp_num, "action": "error", "message": cr.text[:200]})
+
+        results["exported"] += 1
+
+    return results
+
+# ── Tunarr XMLTV/M3U ──────────────────────────────────────────────────────────
+
+@app.get("/api/tunarr/xmltv")
+async def tunarr_xmltv():
+    """Proxy the Tunarr XMLTV file download."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{url}/api/xmltv.xml")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "Tunarr XMLTV error")
+    return StreamingResponse(
+        iter([r.content]),
+        media_type="application/xml",
+        headers={"Content-Disposition": "attachment; filename=xmltv.xml"},
+    )
+
+@app.get("/api/tunarr/m3u")
+async def tunarr_m3u():
+    """Proxy the Tunarr M3U playlist download."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{url}/api/channels.m3u")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "Tunarr M3U error")
+    return StreamingResponse(
+        iter([r.content]),
+        media_type="audio/x-mpegurl",
+        headers={"Content-Disposition": "attachment; filename=channels.m3u"},
+    )
+
+@app.post("/api/tunarr/xmltv/refresh")
+async def tunarr_xmltv_refresh():
+    """Force XMLTV guide refresh in Tunarr."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(f"{url}/api/xmltv/refresh")
+    return {"ok": r.status_code in (200, 204)}
+
+@app.get("/api/tunarr/xmltv-settings")
+async def tunarr_get_xmltv_settings():
+    """Get Tunarr XMLTV settings."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/xmltv-settings")
+    if r.status_code != 200:
+        return {}
+    return r.json()
+
+@app.put("/api/tunarr/xmltv-settings")
+async def tunarr_update_xmltv_settings(request: Request):
+    """Update Tunarr XMLTV settings."""
+    body = await request.json()
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.put(f"{url}/api/xmltv-settings", json=body)
+    if r.status_code not in (200, 204):
+        raise HTTPException(r.status_code, "Failed to update XMLTV settings")
+    return {"ok": True}
+
+# ── Tunarr Sessions ───────────────────────────────────────────────────────────
+
+@app.get("/api/tunarr/sessions")
+async def tunarr_sessions():
+    """Get active streaming sessions from Tunarr."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/sessions")
+    if r.status_code != 200:
+        return {}
+    return r.json()
+
+@app.delete("/api/tunarr/sessions/{channel_id}")
+async def tunarr_kill_sessions(channel_id: str):
+    """Kill all sessions for a Tunarr channel."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.delete(f"{url}/api/channels/{channel_id}/sessions")
+    return {"ok": r.status_code in (200, 204)}
+
+# ── Tunarr Filler Lists ──────────────────────────────────────────────────────
+
+@app.get("/api/tunarr/filler-lists")
+async def tunarr_filler_lists():
+    """List all filler lists from Tunarr."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/filler-lists")
+    if r.status_code != 200:
+        return []
+    return r.json() if isinstance(r.json(), list) else []
+
+@app.get("/api/tunarr/filler-lists/{filler_id}")
+async def tunarr_filler_list_detail(filler_id: str):
+    """Get a filler list with its programs."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/filler-lists/{filler_id}")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "Filler list not found")
+    return r.json()
+
+@app.post("/api/tunarr/filler-lists")
+async def tunarr_create_filler_list(request: Request):
+    """Create a new filler list in Tunarr."""
+    body = await request.json()
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(f"{url}/api/filler-lists", json=body)
+    if r.status_code not in (200, 201):
+        raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+    return r.json()
+
+@app.put("/api/tunarr/filler-lists/{filler_id}")
+async def tunarr_update_filler_list(filler_id: str, request: Request):
+    """Update a filler list in Tunarr."""
+    body = await request.json()
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.put(f"{url}/api/filler-lists/{filler_id}", json=body)
+    if r.status_code not in (200, 204):
+        raise HTTPException(r.status_code, "Failed to update filler list")
+    return r.json() if r.status_code == 200 else {"ok": True}
+
+@app.delete("/api/tunarr/filler-lists/{filler_id}")
+async def tunarr_delete_filler_list(filler_id: str):
+    """Delete a filler list from Tunarr."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.delete(f"{url}/api/filler-lists/{filler_id}")
+    if r.status_code not in (200, 204):
+        raise HTTPException(r.status_code, "Failed to delete filler list")
+    return {"ok": True}
+
+@app.get("/api/tunarr/filler-lists/{filler_id}/programs")
+async def tunarr_filler_list_programs(filler_id: str):
+    """Get programs in a filler list."""
+    url = get_tunarr_url()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{url}/api/filler-lists/{filler_id}/programs")
+    if r.status_code != 200:
+        return []
+    return r.json() if isinstance(r.json(), list) else []
 
 @app.get("/api/tunarr/smart-collections")
 async def tunarr_list_smart_collections():
@@ -3406,7 +4811,7 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
         slots.append({
             "type": "smart-collection",
             "smartCollectionId": base_col["tunarr_collection_id"],
-            "startTime": 0,
+            "startTime": _previous_sunday_midnight_ms(),
             "order": "ordered_shuffle",
             "direction": "asc",
             "padMs": 0,
@@ -3596,6 +5001,123 @@ def export_channel(channel_number: int):
         "block_slots": slots,
         "channel_collections": collections,
     }
+
+def _presets_dir() -> Path:
+    """User-writable preset directory in the data volume.
+    Users can drop custom lineup JSON files here to make them importable."""
+    d = DB_PATH.parent / "presets"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+@app.get("/api/presets/lineups")
+def list_preset_lineups():
+    """List lineup JSON files in the user's data/presets/ directory."""
+    presets_dir = _presets_dir()
+    out = []
+    for p in presets_dir.glob("*.json"):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            out.append({
+                "id": p.stem,
+                "name": data.get("name", p.stem),
+                "description": data.get("description", ""),
+                "channel_count": len(data.get("channels", [])),
+            })
+        except Exception:
+            continue
+    return out
+
+@app.post("/api/presets/lineups/{lineup_id}/import")
+async def import_preset_lineup(lineup_id: str, request: Request):
+    """Import a shipped preset lineup (e.g., the Galaxy Network lineup).
+    Body: {mode: 'merge'|'replace'} (default 'merge')."""
+    # Sanitize lineup_id to prevent path traversal
+    if not lineup_id.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(400, "Invalid lineup id")
+    file_path = _presets_dir() / f"{lineup_id}.json"
+    if not file_path.exists():
+        raise HTTPException(404, f"Preset lineup '{lineup_id}' not found")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to read preset: {e}")
+
+    body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
+    mode = body.get("mode", "merge")
+    return _import_lineup_data(data, mode)
+
+def _import_lineup_data(data: dict, mode: str) -> dict:
+    """Shared lineup import logic used by both /api/import/lineup and preset imports."""
+    channels = data.get("channels", [])
+    assignments = data.get("assignments", [])
+    blocks = data.get("blocks", [])
+    block_slots = data.get("block_slots", [])
+
+    stats = {"channels_added": 0, "assignments_added": 0, "blocks_added": 0, "slots_added": 0}
+    with get_db() as conn:
+        if mode == "replace":
+            conn.execute("DELETE FROM block_slots")
+            conn.execute("DELETE FROM blocks")
+            conn.execute("DELETE FROM assignments")
+            conn.execute("DELETE FROM channels")
+
+        for ch in channels:
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, icon) VALUES (?,?,?,?,?,?,?,?)",
+                    (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"), ch.get("vibe", ""),
+                     ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue"),
+                     ch.get("icon")),
+                )
+                stats["channels_added"] += 1
+            except Exception:
+                pass
+
+        block_id_map = {}
+        for blk in blocks:
+            try:
+                old_id = blk.get("id")
+                cur = conn.execute(
+                    "INSERT INTO blocks (name, channel_number, days, start_time, end_time, content_type, notes, order_index) VALUES (?,?,?,?,?,?,?,?)",
+                    (blk["name"], blk.get("channel_number"), blk.get("days", "[]"),
+                     blk.get("start_time", "00:00"), blk.get("end_time", "23:59"),
+                     blk.get("content_type", "both"), blk.get("notes", ""), blk.get("order_index", 0)),
+                )
+                if old_id is not None:
+                    block_id_map[old_id] = cur.lastrowid
+                stats["blocks_added"] += 1
+            except Exception:
+                pass
+
+        for slot in block_slots:
+            try:
+                block_id = block_id_map.get(slot.get("block_id"), slot.get("block_id"))
+                if block_id is None:
+                    continue
+                conn.execute(
+                    "INSERT INTO block_slots (block_id, slot_time, plex_rating_key, plex_title, plex_type, plex_thumb, plex_year, duration_minutes) VALUES (?,?,?,?,?,?,?,?)",
+                    (block_id, slot["slot_time"], slot["plex_rating_key"], slot["plex_title"],
+                     slot["plex_type"], slot.get("plex_thumb"), slot.get("plex_year"),
+                     slot.get("duration_minutes", 60)),
+                )
+                stats["slots_added"] += 1
+            except Exception:
+                pass
+
+        for a in assignments:
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO assignments (channel_number, plex_rating_key, plex_title, plex_type, plex_thumb, plex_year) VALUES (?,?,?,?,?,?)",
+                    (a["channel_number"], a["plex_rating_key"], a["plex_title"], a["plex_type"],
+                     a.get("plex_thumb"), a.get("plex_year")),
+                )
+                stats["assignments_added"] += 1
+            except Exception:
+                pass
+
+    return {"ok": True, "mode": mode, "stats": stats}
 
 @app.post("/api/import/lineup")
 async def import_lineup(request: Request):

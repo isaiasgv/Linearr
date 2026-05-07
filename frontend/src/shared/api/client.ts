@@ -1,8 +1,20 @@
 const REQUEST_TIMEOUT = 30_000 // 30s
+const AI_TIMEOUT = 300_000 // 5min for AI endpoints
+
+function isAiPath(path: string): boolean {
+  return (
+    path === '/api/network/ai-advisor' ||
+    path === '/api/channels/ai-suggest' ||
+    path === '/api/blocks/ai-generate-day' ||
+    path === '/api/ai-test' ||
+    /^\/api\/channels\/\d+\/ai-content-suggestions/.test(path)
+  )
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
+  const timeout = isAiPath(path) ? AI_TIMEOUT : REQUEST_TIMEOUT
+  const timer = setTimeout(() => controller.abort(), timeout)
 
   try {
     const res = await fetch(path, {

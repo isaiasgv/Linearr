@@ -1,7 +1,14 @@
 import { create } from 'zustand'
 import type { Channel, Block, ModalName } from '@/shared/types'
 
-export type ActiveView = 'channel' | 'generic' | 'tunarr' | 'cableplex' | 'plex' | 'icons'
+export type ActiveView =
+  | 'channel'
+  | 'generic'
+  | 'tunarr'
+  | 'cableplex'
+  | 'plex'
+  | 'icons'
+  | 'settings'
 export type ActiveChannelTab = 'content' | 'blocks' | 'tunarr'
 export type TierFilter = 'All' | 'Galaxy Main' | 'Classics' | 'Galaxy Premium'
 export type AssignedTypeFilter = 'all' | 'tv' | 'movies'
@@ -29,6 +36,11 @@ interface UIState {
   itemDetailRatingKey: string | null
   aiContentAdvisorChannel: number | null
   tunarrPreviewData: unknown | null
+  iconPickerCallback: ((dataUrl: string) => void) | null
+  iconEditorCallback: ((dataUrl: string, composition?: unknown) => void) | null
+  iconEditorComposition: unknown | null
+  iconEditorId: number | null
+  iconEditorName: string | null
 
   // Actions
   selectChannel: (channel: Channel | null) => void
@@ -54,6 +66,7 @@ const defaultModals: Record<ModalName, boolean> = {
   templatesLibrary: false,
   tunarrCollectionPicker: false,
   iconEditor: false,
+  iconPicker: false,
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -75,6 +88,11 @@ export const useUIStore = create<UIState>((set) => ({
   itemDetailRatingKey: null,
   aiContentAdvisorChannel: null,
   tunarrPreviewData: null,
+  iconPickerCallback: null,
+  iconEditorCallback: null,
+  iconEditorComposition: null,
+  iconEditorId: null,
+  iconEditorName: null,
 
   // Close sidebar on mobile when navigating
   selectChannel: (channel) =>

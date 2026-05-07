@@ -11,6 +11,7 @@ import { ChannelDetail } from '@/features/channels/components/ChannelDetail'
 import { EmptyState } from '@/features/channels/components/EmptyState'
 import { useChannels } from '@/features/channels/hooks'
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts'
+import { Logo } from '@/shared/components/ui/Logo'
 
 // Lazy-load modals and heavy views — only loaded when first opened/displayed
 const ChannelFormModal = lazy(() =>
@@ -28,9 +29,9 @@ const TemplatesLibraryModal = lazy(() =>
     default: m.TemplatesLibraryModal,
   })),
 )
-const SettingsModal = lazy(() =>
-  import('@/features/settings/components/SettingsModal').then((m) => ({
-    default: m.SettingsModal,
+const SettingsView = lazy(() =>
+  import('@/features/settings/components/SettingsView').then((m) => ({
+    default: m.SettingsView,
   })),
 )
 const CollectionPickerModal = lazy(() =>
@@ -66,6 +67,11 @@ const TunarrCollectionPickerModal = lazy(() =>
 const IconEditorModal = lazy(() =>
   import('@/features/channels/components/IconEditorModal').then((m) => ({
     default: m.IconEditorModal,
+  })),
+)
+const IconPickerModal = lazy(() =>
+  import('@/features/channels/components/IconPickerModal').then((m) => ({
+    default: m.IconPickerModal,
   })),
 )
 const TunarrView = lazy(() =>
@@ -111,8 +117,11 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen bg-slate-950 text-slate-100 items-center justify-center">
-        <Spinner size="lg" />
+      <div className="flex flex-col h-screen bg-[#020617] items-center justify-center">
+        <div style={{ animation: 'splash-pulse 2s ease-in-out infinite' }}>
+          <Logo size={80} />
+        </div>
+        <p className="mt-4 text-lg font-semibold tracking-wide text-slate-400">Linearr</p>
       </div>
     )
   }
@@ -133,12 +142,12 @@ export default function App() {
         {activeView === 'cableplex' && <CablePlexView />}
         {activeView === 'plex' && <PlexView />}
         {activeView === 'icons' && <IconLibraryView />}
+        {activeView === 'settings' && <SettingsView />}
 
         {/* Modals — lazy-loaded, only fetched when first opened */}
         <ChannelFormModal />
         <BlockFormModal />
         <TemplatesLibraryModal />
-        <SettingsModal />
         <CollectionPickerModal />
         <ItemDetailModal />
         <AiContentAdvisorModal />
@@ -146,6 +155,7 @@ export default function App() {
         <TunarrPreviewModal />
         <TunarrCollectionPickerModal />
         <IconEditorModal />
+        <IconPickerModal />
       </Suspense>
     </AppLayout>
   )

@@ -12,7 +12,17 @@ import {
   useTunarrVersionCheck,
   useUpdateSmartCollection,
   useDeleteSmartCollection,
+  useImportPreview,
+  useImportChannels,
+  useExportChannels,
+  useRefreshXmltv,
+  useTunarrSessions,
+  useKillTunarrSessions,
+  useTunarrFillerLists,
+  useCreateFillerList,
+  useDeleteFillerList,
 } from '@/features/tunarr/hooks'
+import { useChannels } from '@/features/channels/hooks'
 import { use247Suggestions, useAiSuggestChannels } from '@/features/ai/hooks'
 import { useCreateChannel } from '@/features/channels/hooks'
 import { useSettings } from '@/features/settings/hooks'
@@ -547,6 +557,8 @@ function AiChannelSuggestions() {
 
 export function TunarrView() {
   const [showGuide, setShowGuide] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
   const { data: tunarrChannels = [], isLoading: loadingChannels } = useTunarrChannels()
   const { data: links = [] } = useTunarrLinks()
   const { data: smartCollections = [], isLoading: loadingCollections } = useTunarrSmartCollections()
@@ -554,6 +566,16 @@ export function TunarrView() {
   const { refreshGuide, scanLibraries } = useTunarrTasks()
   const testTunarr = useTestTunarr()
   const { data: versionCheck } = useTunarrVersionCheck()
+  const { data: cablePlexChannels = [] } = useChannels()
+  const importPreview = useImportPreview()
+  const importChannels = useImportChannels()
+  const exportChannels = useExportChannels()
+  const refreshXmltv = useRefreshXmltv()
+  const { data: tunarrSessions } = useTunarrSessions()
+  const killSessions = useKillTunarrSessions()
+  const { data: fillerLists = [] } = useTunarrFillerLists()
+  const createFillerList = useCreateFillerList()
+  const deleteFillerList = useDeleteFillerList()
 
   if (showGuide) {
     return (
@@ -580,7 +602,10 @@ export function TunarrView() {
       <div className="px-6 py-4 border-b border-slate-800 shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-slate-100">Tunarr Integration</h1>
+            <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+              <img src="/tunarr.svg" alt="Tunarr" className="w-5 h-5 rounded-sm" />
+              Tunarr Integration
+            </h1>
             <div className="flex items-center gap-2 mt-0.5">
               {settings?.tunarr_url && (
                 <span className="text-xs text-slate-500">{settings.tunarr_url}</span>
@@ -615,6 +640,41 @@ export function TunarrView() {
           >
             {testTunarr.isPending && <Spinner size="sm" />}
             Test Connection
+          </button>
+          <button
+            onClick={() => {
+              importPreview.mutate(undefined)
+              setShowImportModal(true)
+            }}
+            disabled={!settings?.tunarr_url}
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-800 hover:bg-blue-700 disabled:opacity-60 border border-blue-700 text-blue-100 rounded-lg text-xs font-medium transition-colors"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+            </svg>
+            Import
+          </button>
+          <button
+            onClick={() => setShowExportModal(true)}
+            disabled={!settings?.tunarr_url}
+            className="flex items-center gap-2 px-3 py-1.5 bg-violet-800 hover:bg-violet-700 disabled:opacity-60 border border-violet-700 text-violet-100 rounded-lg text-xs font-medium transition-colors"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+            </svg>
+            Export
           </button>
         </div>
       </div>
@@ -760,7 +820,360 @@ export function TunarrView() {
             </div>
           )}
         </section>
+
+        {/* XMLTV / M3U */}
+        <section>
+          <h2 className="text-sm font-semibold text-slate-100 mb-3">XMLTV / M3U</h2>
+          <div className="flex flex-wrap gap-3">
+            <a
+              href="/api/tunarr/xmltv"
+              download="xmltv.xml"
+              className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Download XMLTV
+            </a>
+            <a
+              href="/api/tunarr/m3u"
+              download="channels.m3u"
+              className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Download M3U
+            </a>
+            <button
+              onClick={() => refreshXmltv.mutate()}
+              disabled={refreshXmltv.isPending}
+              className="flex items-center gap-2 px-3 py-2 bg-emerald-800 hover:bg-emerald-700 border border-emerald-700 text-emerald-100 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            >
+              {refreshXmltv.isPending && <Spinner size="sm" />}
+              Refresh Guide
+            </button>
+          </div>
+          <p className="text-xs text-slate-600 mt-2">
+            Use these URLs in Plex or Jellyfin as a DVR tuner source.
+          </p>
+        </section>
+
+        {/* Active Sessions */}
+        {tunarrSessions && Object.keys(tunarrSessions).length > 0 && (
+          <section>
+            <h2 className="text-sm font-semibold text-slate-100 mb-3">Active Sessions</h2>
+            <div className="space-y-2">
+              {Object.entries(tunarrSessions).map(([channelId, sessions]) => (
+                <div
+                  key={channelId}
+                  className="flex items-center justify-between px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg"
+                >
+                  <div>
+                    <p className="text-sm text-slate-200">Channel {channelId}</p>
+                    <p className="text-xs text-slate-500">
+                      {Array.isArray(sessions) ? sessions.length : 1} active stream
+                      {Array.isArray(sessions) && sessions.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => killSessions.mutate(channelId)}
+                    disabled={killSessions.isPending}
+                    className="px-2 py-1 text-xs bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-400 rounded transition-colors disabled:opacity-50"
+                  >
+                    Kill
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Filler Lists */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-100">
+              Filler Lists
+              {fillerLists.length > 0 && (
+                <span className="ml-2 text-xs text-slate-500">({fillerLists.length})</span>
+              )}
+            </h2>
+            <button
+              onClick={() => {
+                const name = prompt('Filler list name:')
+                if (name?.trim()) createFillerList.mutate({ name: name.trim() })
+              }}
+              className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              + New Filler List
+            </button>
+          </div>
+          {fillerLists.length === 0 ? (
+            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
+              <p className="text-slate-500 text-sm">
+                No filler lists. Create one to add bumpers and interstitials.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {fillerLists.map((fl) => (
+                <div
+                  key={fl.id}
+                  className="flex items-center justify-between px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-slate-200">{fl.name}</p>
+                    {fl.count != null && (
+                      <p className="text-xs text-slate-500">
+                        {fl.count} item{fl.count !== 1 ? 's' : ''}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => deleteFillerList.mutate(fl.id)}
+                    disabled={deleteFillerList.isPending}
+                    className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                    title="Delete filler list"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
+
+      {/* Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col mx-4">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+              <h2 className="text-lg font-bold text-slate-100">Import Channels from Tunarr</h2>
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <svg
+                  className="w-5 h-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {importPreview.isPending ? (
+                <div className="flex justify-center py-8">
+                  <Spinner />
+                </div>
+              ) : importPreview.data?.channels.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-8">No Tunarr channels found</p>
+              ) : (
+                <div className="space-y-2">
+                  {(importPreview.data?.channels ?? []).map((ch) => (
+                    <div
+                      key={ch.tunarr_id}
+                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800 border border-slate-700"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-slate-200">
+                          CH {ch.tunarr_number} — {ch.tunarr_name}
+                        </p>
+                        {ch.match === 'already_linked' && (
+                          <p className="text-xs text-emerald-400">Already linked</p>
+                        )}
+                        {ch.match === 'number' && ch.cable_plex_channel && (
+                          <p className="text-xs text-blue-400">
+                            Matches Cable Plex CH {ch.cable_plex_channel.number} by number
+                          </p>
+                        )}
+                        {ch.match === 'name' && ch.cable_plex_channel && (
+                          <p className="text-xs text-blue-400">
+                            Matches &quot;{ch.cable_plex_channel.name}&quot; by name
+                          </p>
+                        )}
+                        {ch.match === null && (
+                          <p className="text-xs text-amber-400">
+                            No match — will create new channel
+                          </p>
+                        )}
+                      </div>
+                      {ch.match === 'already_linked' ? (
+                        <span className="text-xs text-slate-500">Linked</span>
+                      ) : (
+                        <select
+                          defaultValue={ch.match ? 'link' : 'create'}
+                          data-tunarr-id={ch.tunarr_id}
+                          data-cp-number={ch.cable_plex_channel?.number}
+                          className="text-xs bg-slate-700 border border-slate-600 text-slate-200 rounded px-2 py-1"
+                        >
+                          {ch.cable_plex_channel && (
+                            <option value="link">Link to CH {ch.cable_plex_channel.number}</option>
+                          )}
+                          <option value="create">Create new</option>
+                          <option value="skip">Skip</option>
+                        </select>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-slate-800">
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={importChannels.isPending || !importPreview.data?.channels.length}
+                onClick={() => {
+                  const selects = document.querySelectorAll<HTMLSelectElement>('[data-tunarr-id]')
+                  const actions: Array<{
+                    tunarr_id: string
+                    action: 'link' | 'create' | 'skip'
+                    cable_plex_number?: number
+                  }> = []
+                  selects.forEach((sel) => {
+                    const tid = sel.getAttribute('data-tunarr-id')!
+                    const cpNum = sel.getAttribute('data-cp-number')
+                    actions.push({
+                      tunarr_id: tid,
+                      action: sel.value as 'link' | 'create' | 'skip',
+                      cable_plex_number: cpNum ? parseInt(cpNum) : undefined,
+                    })
+                  })
+                  // Also include already-linked as skip
+                  for (const ch of importPreview.data?.channels ?? []) {
+                    if (ch.match === 'already_linked') continue
+                    if (!actions.find((a) => a.tunarr_id === ch.tunarr_id)) {
+                      actions.push({ tunarr_id: ch.tunarr_id, action: 'skip' })
+                    }
+                  }
+                  importChannels.mutate(actions, {
+                    onSuccess: () => setShowImportModal(false),
+                  })
+                }}
+                className="px-4 py-2 text-sm bg-blue-700 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {importChannels.isPending ? 'Importing…' : 'Import Selected'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col mx-4">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+              <h2 className="text-lg font-bold text-slate-100">Export Channels to Tunarr</h2>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <svg
+                  className="w-5 h-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {cablePlexChannels.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-8">No Cable Plex channels</p>
+              ) : (
+                <div className="space-y-2">
+                  {cablePlexChannels.map((ch) => {
+                    const isLinked = links.some((l) => l.channel_number === ch.number)
+                    return (
+                      <label
+                        key={ch.number}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${isLinked ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-800 border-slate-700'}`}
+                      >
+                        <input
+                          type="checkbox"
+                          defaultChecked={!isLinked}
+                          disabled={isLinked}
+                          data-channel-number={ch.number}
+                          className="rounded border-slate-600 bg-slate-700 text-violet-500 focus:ring-violet-500"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={`text-sm font-medium ${isLinked ? 'text-slate-500' : 'text-slate-200'}`}
+                          >
+                            CH {ch.number} — {ch.name}
+                          </p>
+                          {isLinked && (
+                            <p className="text-xs text-emerald-500">Already linked to Tunarr</p>
+                          )}
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-slate-800">
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={exportChannels.isPending}
+                onClick={() => {
+                  const checks = document.querySelectorAll<HTMLInputElement>(
+                    '[data-channel-number]:checked',
+                  )
+                  const nums = Array.from(checks).map((c) =>
+                    parseInt(c.getAttribute('data-channel-number')!),
+                  )
+                  if (nums.length === 0) return
+                  exportChannels.mutate(
+                    { channelNumbers: nums },
+                    { onSuccess: () => setShowExportModal(false) },
+                  )
+                }}
+                className="px-4 py-2 text-sm bg-violet-700 hover:bg-violet-600 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {exportChannels.isPending ? 'Exporting…' : 'Export Selected'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

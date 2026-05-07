@@ -1,0 +1,45 @@
+# Test environment — isolated Linearr + Tunarr on their own network.
+# Does NOT touch prod data, prod network, or prod containers.
+#
+# Usage:
+#   ./test.sh          (Linux/Mac)
+#   test.bat           (Windows)
+#
+# This creates:
+#   - linearr-test     (Linearr built from local source, port 8780)
+#   - tunarr-test      (Tunarr latest, port 8001)
+#   - linearr_test_net (isolated bridge network)
+#   - ./test-data/     (separate data directory, gitignored)
+
+services:
+  linearr:
+    build: .
+    image: linearr:test
+    container_name: linearr-test
+    ports:
+      - "8780:8888"
+    volumes:
+      - ./test-data/linearr:/app/data
+    environment:
+      - APP_USERNAME=admin
+      - APP_PASSWORD=test
+      - APP_SECRET=test-secret-not-for-prod
+      - TUNARR_URL=http://tunarr:8000
+    networks:
+      - linearr_test_net
+    depends_on:
+      - tunarr
+
+  tunarr:
+    image: chrisbenincasa/tunarr:latest
+    container_name: tunarr-test
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./test-data/tunarr:/config/tunarr
+    networks:
+      - linearr_test_net
+
+networks:
+  linearr_test_net:
+    driver: bridge
