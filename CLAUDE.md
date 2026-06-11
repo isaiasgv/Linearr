@@ -45,24 +45,25 @@ Self-hosted TV channel schedule manager for Plex and Tunarr (Galaxy Network). Ru
 
 ## Running Locally
 
+> Paths are relative to the **repo root** — `main.py`, `channels.py`, `frontend/`, and
+> `docker-compose.yml` all live there (there is no `tunarr/channels/channel-manager/` subdir).
+
 **Dev mode** (hot-reload frontend, backend on port 8888):
 ```bash
-# Terminal 1 — FastAPI backend
-cd tunarr/channels/channel-manager
+# Terminal 1 — FastAPI backend (repo root)
 docker compose up -d   # or: uvicorn main:app --reload --port 8888
 
 # Terminal 2 — Vite dev server (proxies /api → localhost:8888)
-cd tunarr/channels/channel-manager/frontend
+cd frontend
 npm run dev   # http://localhost:5173
 ```
 
-**Production build** (Docker):
+**Production build** (Docker, from repo root):
 ```bash
-cd tunarr/channels/channel-manager
 docker compose up --build -d
 ```
 
-Logs: `docker compose logs -f channel-manager`
+Logs: `docker compose logs -f linearr`
 
 The `.env` file must have `PLEX_TOKEN` set for any Plex API calls to work.
 
@@ -187,8 +188,20 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 - `GET /api/plex/thumb?path=` — proxies Plex thumbnail with auth token (**always `?path=`, never `?url=`**)
 
 ### Plex OAuth
-- `POST /api/plex/auth/start` — gets PIN from plex.tv, returns auth_url
+- `POST /api/plex/auth/start` — gets PIN from plex.tv, returns auth_url (legacy long-lived token)
 - `GET /api/plex/auth/status` — polls for fulfilled PIN, saves token to DB
+
+### Plex JWT auth ("API Unlocked")
+Modern device-keypair auth. Additive — legacy token auth still works and is the default
+until a JWT is enrolled. The minted token is stored as `plex_token` and used in the same
+`X-Plex-Token` header, so the rest of the app is unchanged. Tokens last ~7 days.
+- `POST /api/plex/auth/jwt/start` — generates/persists an Ed25519 device key, registers the JWK with `clients.plex.tv`, returns auth_url
+- `GET /api/plex/auth/jwt/status` — signs a deviceJWT, redeems the PIN, stores the token
+- `POST /api/plex/auth/jwt/refresh` — mints a fresh token from the device key
+- `GET /api/plex/auth/info` — `{mode: legacy|jwt, token_age_days, needs_refresh}`
+
+Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
+`plex_token_issued_at`. Requires the `cryptography` package (in `requirements.txt`).
 
 ### Collections
 - `GET /api/collections/status/{channel_number}`
@@ -214,9 +227,18 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 - `GET /api/settings` / `POST /api/settings`
 
 ### Tunarr
+> **Version support:** tested against Tunarr **1.3.6**; minimum supported **1.2.10**.
+> Support is a floor (`version >= TUNARR_MIN_VERSION`), not a ceiling — see
+> `TUNARR_MIN_VERSION` / `TUNARR_TESTED_VERSION` in `main.py`. Tunarr **1.3.0** renamed
+> the smart-collection search body field `filter` → `query`; writes pick the field by
+> version and retry with the other on a 400/422 (`_tunarr_write_smart_collection`).
+> Channel creates try the 1.3 `{"type":"new","channel":{…}}` shape then fall back to the
+> flat object (`_tunarr_create_channel`); schedule slots carry an `id` (1.3 linkable slots).
+
 - `GET /api/tunarr/channels`
 - `GET /api/tunarr/channels/{id}/schedule`
 - `GET /api/tunarr/channels/{id}/shows`
+- `GET /api/tunarr/custom-shows` — Tunarr 1.3 custom shows (`[]` on older)
 - `GET /api/tunarr/channel-links`
 - `POST /api/tunarr/channel-links` — body: `{channel_number, tunarr_id}`
 - `DELETE /api/tunarr/channel-links/{channel_number}`
@@ -259,9 +281,9 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 ## Deployment
 
 ```bash
-cd tunarr/channels/channel-manager
+# from repo root
 docker compose up --build -d
-docker compose logs -f channel-manager
+docker compose logs -f linearr
 ```
 
 Persistent data: `./data/` (gitignored). Secrets: `.env` (gitignored).
