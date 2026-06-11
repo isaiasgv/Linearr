@@ -134,6 +134,33 @@ export function SettingsView() {
     }
   }
 
+  // Modern JWT/JWK auth: the token is minted + stored server-side (tied to a
+  // device keypair), so unlike the legacy flow we don't echo it into the field.
+  const handleConnectPlexJwt = async () => {
+    try {
+      const { auth_url } = await plexApi.startJwtAuth()
+      window.open(auth_url, '_blank')
+      setIsPollingPlex(true)
+      pollingRef.current = setInterval(async () => {
+        try {
+          const status = await plexApi.jwtAuthStatus()
+          if (status.done) {
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current)
+              pollingRef.current = null
+            }
+            setIsPollingPlex(false)
+            testPlex.mutate() // re-verify the connection with the new token
+          }
+        } catch {
+          /* keep polling */
+        }
+      }, 2000)
+    } catch {
+      /* handled by toast */
+    }
+  }
+
   const handleFetchModels = () => {
     fetchAiModels.mutate(
       { openai_api_key: aiKey, openai_base_url: aiBaseUrl },
@@ -357,6 +384,14 @@ export function SettingsView() {
                     >
                       {isPollingPlex && <Spinner size="sm" />}
                       {isPollingPlex ? 'Waiting for auth...' : 'Connect with Plex'}
+                    </button>
+                    <button
+                      onClick={handleConnectPlexJwt}
+                      disabled={isPollingPlex}
+                      title="Modern device-keypair auth (Plex API Unlocked). Token is kept server-side and refreshes every ~7 days."
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-lg text-sm font-medium transition"
+                    >
+                      Connect with Plex (JWT)
                     </button>
                     {isPollingPlex && (
                       <p className="text-xs text-slate-400">Complete auth in the new tab</p>
