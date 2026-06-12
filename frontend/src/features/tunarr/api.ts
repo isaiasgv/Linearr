@@ -108,6 +108,11 @@ function getSmartCollections(): Promise<SmartCollection[]> {
   return get<SmartCollection[]>('/api/tunarr/smart-collections')
 }
 
+// Tunarr 1.3 custom shows (returns [] on older Tunarr).
+function getCustomShows(): Promise<Array<{ uuid?: string; id?: string; name?: string }>> {
+  return get<Array<{ uuid?: string; id?: string; name?: string }>>('/api/tunarr/custom-shows')
+}
+
 function updateSmartCollection(
   uuid: string,
   body: Partial<SmartCollection>,
@@ -285,6 +290,7 @@ export const tunarrApi = {
   runScanLibrariesTask,
   getChannelShows,
   getSmartCollections,
+  getCustomShows,
   updateSmartCollection,
   deleteSmartCollection,
   syncCollections,

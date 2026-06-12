@@ -69,6 +69,24 @@ function authStatus(): Promise<{ done: boolean; token?: string }> {
   return get<{ done: boolean; token?: string }>('/api/plex/auth/status')
 }
 
+// Modern JWT/JWK device auth (Plex "API Unlocked"). Same PIN popup UX as the
+// legacy flow, but mints a short-lived (~7-day) token tied to a device keypair.
+function startJwtAuth(): Promise<{ auth_url: string; pin_id: string; mode: string }> {
+  return post<{ auth_url: string; pin_id: string; mode: string }>('/api/plex/auth/jwt/start')
+}
+
+function jwtAuthStatus(): Promise<{ done: boolean; mode?: string }> {
+  return get<{ done: boolean; mode?: string }>('/api/plex/auth/jwt/status')
+}
+
+function refreshJwt(): Promise<{ ok: boolean; mode: string }> {
+  return post<{ ok: boolean; mode: string }>('/api/plex/auth/jwt/refresh')
+}
+
+function authInfo(): Promise<{ mode: string; has_token: boolean; token_age_days: number | null; needs_refresh: boolean }> {
+  return get('/api/plex/auth/info')
+}
+
 interface PlexServerInfo {
   server_name: string
   version: string
@@ -283,6 +301,10 @@ export const plexApi = {
   collectionItems,
   startAuth,
   authStatus,
+  startJwtAuth,
+  jwtAuthStatus,
+  refreshJwt,
+  authInfo,
   serverInfo,
   libraryStats,
   recentlyAdded,

@@ -16,3 +16,6 @@ bin/
 obj/
 .idea/
 *.tmp
+
+# Local diagnostic probe (not part of the shipped app)
+scripts/probe_upstreams.py

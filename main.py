@@ -460,7 +460,7 @@ async def _sync_channel_to_tunarr(channel_number: int):
     # Sync icon if present
     icon_data = ch.get("icon")
     if icon_data and icon_data.startswith("data:"):
-        update_data["icon"] = {"path": icon_data, "duration": 0, "width": 0, "position": "bottom-right"}
+        update_data["icon"] = _tunarr_icon_obj(icon_data)
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -482,20 +482,16 @@ async def _sync_channel_to_tunarr(channel_number: int):
                 ffmpeg_r = await client.get(f"{url}/api/ffmpeg-settings")
                 transcode_id = None
                 if ffmpeg_r.status_code == 200:
-                    transcode_id = ffmpeg_r.json().get("defaultTranscodeConfigId") or ffmpeg_r.json().get("configId")
-                payload = {
-                    **update_data,
-                    "startTime": _previous_sunday_midnight_ms(),
-                    "transcoding": {"targetResolution": "1920x1080"},
-                    "offline": {"mode": "pic"},
-                    "stealth": False,
-                    "disableFillerOverlay": True,
-                    "guideMinimumDuration": 30000,
-                    "streamMode": "hls",
-                }
-                if transcode_id:
-                    payload["transcodeConfigId"] = transcode_id
-                r = await client.post(f"{url}/api/channels", json=payload)
+                    fj = ffmpeg_r.json()
+                    transcode_id = fj.get("defaultTranscodeConfigId") or fj.get("configId") or fj.get("id")
+                channel_obj = _tunarr_channel_obj(
+                    name=ch.get("name", ""),
+                    number=ch.get("number", 0),
+                    group_title=ch.get("tier", "Linearr"),
+                    transcode_id=transcode_id,
+                    icon_data=icon_data if (icon_data and icon_data.startswith("data:")) else None,
+                )
+                r = await _tunarr_create_channel(client, url, channel_obj)
                 if r.status_code in (200, 201):
                     new_ch = r.json()
                     with get_db() as conn:
@@ -796,6 +792,8 @@ def plex_headers(token: str):
 
 PLEX_TV = "https://plex.tv"
 APP_NAME = "Linearr"
+# Reported to Plex as X-Plex-Version. Keep in sync with the release version.
+APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
 
 def _get_client_id() -> str:
     """Return a persistent client UUID, creating one if needed."""
@@ -811,10 +809,87 @@ def _plex_client_headers() -> dict:
     return {
         "X-Plex-Client-Identifier": _get_client_id(),
         "X-Plex-Product": APP_NAME,
-        "X-Plex-Version": "1.0.0",
+        "X-Plex-Version": APP_VERSION,
         "X-Plex-Platform": "Docker",
         "Accept": "application/json",
     }
+
+# ── Plex JWT / JWK device auth ("API Unlocked", Plex Pro Week '25) ──────────────
+# Modern Plex auth: the device holds an Ed25519 keypair, registers its public key
+# (JWK) when requesting a PIN, then proves possession of the private key by signing
+# a deviceJWT to redeem the PIN for a (7-day) token. The resulting token is used in
+# the SAME X-Plex-Token header as a legacy token, so the rest of the app is
+# unchanged. This whole flow is ADDITIVE — legacy long-lived tokens still work and
+# remain the default until a JWT has been successfully enrolled.
+#
+# NOTE: the exact wire contract (XML vs JSON on PIN redeem, refresh body) follows
+# Plex's documented Sept–Oct 2025 flow and should be confirmed against live
+# clients.plex.tv during verification; failures here never affect the legacy path.
+PLEX_CLIENTS = "https://clients.plex.tv"
+
+def _b64url(data: bytes) -> str:
+    import base64
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+def _get_device_keypair():
+    """Return (Ed25519PrivateKey, kid), generating + persisting one on first use."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+    with get_db() as conn:
+        priv_row = conn.execute("SELECT value FROM settings WHERE key='plex_device_privkey'").fetchone()
+        kid_row = conn.execute("SELECT value FROM settings WHERE key='plex_device_kid'").fetchone()
+    if priv_row and kid_row:
+        priv = serialization.load_pem_private_key(priv_row["value"].encode(), password=None)
+        return priv, kid_row["value"]
+    priv = Ed25519PrivateKey.generate()
+    pem = priv.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    kid = str(uuid.uuid4())
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_device_privkey', ?)", (pem,))
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_device_kid', ?)", (kid,))
+    return priv, kid
+
+def _device_public_jwk(priv, kid: str) -> dict:
+    from cryptography.hazmat.primitives import serialization
+    raw = priv.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)
+    return {"kty": "OKP", "crv": "Ed25519", "x": _b64url(raw), "kid": kid, "alg": "EdDSA"}
+
+def _sign_device_jwt(priv, kid: str, client_id: str) -> str:
+    """Build a compact EdDSA JWT signed with the device private key."""
+    import json as _json
+    header = {"alg": "EdDSA", "typ": "JWT", "kid": kid}
+    payload = {"aud": "plex.tv", "iss": client_id}
+    signing_input = "{}.{}".format(
+        _b64url(_json.dumps(header, separators=(",", ":")).encode()),
+        _b64url(_json.dumps(payload, separators=(",", ":")).encode()),
+    )
+    sig = priv.sign(signing_input.encode())
+    return f"{signing_input}.{_b64url(sig)}"
+
+def _extract_auth_token(resp) -> str | None:
+    """Pull an auth token out of a plex.tv PIN/refresh response (JSON or XML)."""
+    if "json" in resp.headers.get("content-type", ""):
+        try:
+            d = resp.json()
+            return d.get("authToken") or d.get("auth_token") or d.get("token") or d.get("jwt")
+        except Exception:
+            pass
+    import re
+    text = resp.text or ""
+    m = re.search(r'authToken="([^"]+)"', text) or re.search(r"<authToken>([^<]+)</authToken>", text)
+    return m.group(1) if m else None
+
+def _store_jwt_token(token: str) -> None:
+    import time as _t
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_token', ?)", (token,))
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_auth_mode', 'jwt')")
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_token_issued_at', ?)", (str(int(_t.time())),))
 
 @app.get("/api/plex/libraries")
 async def plex_libraries():
@@ -1313,6 +1388,105 @@ async def plex_auth_status():
     return {"done": False}
 
 
+@app.post("/api/plex/auth/jwt/start")
+async def plex_jwt_start():
+    """Begin modern JWT/JWK auth: register the device public key and request a PIN.
+
+    Unlike the legacy flow this needs no pre-existing token — the JWK in the PIN
+    request bootstraps trust. Returns the same kind of auth_url popup target.
+    """
+    try:
+        priv, kid = _get_device_keypair()
+    except ModuleNotFoundError:
+        raise HTTPException(501, "JWT auth requires the 'cryptography' package — rebuild the image")
+    client_id = _get_client_id()
+    jwk = _device_public_jwk(priv, kid)
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            f"{PLEX_CLIENTS}/api/v2/pins",
+            json={"jwk": jwk, "strong": True},
+            headers=_plex_client_headers(),
+        )
+    if resp.status_code not in (200, 201):
+        raise HTTPException(502, f"plex.tv JWT enroll error: {resp.status_code} {resp.text[:200]}")
+    data = resp.json()
+    pin_id, pin_code = data["id"], data["code"]
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('pending_jwt_pin_id', ?)", (str(pin_id),))
+    auth_url = (
+        f"https://app.plex.tv/auth#"
+        f"?clientID={client_id}"
+        f"&code={pin_code}"
+        f"&context[device][product]={APP_NAME}"
+    )
+    return {"pin_id": pin_id, "auth_url": auth_url, "mode": "jwt"}
+
+
+@app.get("/api/plex/auth/jwt/status")
+async def plex_jwt_status():
+    """Poll the pending JWT PIN, signing a deviceJWT to prove key possession."""
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key='pending_jwt_pin_id'").fetchone()
+    if not row:
+        raise HTTPException(400, "No pending JWT auth — call /jwt/start first")
+    pin_id = row["value"]
+    priv, kid = _get_device_keypair()
+    device_jwt = _sign_device_jwt(priv, kid, _get_client_id())
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+            f"{PLEX_CLIENTS}/api/v2/pins/{pin_id}",
+            params={"deviceJWT": device_jwt},
+            headers=_plex_client_headers(),
+        )
+    if resp.status_code != 200:
+        raise HTTPException(502, f"plex.tv error: {resp.status_code}")
+    token = _extract_auth_token(resp)
+    if token:
+        _store_jwt_token(token)
+        with get_db() as conn:
+            conn.execute("DELETE FROM settings WHERE key='pending_jwt_pin_id'")
+        return {"done": True, "mode": "jwt"}
+    return {"done": False}
+
+
+@app.post("/api/plex/auth/jwt/refresh")
+async def plex_jwt_refresh():
+    """Mint a fresh token using the device key (tokens last ~7 days)."""
+    priv, kid = _get_device_keypair()
+    device_jwt = _sign_device_jwt(priv, kid, _get_client_id())
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            f"{PLEX_CLIENTS}/api/v2/auth/token",
+            headers={**_plex_client_headers(), "Authorization": f"Bearer {device_jwt}"},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(502, f"plex.tv refresh error: {resp.status_code} {resp.text[:200]}")
+    token = _extract_auth_token(resp)
+    if not token:
+        raise HTTPException(502, "plex.tv refresh returned no token")
+    _store_jwt_token(token)
+    return {"ok": True, "mode": "jwt"}
+
+
+@app.get("/api/plex/auth/info")
+def plex_auth_info():
+    """Report the active Plex auth mode + token age so the UI can prompt to refresh."""
+    import time as _t
+    with get_db() as conn:
+        rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
+    mode = rows.get("plex_auth_mode", "legacy")
+    issued = rows.get("plex_token_issued_at")
+    age_days = round((int(_t.time()) - int(issued)) / 86400, 1) if issued else None
+    # Plex JWT tokens last ~7 days; surface a refresh hint as we approach that.
+    needs_refresh = bool(mode == "jwt" and age_days is not None and age_days >= 6)
+    return {
+        "mode": mode,
+        "has_token": bool(rows.get("plex_token")),
+        "token_age_days": age_days,
+        "needs_refresh": needs_refresh,
+    }
+
+
 @app.get("/api/plex/collections")
 async def plex_collections():
     """Fetch all collections from all Plex library sections."""
@@ -1658,21 +1832,26 @@ async def generate_collections(channel_number: int):
                 ).fetchall()
 
             async with httpx.AsyncClient(timeout=15.0) as tc:
-                # Fetch existing Tunarr smart collections
-                sr = await tc.get(f"{tunarr_url}/api/smart_collections")
+                version = await _fetch_tunarr_version(tc, tunarr_url)
+                sc_path = "/api/smart_collections"
+                # Fetch existing Tunarr smart collections (underscore, hyphen fallback)
+                sr = await tc.get(f"{tunarr_url}{sc_path}")
+                if sr.status_code == 404:
+                    sc_path = "/api/smart-collections"
+                    sr = await tc.get(f"{tunarr_url}{sc_path}")
                 existing_sc = {sc["name"]: sc for sc in (sr.json() if sr.status_code == 200 else [])}
 
                 created_sc, updated_sc = [], []
                 for col in plex_cols:
                     col = dict(col)
                     sc_name = col["collection_title"]
-                    structured_filter = _tunarr_tags_filter(sc_name)
+                    structured = _tunarr_tags_filter(sc_name)
                     if sc_name in existing_sc:
                         sc = existing_sc[sc_name]
-                        # Always PUT structured filter to ensure it's correct
-                        await tc.put(f"{tunarr_url}/api/smart_collections/{sc['uuid']}", json={
-                            "filter": structured_filter,
-                        })
+                        # Always re-write the structured search to ensure it's correct
+                        await _tunarr_write_smart_collection(
+                            tc, tunarr_url, sc_path, name=sc_name, structured=structured,
+                            uuid=sc["uuid"], version=version)
                         updated_sc.append(sc_name)
                         with get_db() as conn:
                             conn.execute(
@@ -1680,12 +1859,9 @@ async def generate_collections(channel_number: int):
                                 (channel_number, col["plex_type"], sc["uuid"], sc_name)
                             )
                     else:
-                        cr = await tc.post(f"{tunarr_url}/api/smart_collections", json={
-                            "name": sc_name,
-                            "filter": structured_filter,
-                            "keywords": "",
-                        })
-                        if cr.status_code in (200, 201):
+                        cr = await _tunarr_write_smart_collection(
+                            tc, tunarr_url, sc_path, name=sc_name, structured=structured, version=version)
+                        if cr is not None and cr.status_code in (200, 201):
                             sc = cr.json()
                             with get_db() as conn:
                                 conn.execute(
@@ -3593,7 +3769,15 @@ def log_stats():
 
 # ── Tunarr Integration ────────────────────────────────────────────────────────
 
-TUNARR_SUPPORTED_VERSION = "1.2.10"
+# Oldest Tunarr release whose API we still support, and the newest release we've
+# verified against. Support is a FLOOR (>= MIN), not a ceiling — newer Tunarr
+# releases are considered supported until proven otherwise.
+TUNARR_MIN_VERSION = "1.2.10"
+TUNARR_TESTED_VERSION = "1.3.6"
+# Tunarr 1.3.0 reworked smart-collection bodies and channel/slot schemas.
+TUNARR_V13 = "1.3.0"
+# Back-compat alias (referenced by older call sites / logs).
+TUNARR_SUPPORTED_VERSION = TUNARR_TESTED_VERSION
 
 def _previous_sunday_midnight_ms() -> int:
     """Return Unix epoch milliseconds for the most recent Sunday at 00:00:00 UTC."""
@@ -3618,6 +3802,54 @@ def get_tunarr_url() -> str:
     with get_db() as conn:
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
     return rows.get("tunarr_url", "http://tunarr:8000").rstrip("/")
+
+def _tunarr_icon_obj(data_uri: str | None) -> dict:
+    """Channel icon write object. A data:/http path sets a custom icon; an empty
+    path renders as none. (Tunarr 1.3 has three icon states custom/default/none —
+    an empty path is the "none" case and is accepted by 1.2.x too.)"""
+    return {"path": data_uri or "", "duration": 0, "width": 0, "position": "bottom-right"}
+
+def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
+                        channel_id: str | None = None, transcode_id: str | None = None,
+                        icon_data: str | None = None) -> dict:
+    """Build a Tunarr channel object for create/update using fields valid across 1.2.x–1.3.x."""
+    obj = {
+        "name": name,
+        "number": number,
+        "duration": 0,
+        "startTime": _previous_sunday_midnight_ms(),
+        "groupTitle": group_title,
+        "icon": _tunarr_icon_obj(icon_data),
+        "offline": {"mode": "pic"},
+        "stealth": False,
+        "disableFillerOverlay": True,
+        "guideMinimumDuration": 30000,
+        "streamMode": "hls",
+        "subtitlesEnabled": False,
+    }
+    if channel_id:
+        obj["id"] = channel_id
+    if transcode_id:
+        obj["transcodeConfigId"] = transcode_id
+    else:
+        obj["transcoding"] = {"targetResolution": "1920x1080"}
+    return obj
+
+async def _tunarr_create_channel(client: "httpx.AsyncClient", url: str, channel_obj: dict):
+    """POST a new channel, tolerating Tunarr's create-request shape change.
+
+    Tunarr 1.3.x expects a discriminated `{"type":"new","channel":{...}}` body
+    where the client supplies the channel id; older Tunarr accepted a flat channel
+    object and assigned the id server-side. Tries the modern wrapped form first and
+    falls back to the flat form on a schema/route rejection. Returns the response.
+    """
+    obj = dict(channel_obj)
+    obj.setdefault("id", str(uuid.uuid4()))
+    r = await client.post(f"{url}/api/channels", json={"type": "new", "channel": obj})
+    if r.status_code in (400, 404, 422):
+        flat = {k: v for k, v in channel_obj.items() if k != "id"}
+        r = await client.post(f"{url}/api/channels", json=flat)
+    return r
 
 class TunarrTestIn(BaseModel):
     url: str | None = None
@@ -3670,11 +3902,17 @@ async def tunarr_version_check():
     except Exception:
         pass
     if not version:
-        return {"version": None, "supported_version": TUNARR_SUPPORTED_VERSION,
+        return {"version": None, "min_version": TUNARR_MIN_VERSION,
+                "tested_version": TUNARR_TESTED_VERSION, "supported_version": TUNARR_TESTED_VERSION,
                 "is_supported": None, "tunarr_url": url}
-    is_supported = _parse_version(version) <= _parse_version(TUNARR_SUPPORTED_VERSION)
-    return {"version": version, "supported_version": TUNARR_SUPPORTED_VERSION,
-            "is_supported": is_supported, "tunarr_url": url}
+    parsed = _parse_version(version)
+    is_supported = parsed >= _parse_version(TUNARR_MIN_VERSION)
+    # Newer than what we've verified against — supported, but flag it for the UI.
+    is_newer_than_tested = parsed > _parse_version(TUNARR_TESTED_VERSION)
+    return {"version": version, "min_version": TUNARR_MIN_VERSION,
+            "tested_version": TUNARR_TESTED_VERSION, "supported_version": TUNARR_TESTED_VERSION,
+            "is_supported": is_supported, "is_newer_than_tested": is_newer_than_tested,
+            "tunarr_url": url}
 
 @app.get("/api/tunarr/channels")
 async def tunarr_list_channels():
@@ -3786,27 +4024,16 @@ async def tunarr_create_channel(body: dict):
         except Exception:
             pass
 
-        payload = {
-            "type": "new",
-            "channel": {
-                "id": channel_id,
-                "name": body.get("name", "New Channel"),
-                "number": body.get("number", 1),
-                "duration": 0,
-                "startTime": _previous_sunday_midnight_ms(),
-                "groupTitle": body.get("groupTitle", "Galaxy Network"),
-                "icon": {"path": "", "duration": 0, "width": 0, "position": "bottom-right"},
-                "offline": {"mode": "pic"},
-                "stealth": False,
-                "disableFillerOverlay": True,
-                "guideMinimumDuration": 30000,
-                "streamMode": "hls",
-                "transcodeConfigId": transcode_id,
-                "subtitlesEnabled": False,
-            }
-        }
-
-        r = await client.post(f"{url}/api/channels", json=payload)
+        icon_in = body.get("icon")
+        channel_obj = _tunarr_channel_obj(
+            name=body.get("name", "New Channel"),
+            number=body.get("number", 1),
+            group_title=body.get("groupTitle", "Galaxy Network"),
+            channel_id=channel_id,
+            transcode_id=transcode_id,
+            icon_data=icon_in if isinstance(icon_in, str) else None,
+        )
+        r = await _tunarr_create_channel(client, url, channel_obj)
     if r.status_code not in (200, 201):
         raise HTTPException(r.status_code, f"Tunarr error: {r.text[:300]}")
     return r.json()
@@ -4377,22 +4604,14 @@ async def tunarr_export_channels(body: TunarrExportRequest):
             results["details"].append({"channel_number": cp_num, "action": "linked", "tunarr_id": tc["id"]})
         else:
             # Create new Tunarr channel
-            payload = {
-                "name": cp.get("name", f"Channel {cp_num}"),
-                "number": cp_num,
-                "groupTitle": cp.get("tier", "Linearr"),
-                "startTime": _previous_sunday_midnight_ms(),
-                "transcoding": {"targetResolution": "1920x1080"},
-                "offline": {"mode": "pic"},
-                "stealth": False,
-                "disableFillerOverlay": True,
-                "guideMinimumDuration": 30000,
-                "streamMode": "hls",
-            }
-            if transcode_id:
-                payload["transcodeConfigId"] = transcode_id
+            channel_obj = _tunarr_channel_obj(
+                name=cp.get("name", f"Channel {cp_num}"),
+                number=cp_num,
+                group_title=cp.get("tier", "Linearr"),
+                transcode_id=transcode_id,
+            )
             async with httpx.AsyncClient(timeout=10.0) as client:
-                cr = await client.post(f"{url}/api/channels", json=payload)
+                cr = await _tunarr_create_channel(client, url, channel_obj)
             if cr.status_code in (200, 201):
                 new_ch = cr.json()
                 with get_db() as conn:
@@ -4569,11 +4788,49 @@ async def tunarr_list_smart_collections():
     except Exception as e:
         raise HTTPException(502, f"Cannot reach Tunarr: {e}")
 
+@app.get("/api/tunarr/custom-shows")
+async def tunarr_list_custom_shows():
+    """List Tunarr custom shows (added in 1.3). Returns [] on older Tunarr.
+
+    Custom shows are user-curated program sequences; surfacing them lets a
+    channel be backed by one. Tries the hyphen route then the underscore variant.
+    """
+    url = get_tunarr_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{url}/api/custom-shows")
+            if r.status_code == 404:
+                r = await client.get(f"{url}/api/custom_shows")
+        if r.status_code == 404:
+            return []  # Tunarr too old to have custom shows
+        if r.status_code != 200:
+            raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+        data = r.json()
+        return data if isinstance(data, list) else data.get("data", [])
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Cannot reach Tunarr: {e}")
+
+def _swap_sc_field(body: dict) -> dict | None:
+    """Return a copy of `body` with the smart-collection search field renamed
+    (filter<->query), or None if neither key is present. Used to retry against a
+    Tunarr whose version expects the other field name."""
+    if "query" in body:
+        b = dict(body); b["filter"] = b.pop("query"); return b
+    if "filter" in body:
+        b = dict(body); b["query"] = b.pop("filter"); return b
+    return None
+
 @app.post("/api/tunarr/smart-collections", status_code=201)
 async def tunarr_create_smart_collection(body: dict):
     url = get_tunarr_url()
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.post(f"{url}/api/smart_collections", json=body)
+        if r.status_code in (400, 422):
+            alt = _swap_sc_field(body)
+            if alt is not None:
+                r = await client.post(f"{url}/api/smart_collections", json=alt)
     if r.status_code not in (200, 201):
         raise HTTPException(r.status_code, r.text[:300])
     return r.json()
@@ -4583,6 +4840,10 @@ async def tunarr_update_smart_collection(sc_id: str, body: dict):
     url = get_tunarr_url()
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.put(f"{url}/api/smart_collections/{sc_id}", json=body)
+        if r.status_code in (400, 422):
+            alt = _swap_sc_field(body)
+            if alt is not None:
+                r = await client.put(f"{url}/api/smart_collections/{sc_id}", json=alt)
     if r.status_code == 404:
         raise HTTPException(404, "Smart collection not found in Tunarr")
     if r.status_code not in (200, 201):
@@ -4704,15 +4965,16 @@ async def tunarr_sync_collections(channel_number: int):
     created, updated = [], []
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
+            version = await _fetch_tunarr_version(client, url)
             for col in plex_cols:
                 col = dict(col)
                 name = col["collection_title"]
-                structured_filter = _tunarr_tags_filter(name)
+                structured = _tunarr_tags_filter(name)
                 if name in existing_by_name:
                     sc = existing_by_name[name]
-                    await client.put(f"{url}{sc_path}/{sc['uuid']}", json={
-                        "filter": structured_filter,
-                    })
+                    await _tunarr_write_smart_collection(
+                        client, url, sc_path, name=name, structured=structured,
+                        uuid=sc["uuid"], version=version)
                     updated.append({"name": name, "id": sc["uuid"]})
                     with get_db() as conn:
                         conn.execute(
@@ -4720,12 +4982,9 @@ async def tunarr_sync_collections(channel_number: int):
                             (channel_number, col["plex_type"], sc["uuid"], name)
                         )
                 else:
-                    r2 = await client.post(f"{url}{sc_path}", json={
-                        "name": name,
-                        "filter": structured_filter,
-                        "keywords": "",
-                    })
-                    if r2.status_code in (200, 201):
+                    r2 = await _tunarr_write_smart_collection(
+                        client, url, sc_path, name=name, structured=structured, version=version)
+                    if r2 is not None and r2.status_code in (200, 201):
                         sc = r2.json()
                         with get_db() as conn:
                             conn.execute(
@@ -4734,7 +4993,8 @@ async def tunarr_sync_collections(channel_number: int):
                             )
                         created.append({"name": name, "id": sc["uuid"]})
                     else:
-                        log.warning("Tunarr rejected smart collection %s: %s", name, r2.text[:200])
+                        detail = r2.text[:200] if r2 is not None else "no response"
+                        log.warning("Tunarr rejected smart collection %s: %s", name, detail)
     except HTTPException:
         raise
     except Exception as e:
@@ -4746,10 +5006,10 @@ async def tunarr_sync_collections(channel_number: int):
 # ── Tunarr time slot push ─────────────────────────────────────────────────────
 
 def _tunarr_tags_filter(collection_name: str) -> dict:
-    """Build the structured filter object Tunarr requires for tags-based smart collections.
+    """Build the structured search object Tunarr requires for tags-based smart collections.
 
     Tunarr's DAO ignores filterString on writes — it only uses the structured
-    `filter` field (converted back to a string via searchFilterToString).
+    search object (converted back to a string via searchFilterToString).
     """
     return {
         "type": "value",
@@ -4761,19 +5021,86 @@ def _tunarr_tags_filter(collection_name: str) -> dict:
         },
     }
 
+# Tunarr 1.3.0 renamed the smart-collection search body field from "filter" to
+# "query" (the DB column is `query`). We pick the field by version but fall back
+# to the other key if the server rejects the body, so we work on 1.2.x and 1.3.x.
+_SC_FIELDS_MODERN = ("query", "filter")
+_SC_FIELDS_LEGACY = ("filter", "query")
+
+async def _fetch_tunarr_version(client: "httpx.AsyncClient", url: str) -> str | None:
+    try:
+        vr = await client.get(f"{url}/api/version")
+        if vr.status_code == 200:
+            d = vr.json()
+            return d.get("tunarr", d.get("version")) or None
+    except Exception:
+        pass
+    return None
+
+def _sc_field_order(version: str | None) -> tuple[str, ...]:
+    if version and _parse_version(version) >= _parse_version(TUNARR_V13):
+        return _SC_FIELDS_MODERN
+    return _SC_FIELDS_LEGACY
+
+async def _tunarr_write_smart_collection(
+    client: "httpx.AsyncClient", url: str, sc_path: str, *,
+    name: str, structured: dict, uuid: str | None = None, version: str | None = None,
+):
+    """Create (uuid=None) or update a Tunarr smart collection.
+
+    Tolerates the 1.2.x (`filter`) vs 1.3.x (`query`) body-field rename: tries the
+    field appropriate for `version` first, and retries with the other on a schema
+    rejection (400/422). Returns the final httpx.Response (or None on hard failure).
+    """
+    last = None
+    for field in _sc_field_order(version):
+        body = {field: structured}
+        if uuid is None:
+            body = {"name": name, field: structured, "keywords": ""}
+            resp = await client.post(f"{url}{sc_path}", json=body)
+        else:
+            resp = await client.put(f"{url}{sc_path}/{uuid}", json=body)
+        if resp.status_code in (200, 201, 204):
+            return resp
+        last = resp
+        # Only a schema mismatch is worth retrying with the other field name.
+        if resp.status_code not in (400, 422):
+            break
+    return last
+
 def _hhmm_to_ms(hhmm: str) -> int:
     """Convert HH:MM to milliseconds from midnight."""
     h, m = map(int, hhmm.split(":"))
     return (h * 3600 + m * 60) * 1000
 
 def _add_show_key(mapping: dict, show: dict) -> None:
-    """Extract Plex rating key and Tunarr UUID from a Tunarr show object."""
-    uuid = show.get("uuid") or show.get("id") or ""
-    # Try multiple field names Tunarr may use for the Plex rating key
-    for field in ("externalKey", "plex_rating_key", "plexRatingKey", "ratingKey", "key"):
+    """Map a Plex rating key -> Tunarr show UUID from a Tunarr show object.
+
+    Handles both older flat field names and the Tunarr 1.3 media-source model,
+    where external IDs are exposed as a nested array (program_grouping_external_id:
+    source_type/external_key). Plex-sourced IDs are preferred when present.
+    """
+    show_uuid = show.get("uuid") or show.get("id") or ""
+    if not show_uuid:
+        return
+
+    # 1) Nested external-id list (Tunarr 1.3): prefer a Plex-sourced entry.
+    ext_list = show.get("externalIds") or show.get("externalIdList") or show.get("external_ids")
+    if isinstance(ext_list, list) and ext_list:
+        def _is_plex(e: dict) -> bool:
+            src = str(e.get("sourceType") or e.get("source") or e.get("source_type") or "").lower()
+            return src.startswith("plex")
+        for e in sorted((x for x in ext_list if isinstance(x, dict)), key=lambda e: 0 if _is_plex(e) else 1):
+            val = e.get("externalKey") or e.get("external_key") or e.get("id") or e.get("key")
+            if val:
+                mapping[str(val).strip()] = show_uuid
+                return
+
+    # 2) Flat field names (older Tunarr / simplified responses).
+    for field in ("externalKey", "external_key", "plex_rating_key", "plexRatingKey", "ratingKey", "key"):
         val = show.get(field)
         if val:
-            mapping[str(val).strip()] = uuid
+            mapping[str(val).strip()] = show_uuid
             break
 
 @app.post("/api/tunarr/channel-links/{channel_number}/push-schedule")
@@ -4809,6 +5136,7 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
     base_col = col_links.get("show") or col_links.get("movie")
     if base_col:
         slots.append({
+            "id": str(uuid.uuid4()),  # Tunarr 1.3 lineup migration: linkable slots carry an id
             "type": "smart-collection",
             "smartCollectionId": base_col["tunarr_collection_id"],
             "startTime": _previous_sunday_midnight_ms(),
@@ -4866,6 +5194,7 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
             # Try to resolve to a Tunarr show UUID for show-type slots
             if content_type == "show" and rating_key and rating_key in tunarr_shows_by_key:
                 slots.append({
+                    "id": str(uuid.uuid4()),
                     "type": "show",
                     "showId": tunarr_shows_by_key[rating_key],
                     "startTime": start_ms,
@@ -4879,6 +5208,7 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
                 col = col_links.get(content_type) or col_links.get("show") or col_links.get("movie")
                 if col:
                     slots.append({
+                        "id": str(uuid.uuid4()),
                         "type": "smart-collection",
                         "smartCollectionId": col["tunarr_collection_id"],
                         "startTime": start_ms,
