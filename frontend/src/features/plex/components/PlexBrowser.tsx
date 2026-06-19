@@ -9,6 +9,7 @@ import {
   usePlexLibraryFilters,
 } from '@/features/plex/hooks'
 import { PosterGrid } from './PosterGrid'
+import type { PosterViewMode, PosterSize } from './PosterGrid'
 import type { PlexItem } from '@/shared/types'
 
 type TypeFilter = 'all' | 'show' | 'movie'
@@ -27,6 +28,8 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
   const [genreFilter, setGenreFilter] = useState('')
   const [yearFilter, setYearFilter] = useState('')
   const [ratingFilter, setRatingFilter] = useState('')
+  const [viewMode, setViewMode] = useState<PosterViewMode>('grid')
+  const [posterSize, setPosterSize] = useState<PosterSize>('medium')
 
   const debouncedSearch = useDebounce(searchInput, 400)
   const isSearching = debouncedSearch.trim().length > 0
@@ -164,21 +167,88 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
           )}
         </div>
 
-        {/* Type filter tabs */}
-        <div className="flex gap-1">
-          {(['all', 'show', 'movie'] as TypeFilter[]).map((t) => (
+        {/* Type filter tabs + view controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex gap-1">
+            {(['all', 'show', 'movie'] as TypeFilter[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  typeFilter === t
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                {t === 'all' ? 'All' : t === 'show' ? 'Shows' : 'Movies'}
+              </button>
+            ))}
+          </div>
+
+          {/* View mode toggle */}
+          <div className="flex gap-1 bg-slate-900 border border-slate-700 rounded-lg p-1 ml-auto">
             <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                typeFilter === t
+              onClick={() => setViewMode('grid')}
+              title="Grid"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'grid'
                   ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  : 'text-slate-400 hover:text-slate-100'
               }`}
             >
-              {t === 'all' ? 'All' : t === 'show' ? 'Shows' : 'Movies'}
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+              Grid
             </button>
-          ))}
+            <button
+              onClick={() => setViewMode('list')}
+              title="List"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-400 hover:text-slate-100'
+              }`}
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+              </svg>
+              List
+            </button>
+          </div>
+
+          {/* Poster size toggle */}
+          <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
+            {(['small', 'medium', 'large'] as PosterSize[]).map((s) => (
+              <button
+                key={s}
+                onClick={() => setPosterSize(s)}
+                title={s.charAt(0).toUpperCase() + s.slice(1)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  posterSize === s
+                    ? 'bg-slate-600 text-white'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {s.charAt(0).toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Genre / Year / Rating filters — only when browsing a library */}
@@ -277,6 +347,8 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
             assignments={channelAssignments}
             onDetail={handleDetail}
             loading={isLoading}
+            viewMode={viewMode}
+            posterSize={posterSize}
           />
         )}
       </div>
