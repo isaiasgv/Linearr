@@ -26,6 +26,11 @@ interface UIState {
   setSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
 
+  // Desktop sidebar collapse (icon rail) — persisted to localStorage
+  sidebarCollapsed: boolean
+  setSidebarCollapsed: (collapsed: boolean) => void
+  toggleSidebarCollapsed: () => void
+
   // Modal open/close flags
   modals: Record<ModalName, boolean>
 
@@ -54,6 +59,24 @@ interface UIState {
   closeAllModals: () => void
 }
 
+const SIDEBAR_COLLAPSED_KEY = 'linearr:sidebarCollapsed'
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0')
+  } catch {
+    /* ignore (private mode / SSR) */
+  }
+}
+
 const defaultModals: Record<ModalName, boolean> = {
   settings: false,
   channelForm: false,
@@ -79,6 +102,18 @@ export const useUIStore = create<UIState>((set) => ({
   sidebarOpen: false,
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+
+  sidebarCollapsed: readCollapsed(),
+  setSidebarCollapsed: (sidebarCollapsed) => {
+    writeCollapsed(sidebarCollapsed)
+    set({ sidebarCollapsed })
+  },
+  toggleSidebarCollapsed: () =>
+    set((s) => {
+      const sidebarCollapsed = !s.sidebarCollapsed
+      writeCollapsed(sidebarCollapsed)
+      return { sidebarCollapsed }
+    }),
 
   modals: { ...defaultModals },
 

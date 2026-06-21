@@ -11,6 +11,7 @@ interface AppLayoutProps {
 export function AppLayout({ sidebar, children }: AppLayoutProps) {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
@@ -31,13 +32,14 @@ export function AppLayout({ sidebar, children }: AppLayoutProps) {
             - Desktop (md+): static flex column, always visible */}
         <aside
           className={[
-            // shared
+            // shared — full width as a mobile drawer
             'flex flex-col w-72 shrink-0 bg-slate-900 border-r border-slate-800',
             // mobile: absolute overlay, animated
             'absolute inset-y-0 left-0 z-30 transition-transform duration-200 ease-in-out',
             sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-            // desktop: back to static flow
-            'md:static md:translate-x-0 md:transition-none md:z-auto',
+            // desktop: back to static flow; width collapses to an icon rail
+            'md:static md:translate-x-0 md:z-auto md:transition-[width] md:duration-200',
+            sidebarCollapsed ? 'md:w-14' : 'md:w-72',
           ].join(' ')}
         >
           {sidebar}
