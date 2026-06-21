@@ -277,6 +277,25 @@ def _purge_old_logs():
     except Exception as e:
         log.warning("Log purge failed: %s", e)
 
+def _check_db_writable() -> bool:
+    """Probe that the database volume is actually writable. A read-only bind mount
+    (host ./data not owned by the container's uid 1000) lets reads succeed but makes
+    every write — assignments, blocks, settings — fail with a 500. Surface it loudly
+    at startup instead of silently breaking on the first write."""
+    try:
+        with get_db() as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS _write_probe (x INTEGER)")
+            conn.execute("DROP TABLE IF EXISTS _write_probe")
+        return True
+    except sqlite3.Error as e:
+        log.error("=" * 70)
+        log.error("DATABASE IS NOT WRITABLE: %s", e)
+        log.error("The /app/data volume is read-only for the container user (uid 1000).")
+        log.error("Reads work but all writes (assignments, blocks, settings) will 500.")
+        log.error("Fix host permissions, e.g.:  sudo chown -R 1000:1000 ./data")
+        log.error("=" * 70)
+        return False
+
 def get_plex_config():
     with get_db() as conn:
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
@@ -289,6 +308,7 @@ def get_plex_config():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    _check_db_writable()
     _purge_old_logs()
     _log_app("system", "Linearr started")
     yield
@@ -304,6 +324,18 @@ async def auth_middleware(request: Request, call_next):
     if session != _session_token():
         return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Log every unhandled error with a full traceback (container logs + in-app
+    log viewer) and return the real message to the client instead of a bare 500."""
+    log.exception("Unhandled error on %s %s", request.method, request.url.path)
+    try:
+        _log_app("error", f"Unhandled error: {type(exc).__name__}", level="error",
+                 detail=f"{exc}", path=request.url.path)
+    except Exception:
+        pass
+    return JSONResponse(status_code=500, content={"detail": f"{type(exc).__name__}: {exc}"})
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
@@ -716,14 +748,29 @@ def create_assignment(body: AssignmentIn):
         return dict(row)
     except sqlite3.IntegrityError:
         raise HTTPException(409, "Already assigned")
+    except sqlite3.Error as e:
+        log.exception("Failed to create assignment (ch %s, key %s)",
+                      body.channel_number, body.plex_rating_key)
+        _log_app("assignment", "Failed to create assignment", level="error",
+                 detail=f"{type(e).__name__}: {e}",
+                 metadata={"channel": body.channel_number, "rating_key": body.plex_rating_key})
+        raise HTTPException(500, f"Database error: {e}")
 
 @app.delete("/api/assignments/{assignment_id}")
 def delete_assignment(assignment_id: int):
-    with get_db() as conn:
-        cur = conn.execute("DELETE FROM assignments WHERE id=?", (assignment_id,))
-    if cur.rowcount == 0:
-        raise HTTPException(404, "Not found")
-    return {"ok": True}
+    try:
+        with get_db() as conn:
+            cur = conn.execute("DELETE FROM assignments WHERE id=?", (assignment_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "Not found")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except sqlite3.Error as e:
+        log.exception("Failed to delete assignment %s", assignment_id)
+        _log_app("assignment", "Failed to delete assignment", level="error",
+                 detail=f"{type(e).__name__}: {e}", metadata={"id": assignment_id})
+        raise HTTPException(500, f"Database error: {e}")
 
 @app.post("/api/assignments/bulk", status_code=201)
 def bulk_assignments(body: BulkAssignmentIn):
