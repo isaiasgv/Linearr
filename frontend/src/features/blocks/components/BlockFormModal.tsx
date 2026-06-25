@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useCreateBlock, useUpdateBlock } from '@/features/blocks/hooks'
 import { BLOCK_PRESETS, ALL_DAYS } from '@/features/blocks/types'
@@ -34,6 +34,13 @@ export function BlockFormModal() {
   const updateBlock = useUpdateBlock()
 
   const [form, setForm] = useState<FormState>(DEFAULT_FORM)
+  const fieldId = useId()
+  const ids = {
+    name: `${fieldId}-name`,
+    start: `${fieldId}-start`,
+    end: `${fieldId}-end`,
+    notes: `${fieldId}-notes`,
+  }
 
   // Populate form from editingBlock when modal opens
   useEffect(() => {
@@ -96,11 +103,11 @@ export function BlockFormModal() {
   const isPending = createBlock.isPending || updateBlock.isPending
 
   return (
-    <ModalWrapper open={isOpen} onClose={handleClose} maxWidth="max-w-lg">
+    <ModalWrapper open={isOpen} onClose={handleClose} maxWidth="max-w-lg" titleId="block-form-title">
       <form onSubmit={handleSubmit}>
         {/* Modal header */}
         <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-100">
+          <h2 id="block-form-title" className="text-base font-semibold text-slate-100">
             {editingBlock ? 'Edit Block' : 'New Block'}
           </h2>
           <button
@@ -142,8 +149,11 @@ export function BlockFormModal() {
 
           {/* Name */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Block Name</label>
+            <label htmlFor={ids.name} className="block text-xs font-medium text-slate-400 mb-1.5">
+              Block Name
+            </label>
             <input
+              id={ids.name}
               type="text"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -156,8 +166,11 @@ export function BlockFormModal() {
           {/* Time range */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Start Time</label>
+              <label htmlFor={ids.start} className="block text-xs font-medium text-slate-400 mb-1.5">
+                Start Time
+              </label>
               <input
+                id={ids.start}
                 type="time"
                 value={form.start_time}
                 onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))}
@@ -166,8 +179,11 @@ export function BlockFormModal() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">End Time</label>
+              <label htmlFor={ids.end} className="block text-xs font-medium text-slate-400 mb-1.5">
+                End Time
+              </label>
               <input
+                id={ids.end}
                 type="time"
                 value={form.end_time}
                 onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))}
@@ -227,8 +243,11 @@ export function BlockFormModal() {
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Notes</label>
+            <label htmlFor={ids.notes} className="block text-xs font-medium text-slate-400 mb-1.5">
+              Notes
+            </label>
             <textarea
+              id={ids.notes}
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               placeholder="Optional notes..."

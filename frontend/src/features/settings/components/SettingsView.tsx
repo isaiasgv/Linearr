@@ -12,7 +12,7 @@ import { useAiLogs, useClearAiLogs, useAppLogs, useClearAppLogs } from '@/featur
 import { usePlexServerInfo } from '@/features/plex/hooks'
 import { useToastStore } from '@/shared/store/toast.store'
 import { plexApi } from '@/features/plex/api'
-import type { AiLog, AppLog } from '@/shared/types'
+import type { AiLog, AppLog, Settings } from '@/shared/types'
 
 type SettingsTab = 'plex' | 'ai' | 'tunarr' | 'logs' | 'system'
 
@@ -102,12 +102,13 @@ export function SettingsView() {
     }
   }, [settings])
 
-  // Auto-test connections on mount if configured
+  // Auto-test connections on mount if configured. The token itself is no longer
+  // echoed back by the API, so rely on the `plex_token_set` presence flag.
   useEffect(() => {
-    if (settings?.plex_token) testPlex.mutate()
+    if (settings?.plex_token_set) testPlex.mutate()
     if (settings?.tunarr_url) testTunarr.mutate(settings.tunarr_url)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings?.plex_token, settings?.tunarr_url])
+  }, [settings?.plex_token_set, settings?.tunarr_url])
 
   const handleConnectPlex = async () => {
     try {
@@ -174,15 +175,23 @@ export function SettingsView() {
   }
 
   const handleSave = () => {
-    saveSettings.mutate({
+    const body: Partial<Settings> = {
       plex_url: plexUrl,
-      plex_token: plexToken,
-      openai_api_key: aiKey,
       openai_base_url: aiBaseUrl,
       openai_model: aiModel,
       tunarr_url: tunarrUrl,
-    })
+    }
+    // Only send secrets when the user actually typed something. The backend
+    // preserves the existing secret on an empty value, but omitting it keeps the
+    // intent explicit and avoids any chance of a wipe.
+    if (plexToken) body.plex_token = plexToken
+    if (aiKey) body.openai_api_key = aiKey
+    saveSettings.mutate(body)
   }
+
+  const plexTokenConfigured = Boolean(settings?.plex_token_set)
+  const aiKeyConfigured = Boolean(settings?.openai_api_key_set)
+  const SECRET_PLACEHOLDER = '•••••• (configured — leave blank to keep)'
 
   const plexInfo = testPlex.data
   const tunarrInfo = testTunarr.data
@@ -197,7 +206,7 @@ export function SettingsView() {
   ]
 
   const inputClass =
-    'w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500'
+    'w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500'
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative">
@@ -357,8 +366,11 @@ export function SettingsView() {
                 {/* Config fields */}
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">Server URL</label>
+                    <label htmlFor="settings-plex-url" className="block text-xs text-slate-400 mb-1.5">
+                      Server URL
+                    </label>
                     <input
+                      id="settings-plex-url"
                       type="url"
                       value={plexUrl}
                       onChange={(e) => setPlexUrl(e.target.value)}
@@ -367,12 +379,15 @@ export function SettingsView() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">Token</label>
+                    <label htmlFor="settings-plex-token" className="block text-xs text-slate-400 mb-1.5">
+                      Token
+                    </label>
                     <input
+                      id="settings-plex-token"
                       type="password"
                       value={plexToken}
                       onChange={(e) => setPlexToken(e.target.value)}
-                      placeholder="Your Plex token"
+                      placeholder={plexTokenConfigured ? SECRET_PLACEHOLDER : 'Your Plex token'}
                       className={inputClass}
                     />
                   </div>
@@ -487,18 +502,24 @@ export function SettingsView() {
 
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">API Key</label>
+                    <label htmlFor="settings-ai-key" className="block text-xs text-slate-400 mb-1.5">
+                      API Key
+                    </label>
                     <input
+                      id="settings-ai-key"
                       type="password"
                       value={aiKey}
                       onChange={(e) => setAiKey(e.target.value)}
-                      placeholder="sk-..."
+                      placeholder={aiKeyConfigured ? SECRET_PLACEHOLDER : 'sk-...'}
                       className={inputClass}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">Base URL</label>
+                    <label htmlFor="settings-ai-baseurl" className="block text-xs text-slate-400 mb-1.5">
+                      Base URL
+                    </label>
                     <input
+                      id="settings-ai-baseurl"
                       type="url"
                       value={aiBaseUrl}
                       onChange={(e) => setAiBaseUrl(e.target.value)}
@@ -508,7 +529,9 @@ export function SettingsView() {
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs text-slate-400">Model</label>
+                      <label htmlFor="settings-ai-model" className="block text-xs text-slate-400">
+                        Model
+                      </label>
                       <button
                         onClick={handleFetchModels}
                         disabled={fetchAiModels.isPending || !aiKey}
@@ -520,6 +543,7 @@ export function SettingsView() {
                     </div>
                     {aiModels.length > 0 ? (
                       <select
+                        id="settings-ai-model"
                         value={aiModel}
                         onChange={(e) => setAiModel(e.target.value)}
                         className={inputClass}
@@ -532,6 +556,7 @@ export function SettingsView() {
                       </select>
                     ) : (
                       <input
+                        id="settings-ai-model"
                         type="text"
                         value={aiModel}
                         onChange={(e) => setAiModel(e.target.value)}
@@ -662,8 +687,11 @@ export function SettingsView() {
 
                 {/* Config */}
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Tunarr URL</label>
+                  <label htmlFor="settings-tunarr-url" className="block text-xs text-slate-400 mb-1.5">
+                    Tunarr URL
+                  </label>
                   <input
+                    id="settings-tunarr-url"
                     type="url"
                     value={tunarrUrl}
                     onChange={(e) => setTunarrUrl(e.target.value)}

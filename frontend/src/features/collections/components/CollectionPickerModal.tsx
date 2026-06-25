@@ -84,6 +84,7 @@ export function CollectionPickerModal() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter collections…"
+            aria-label="Filter collections"
             autoFocus
             className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
           />

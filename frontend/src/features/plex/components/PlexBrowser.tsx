@@ -147,6 +147,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search Plex…"
+            aria-label="Search Plex"
             className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
           />
           {searchInput && (

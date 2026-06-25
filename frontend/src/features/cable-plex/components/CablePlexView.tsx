@@ -213,10 +213,9 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
   const thumbItems = filteredItems.filter((a) => a.plex_thumb)
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      role="button"
-      tabIndex={0}
       className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl text-left transition-all hover:bg-slate-800 overflow-hidden cursor-pointer"
       style={{ contentVisibility: 'auto', containIntrinsicHeight: '80px' }}
     >
@@ -290,7 +289,7 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
           )}
         </div>
       </div>
-    </div>
+    </button>
   )
 })
 
@@ -351,6 +350,7 @@ export function CablePlexView() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search channels…"
+              aria-label="Search channels"
               className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
           </div>

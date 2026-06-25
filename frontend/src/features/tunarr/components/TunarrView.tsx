@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, useId, lazy, Suspense } from 'react'
 import { Spinner } from '@/shared/components/ui/Spinner'
 
 const TunarrGuide = lazy(() => import('./TunarrGuide').then((m) => ({ default: m.TunarrGuide })))
@@ -47,6 +47,12 @@ function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
   const [keywords, setKeywords] = useState(collection.keywords)
   const updateSmartCollection = useUpdateSmartCollection()
   const deleteSmartCollection = useDeleteSmartCollection()
+  const fieldId = useId()
+  const ids = {
+    name: `${fieldId}-name`,
+    filter: `${fieldId}-filter`,
+    keywords: `${fieldId}-keywords`,
+  }
 
   const handleSave = () => {
     updateSmartCollection.mutate(
@@ -59,8 +65,11 @@ function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
     return (
       <div className="bg-slate-800 border border-indigo-700/50 rounded-xl p-4 space-y-3">
         <div>
-          <label className="block text-xs text-slate-400 mb-1">Name</label>
+          <label htmlFor={ids.name} className="block text-xs text-slate-400 mb-1">
+            Name
+          </label>
           <input
+            id={ids.name}
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -68,8 +77,11 @@ function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
           />
         </div>
         <div>
-          <label className="block text-xs text-slate-400 mb-1">Filter String</label>
+          <label htmlFor={ids.filter} className="block text-xs text-slate-400 mb-1">
+            Filter String
+          </label>
           <input
+            id={ids.filter}
             type="text"
             value={filterString}
             onChange={(e) => setFilterString(e.target.value)}
@@ -77,8 +89,11 @@ function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
           />
         </div>
         <div>
-          <label className="block text-xs text-slate-400 mb-1">Keywords</label>
+          <label htmlFor={ids.keywords} className="block text-xs text-slate-400 mb-1">
+            Keywords
+          </label>
           <input
+            id={ids.keywords}
             type="text"
             value={keywords}
             onChange={(e) => setKeywords(e.target.value)}

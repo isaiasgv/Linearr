@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { Composition, Layer, TextLayer, ImageLayer } from './types'
 import { FONTS } from './fonts'
 
@@ -14,6 +15,20 @@ const labelClass = 'text-[10px] uppercase text-slate-500 font-medium tracking-wi
 
 export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
   const selected = composition.layers.find((l) => l.id === selectedId) ?? null
+  const fieldId = useId()
+  const ids = {
+    text: `${fieldId}-text`,
+    font: `${fieldId}-font`,
+    size: `${fieldId}-size`,
+    weight: `${fieldId}-weight`,
+    color: `${fieldId}-color`,
+    letterSpacing: `${fieldId}-letterspacing`,
+    rotation: `${fieldId}-rotation`,
+    width: `${fieldId}-width`,
+    height: `${fieldId}-height`,
+    tint: `${fieldId}-tint`,
+    opacity: `${fieldId}-opacity`,
+  }
 
   const update = (patch: Partial<Layer>) => {
     if (!selected) return
@@ -39,8 +54,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
       <div className="p-3 space-y-3 overflow-y-auto">
         <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Text Layer</h3>
         <div>
-          <label className={labelClass}>Text</label>
+          <label htmlFor={ids.text} className={labelClass}>
+            Text
+          </label>
           <textarea
+            id={ids.text}
             value={layer.text}
             onChange={(e) => update({ text: e.target.value })}
             rows={2}
@@ -48,8 +66,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
           />
         </div>
         <div>
-          <label className={labelClass}>Font</label>
+          <label htmlFor={ids.font} className={labelClass}>
+            Font
+          </label>
           <select
+            id={ids.font}
             value={layer.font}
             onChange={(e) => update({ font: e.target.value })}
             className={inputClass}
@@ -63,8 +84,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className={labelClass}>Size</label>
+            <label htmlFor={ids.size} className={labelClass}>
+              Size
+            </label>
             <input
+              id={ids.size}
               type="number"
               value={layer.size}
               onChange={(e) => update({ size: parseInt(e.target.value) || 16 })}
@@ -74,8 +98,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
             />
           </div>
           <div>
-            <label className={labelClass}>Weight</label>
+            <label htmlFor={ids.weight} className={labelClass}>
+              Weight
+            </label>
             <select
+              id={ids.weight}
               value={layer.weight}
               onChange={(e) => update({ weight: parseInt(e.target.value) })}
               className={inputClass}
@@ -89,9 +116,12 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
           </div>
         </div>
         <div>
-          <label className={labelClass}>Color</label>
+          <label htmlFor={ids.color} className={labelClass}>
+            Color
+          </label>
           <div className="flex gap-2 items-center">
             <input
+              id={ids.color}
               type="color"
               value={layer.color}
               onChange={(e) => update({ color: e.target.value })}
@@ -106,8 +136,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
           </div>
         </div>
         <div>
-          <label className={labelClass}>Letter Spacing</label>
+          <label htmlFor={ids.letterSpacing} className={labelClass}>
+            Letter Spacing
+          </label>
           <input
+            id={ids.letterSpacing}
             type="range"
             min={-10}
             max={50}
@@ -135,8 +168,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
           </div>
         </div>
         <div>
-          <label className={labelClass}>Rotation</label>
+          <label htmlFor={ids.rotation} className={labelClass}>
+            Rotation
+          </label>
           <input
+            id={ids.rotation}
             type="range"
             min={-180}
             max={180}
@@ -166,8 +202,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className={labelClass}>Width</label>
+          <label htmlFor={ids.width} className={labelClass}>
+            Width
+          </label>
           <input
+            id={ids.width}
             type="number"
             value={Math.round(layer.width)}
             onChange={(e) => update({ width: parseInt(e.target.value) || 50 })}
@@ -177,8 +216,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
           />
         </div>
         <div>
-          <label className={labelClass}>Height</label>
+          <label htmlFor={ids.height} className={labelClass}>
+            Height
+          </label>
           <input
+            id={ids.height}
             type="number"
             value={Math.round(layer.height)}
             onChange={(e) => update({ height: parseInt(e.target.value) || 50 })}
@@ -189,9 +231,12 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
         </div>
       </div>
       <div>
-        <label className={labelClass}>Tint Color</label>
+        <label htmlFor={ids.tint} className={labelClass}>
+          Tint Color
+        </label>
         <div className="flex gap-2 items-center">
           <input
+            id={ids.tint}
             type="color"
             value={layer.tint || '#ffffff'}
             onChange={(e) => update({ tint: e.target.value })}
@@ -213,8 +258,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
         </div>
       </div>
       <div>
-        <label className={labelClass}>Opacity</label>
+        <label htmlFor={ids.opacity} className={labelClass}>
+          Opacity
+        </label>
         <input
+          id={ids.opacity}
           type="range"
           min={0}
           max={100}
@@ -225,8 +273,11 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
         <p className="text-[10px] text-slate-500 text-right">{Math.round(layer.opacity * 100)}%</p>
       </div>
       <div>
-        <label className={labelClass}>Rotation</label>
+        <label htmlFor={ids.rotation} className={labelClass}>
+          Rotation
+        </label>
         <input
+          id={ids.rotation}
           type="range"
           min={-180}
           max={180}

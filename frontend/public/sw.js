@@ -1,7 +1,14 @@
 const CACHE = 'linearr-v2'
 
-self.addEventListener('install', () => {
-  self.skipWaiting()
+// Do NOT skipWaiting here: a freshly installed SW should enter the "waiting"
+// state so the app can surface an "update available" prompt. The page tells us
+// to activate via a SKIP_WAITING message (see below).
+self.addEventListener('install', () => {})
+
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
 })
 
 self.addEventListener('activate', (e) => {

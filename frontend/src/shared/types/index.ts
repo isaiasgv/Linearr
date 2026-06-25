@@ -148,6 +148,11 @@ export interface Settings {
   openai_base_url: string
   openai_model: string
   tunarr_url: string
+  // Secret presence flags: GET /api/settings returns secrets as empty strings
+  // when set, plus these booleans so the UI can show a "configured" placeholder
+  // without ever exposing the value. POST preserves the secret if sent empty.
+  plex_token_set?: boolean
+  openai_api_key_set?: boolean
 }
 
 // ── Tunarr ────────────────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ import {
 import { useTestTunarr } from '@/features/tunarr/hooks'
 import { useAiLogs, useClearAiLogs, useAppLogs, useClearAppLogs } from '@/features/ai/hooks'
 import { plexApi } from '@/features/plex/api'
-import type { AiLog, AppLog } from '@/shared/types'
+import type { AiLog, AppLog, Settings } from '@/shared/types'
 
 type SettingsTab = 'plex' | 'ai' | 'tunarr' | 'logs' | 'system'
 
@@ -148,15 +148,21 @@ export function SettingsModal() {
   }
 
   const handleSave = () => {
-    saveSettings.mutate({
+    const body: Partial<Settings> = {
       plex_url: plexUrl,
-      plex_token: plexToken,
-      openai_api_key: aiKey,
       openai_base_url: aiBaseUrl,
       openai_model: aiModel,
       tunarr_url: tunarrUrl,
-    })
+    }
+    // Only send secrets when typed; backend preserves existing on empty.
+    if (plexToken) body.plex_token = plexToken
+    if (aiKey) body.openai_api_key = aiKey
+    saveSettings.mutate(body)
   }
+
+  const plexTokenConfigured = Boolean(settings?.plex_token_set)
+  const aiKeyConfigured = Boolean(settings?.openai_api_key_set)
+  const SECRET_PLACEHOLDER = '•••••• (configured — leave blank to keep)'
 
   // Plex test result
   const plexInfo = testPlex.data
@@ -172,14 +178,21 @@ export function SettingsModal() {
   ]
 
   const inputClass =
-    'w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500'
+    'w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500'
 
   return (
-    <ModalWrapper open={open} onClose={() => closeModal('settings')} maxWidth="max-w-2xl">
+    <ModalWrapper
+      open={open}
+      onClose={() => closeModal('settings')}
+      maxWidth="max-w-2xl"
+      titleId="settings-modal-title"
+    >
       <div className="flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 shrink-0">
-          <h2 className="text-lg font-semibold text-slate-100">Settings</h2>
+          <h2 id="settings-modal-title" className="text-lg font-semibold text-slate-100">
+            Settings
+          </h2>
           <button
             onClick={() => closeModal('settings')}
             className="text-slate-400 hover:text-slate-100 transition"
@@ -260,8 +273,11 @@ export function SettingsModal() {
                   {/* Config fields */}
                   <div className="space-y-3">
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1.5">Server URL</label>
+                      <label htmlFor="settings-modal-plex-url" className="block text-xs text-slate-400 mb-1.5">
+                        Server URL
+                      </label>
                       <input
+                        id="settings-modal-plex-url"
                         type="url"
                         value={plexUrl}
                         onChange={(e) => setPlexUrl(e.target.value)}
@@ -270,12 +286,15 @@ export function SettingsModal() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1.5">Token</label>
+                      <label htmlFor="settings-modal-plex-token" className="block text-xs text-slate-400 mb-1.5">
+                        Token
+                      </label>
                       <input
+                        id="settings-modal-plex-token"
                         type="password"
                         value={plexToken}
                         onChange={(e) => setPlexToken(e.target.value)}
-                        placeholder="Your Plex token"
+                        placeholder={plexTokenConfigured ? SECRET_PLACEHOLDER : 'Your Plex token'}
                         className={inputClass}
                       />
                     </div>
@@ -338,18 +357,24 @@ export function SettingsModal() {
                   {/* Config fields */}
                   <div className="space-y-3">
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1.5">API Key</label>
+                      <label htmlFor="settings-modal-ai-key" className="block text-xs text-slate-400 mb-1.5">
+                        API Key
+                      </label>
                       <input
+                        id="settings-modal-ai-key"
                         type="password"
                         value={aiKey}
                         onChange={(e) => setAiKey(e.target.value)}
-                        placeholder="sk-..."
+                        placeholder={aiKeyConfigured ? SECRET_PLACEHOLDER : 'sk-...'}
                         className={inputClass}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1.5">Base URL</label>
+                      <label htmlFor="settings-modal-ai-baseurl" className="block text-xs text-slate-400 mb-1.5">
+                        Base URL
+                      </label>
                       <input
+                        id="settings-modal-ai-baseurl"
                         type="url"
                         value={aiBaseUrl}
                         onChange={(e) => setAiBaseUrl(e.target.value)}
@@ -359,7 +384,9 @@ export function SettingsModal() {
                     </div>
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs text-slate-400">Model</label>
+                        <label htmlFor="settings-modal-ai-model" className="block text-xs text-slate-400">
+                          Model
+                        </label>
                         <button
                           onClick={handleFetchModels}
                           disabled={fetchAiModels.isPending || !aiKey}
@@ -371,6 +398,7 @@ export function SettingsModal() {
                       </div>
                       {aiModels.length > 0 ? (
                         <select
+                          id="settings-modal-ai-model"
                           value={aiModel}
                           onChange={(e) => setAiModel(e.target.value)}
                           className={inputClass}
@@ -383,6 +411,7 @@ export function SettingsModal() {
                         </select>
                       ) : (
                         <input
+                          id="settings-modal-ai-model"
                           type="text"
                           value={aiModel}
                           onChange={(e) => setAiModel(e.target.value)}
@@ -435,8 +464,11 @@ export function SettingsModal() {
 
                   {/* Config */}
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">Tunarr URL</label>
+                    <label htmlFor="settings-modal-tunarr-url" className="block text-xs text-slate-400 mb-1.5">
+                      Tunarr URL
+                    </label>
                     <input
+                      id="settings-modal-tunarr-url"
                       type="url"
                       value={tunarrUrl}
                       onChange={(e) => setTunarrUrl(e.target.value)}

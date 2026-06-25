@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { useLogin } from '../hooks'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { Logo } from '@/shared/components/ui/Logo'
@@ -7,6 +7,8 @@ export function LoginModal() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const login = useLogin()
+  const usernameId = useId()
+  const passwordId = useId()
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -26,30 +28,39 @@ export function LoginModal() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Username</label>
+            <label htmlFor={usernameId} className="block text-xs text-slate-400 mb-1">
+              Username
+            </label>
             <input
+              id={usernameId}
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
               autoFocus
-              className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Password</label>
+            <label htmlFor={passwordId} className="block text-xs text-slate-400 mb-1">
+              Password
+            </label>
             <input
+              id={passwordId}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
 
           {login.error && (
-            <p className="text-sm text-red-400 bg-red-900/20 border border-red-800 rounded-lg px-3 py-2">
+            <p
+              role="alert"
+              className="text-sm text-red-400 bg-red-900/20 border border-red-800 rounded-lg px-3 py-2"
+            >
               {login.error.message}
             </p>
           )}
