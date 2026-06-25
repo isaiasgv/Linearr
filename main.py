@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import shutil
 import sqlite3
 import time
@@ -31,19 +32,60 @@ def _get_channel(channel_number: int) -> dict | None:
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-DB_PATH = Path("/app/data/assignments.db")
+DB_PATH = Path(os.getenv("DB_PATH", "/app/data/assignments.db"))
 INDEX_HTML = Path("/app/dist/index.html")
 PLEX_URL_DEFAULT = os.getenv("PLEX_URL", "http://plex:32400")
 PLEX_TOKEN_DEFAULT = os.getenv("PLEX_TOKEN", "")
 
+_DEFAULT_PASSWORD = "changeme"
+_DEFAULT_SECRET = "default-secret-change-me"
+
 APP_USERNAME = os.getenv("APP_USERNAME", "admin")
-APP_PASSWORD = os.getenv("APP_PASSWORD", "changeme")
-APP_SECRET   = os.getenv("APP_SECRET", "default-secret-change-me")
+APP_PASSWORD = os.getenv("APP_PASSWORD", _DEFAULT_PASSWORD)
+APP_SECRET   = os.getenv("APP_SECRET", _DEFAULT_SECRET)
+
+# Refuse to keep the shipped default HMAC key: if APP_SECRET is unset/default, mint a
+# random per-process secret so an attacker cannot forge HMAC(known_secret, "admin:changeme").
+# (Sessions reset on restart in that case — set APP_SECRET to make them durable.)
+if APP_SECRET == _DEFAULT_SECRET:
+    APP_SECRET = secrets.token_hex(32)
+    log.warning("APP_SECRET not set — using an ephemeral random secret. "
+                "Set APP_SECRET in your .env so sessions survive restarts.")
+if APP_PASSWORD == _DEFAULT_PASSWORD:
+    log.warning("APP_PASSWORD is the default 'changeme' — set a strong APP_PASSWORD in your .env.")
+
+# Session cookie should be HTTPS-only in production. Default off so first-run LAN/HTTP
+# deployments still work; set COOKIE_SECURE=true once behind a TLS reverse proxy.
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+SESSION_MAX_AGE = 86400 * 30  # 30 days
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 
-def _session_token() -> str:
-    return hmac.new(APP_SECRET.encode(), f"{APP_USERNAME}:{APP_PASSWORD}".encode(), hashlib.sha256).hexdigest()
+def _sign_session(issued: int, nonce: str) -> str:
+    msg = f"{APP_USERNAME}:{APP_PASSWORD}:{issued}:{nonce}".encode()
+    return hmac.new(APP_SECRET.encode(), msg, hashlib.sha256).hexdigest()
+
+def _make_session_token() -> str:
+    """Issue a fresh, single-use session value: <issued>.<nonce>.<sig>.
+    Bound to the current credentials (changing the password invalidates all sessions)
+    and carries an issued-at timestamp so it expires server-side."""
+    issued = int(time.time())
+    nonce = secrets.token_hex(16)
+    return f"{issued}.{nonce}.{_sign_session(issued, nonce)}"
+
+def _verify_session_token(token: str | None) -> bool:
+    if not token:
+        return False
+    parts = token.split(".")
+    if len(parts) != 3:
+        return False
+    issued_s, nonce, sig = parts
+    if not issued_s.isdigit():
+        return False
+    issued = int(issued_s)
+    if int(time.time()) - issued > SESSION_MAX_AGE:
+        return False
+    return hmac.compare_digest(sig, _sign_session(issued, nonce))
 
 _PUBLIC_PATHS = {"/", "/api/auth/login", "/api/health", "/docs", "/openapi.json", "/api/plex/webhook"}
 
@@ -268,12 +310,13 @@ def _purge_old_logs():
             settings = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings").fetchall()}
             days = int(settings.get("log_retention_days", "30"))
             max_rows = int(settings.get("log_max_rows", "5000"))
+            modifier = f"-{days} days"
             # Delete old logs
-            conn.execute(f"DELETE FROM app_logs WHERE created_at < datetime('now', '-{days} days')")
-            conn.execute(f"DELETE FROM ai_logs WHERE created_at < datetime('now', '-{days} days')")
+            conn.execute("DELETE FROM app_logs WHERE created_at < datetime('now', ?)", (modifier,))
+            conn.execute("DELETE FROM ai_logs WHERE created_at < datetime('now', ?)", (modifier,))
             # Trim to max rows
-            conn.execute(f"DELETE FROM app_logs WHERE id NOT IN (SELECT id FROM app_logs ORDER BY created_at DESC LIMIT {max_rows})")
-            conn.execute(f"DELETE FROM ai_logs WHERE id NOT IN (SELECT id FROM ai_logs ORDER BY created_at DESC LIMIT {max_rows})")
+            conn.execute("DELETE FROM app_logs WHERE id NOT IN (SELECT id FROM app_logs ORDER BY created_at DESC LIMIT ?)", (max_rows,))
+            conn.execute("DELETE FROM ai_logs WHERE id NOT IN (SELECT id FROM ai_logs ORDER BY created_at DESC LIMIT ?)", (max_rows,))
     except Exception as e:
         log.warning("Log purge failed: %s", e)
 
@@ -305,10 +348,22 @@ def get_plex_config():
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
+def _ensure_webhook_secret() -> str:
+    """Get-or-create the shared secret that authenticates the Plex webhook. Plex can't
+    send custom headers but lets you set the webhook URL, so the secret rides as ?token=."""
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key='plex_webhook_secret'").fetchone()
+        if row and row["value"]:
+            return row["value"]
+        secret = secrets.token_urlsafe(24)
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_webhook_secret', ?)", (secret,))
+    return secret
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     _check_db_writable()
+    _ensure_webhook_secret()
     _purge_old_logs()
     _log_app("system", "Linearr started")
     yield
@@ -318,12 +373,32 @@ app = FastAPI(lifespan=lifespan)
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path in _PUBLIC_PATHS or path.startswith("/assets/") or path.startswith("/icon-") or path.endswith((".svg", ".ico", ".png", ".webmanifest", ".js", ".json")):
+    # Only /api/* is protected. Everything else is the static SPA shell / assets,
+    # which is public by nature — this avoids the fragile suffix-allowlist foot-gun
+    # where a future route like /api/export/config.json would silently become public.
+    if path in _PUBLIC_PATHS or not path.startswith("/api/"):
         return await call_next(request)
-    session = request.cookies.get("session")
-    if session != _session_token():
+    if not _verify_session_token(request.cookies.get("session")):
         return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # Allow self + data/blob for the SPA and inline SVG editor; Plex thumbs are proxied
+    # same-origin via /api/plex/thumb so img-src 'self' is sufficient.
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data: blob:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
+    )
+    if COOKIE_SECURE:
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return resp
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -335,7 +410,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
                  detail=f"{exc}", path=request.url.path)
     except Exception:
         pass
-    return JSONResponse(status_code=500, content={"detail": f"{type(exc).__name__}: {exc}"})
+    # Don't leak internal exception text (paths, SQL, upstream URLs) to clients.
+    # Full detail is in the container logs + in-app log viewer above.
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
@@ -417,20 +494,23 @@ def login(body: LoginIn, request: Request):
         raise HTTPException(429, "Too many login attempts. Try again later.")
     _login_attempts[ip].append(now)
 
-    if body.username.lower() != APP_USERNAME.lower() or body.password != APP_PASSWORD:
+    user_ok = body.username.lower() == APP_USERNAME.lower()
+    pass_ok = hmac.compare_digest(body.password, APP_PASSWORD)
+    if not (user_ok and pass_ok):
         log.info("Failed login from %s", ip)
         _log_app("auth", f"Failed login attempt from {ip}", "warn")
         raise HTTPException(401, "Invalid credentials")
     log.info("Successful login from %s", ip)
     _log_app("auth", f"User logged in from {ip}")
     response = JSONResponse({"ok": True})
-    response.set_cookie("session", _session_token(), httponly=True, samesite="lax", max_age=86400 * 30)
+    response.set_cookie("session", _make_session_token(), httponly=True, secure=COOKIE_SECURE,
+                        samesite="lax", max_age=SESSION_MAX_AGE)
     return response
 
 @app.post("/api/auth/logout")
 def logout():
     response = JSONResponse({"ok": True})
-    response.delete_cookie("session")
+    response.delete_cookie("session", httponly=True, secure=COOKIE_SECURE, samesite="lax")
     return response
 
 # ── Channels ──────────────────────────────────────────────────────────────────
@@ -805,21 +885,30 @@ def get_settings():
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
     url = rows.get("plex_url") or PLEX_URL_DEFAULT
     token = rows.get("plex_token") or PLEX_TOKEN_DEFAULT
+    webhook_secret = rows.get("plex_webhook_secret", "")
+    # Never return secrets in cleartext. Expose only whether each is configured; the UI
+    # shows a "configured — leave blank to keep" placeholder and POST preserves on empty.
     return {
         "plex_url": url,
-        "plex_token": token,
-        "openai_api_key": rows.get("openai_api_key", ""),
+        "plex_token": "",
+        "plex_token_set": bool(token),
+        "openai_api_key": "",
+        "openai_api_key_set": bool(rows.get("openai_api_key")),
         "openai_base_url": rows.get("openai_base_url", "https://api.openai.com/v1"),
         "openai_model": rows.get("openai_model", "gpt-4o-mini"),
         "tunarr_url": rows.get("tunarr_url", "http://tunarr:8000"),
+        "plex_webhook_path": f"/api/plex/webhook?token={webhook_secret}" if webhook_secret else "",
     }
 
 @app.post("/api/settings")
 def save_settings(body: SettingsIn):
     with get_db() as conn:
         conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_url', ?)", (body.plex_url,))
-        conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_token', ?)", (body.plex_token,))
-        if body.openai_api_key is not None:
+        # Empty secret means "keep the existing value" (the GET masks it), so a save from
+        # the settings form doesn't wipe the stored token.
+        if body.plex_token:
+            conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_token', ?)", (body.plex_token,))
+        if body.openai_api_key:
             conn.execute("INSERT OR REPLACE INTO settings VALUES ('openai_api_key', ?)", (body.openai_api_key,))
         if body.openai_base_url is not None:
             conn.execute("INSERT OR REPLACE INTO settings VALUES ('openai_base_url', ?)", (body.openai_base_url,))
@@ -1932,12 +2021,25 @@ async def generate_collections(channel_number: int):
     return {**result, "tunarr": tunarr_result}
 
 
+_THUMB_ALLOWED_PREFIXES = ("/library/", "/photo/", "/metadata/")
+
 @app.get("/api/plex/thumb")
 async def plex_thumb(path: str = Query(...), w: int = Query(200), h: int = Query(300)):
+    # SSRF hardening: `path` is caller-controlled. Only allow Plex media/photo paths,
+    # reject anything that could re-point the host (//, @, backslash, scheme), send the
+    # token as a header (never appended to a user-influenced URL), and don't follow
+    # redirects (an upstream 3xx must not bounce the token to an external host).
+    path_only = path.split("?", 1)[0]
+    if (not path.startswith("/") or path.startswith("//") or "://" in path
+            or any(c in path for c in ("@", "\\"))
+            or not path_only.startswith(_THUMB_ALLOWED_PREFIXES)):
+        raise HTTPException(400, "Invalid thumb path")
     url, token = get_plex_config()
-    full_url = f"{url}{path}?X-Plex-Token={token}&width={w}&height={h}"
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-        resp = await client.get(full_url)
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    full_url = f"{url}{path}"
+    async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
+        resp = await client.get(full_url, headers=plex_headers(token), params={"width": w, "height": h})
     headers = {
         "Cache-Control": "public, max-age=86400, immutable",
         "Vary": "Accept",
@@ -2141,9 +2243,14 @@ async def plex_library_hubs(section_id: str):
 # ── Plex Webhooks ─────────────────────────────────────────────────────────────
 
 @app.post("/api/plex/webhook")
-async def plex_webhook(request: Request):
+async def plex_webhook(request: Request, token: str = Query("")):
     """Receive Plex webhook events. Requires Plex Pass on the Plex server side.
-    Plex sends multipart/form-data with a 'payload' JSON field."""
+    Plex sends multipart/form-data with a 'payload' JSON field. The endpoint is
+    unauthenticated by cookie (Plex can't log in), so it's gated by a shared ?token=
+    secret — see plex_webhook_path in GET /api/settings for the URL to configure in Plex."""
+    expected = _ensure_webhook_secret()
+    if not hmac.compare_digest(token, expected):
+        raise HTTPException(401, "Invalid webhook token")
     try:
         form = await request.form()
         payload_raw = form.get("payload", "")
@@ -3796,8 +3903,9 @@ def clear_app_logs():
 def purge_logs(days: int = Query(30)):
     """Purge logs older than N days."""
     with get_db() as conn:
-        conn.execute(f"DELETE FROM app_logs WHERE created_at < datetime('now', '-{days} days')")
-        conn.execute(f"DELETE FROM ai_logs WHERE created_at < datetime('now', '-{days} days')")
+        modifier = f"-{int(days)} days"
+        conn.execute("DELETE FROM app_logs WHERE created_at < datetime('now', ?)", (modifier,))
+        conn.execute("DELETE FROM ai_logs WHERE created_at < datetime('now', ?)", (modifier,))
     _log_app("logs", f"Purged logs older than {days} days")
     return {"ok": True}
 
