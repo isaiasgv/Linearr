@@ -1,3 +1,9 @@
+# NOTE: Reference / seed snapshot only. This module is NOT imported by main.py at
+# runtime — channels live in the SQLite `channels` table and are managed via the
+# /api/channels routes. This file is also excluded from the Docker image (.dockerignore).
+# Keep it as documentation of the intended channel lineup, or wire it in as a DB seed
+# (and un-ignore it in .dockerignore) if you want it to drive runtime data.
+
 CHANNELS = [
     # ── Galaxy Main ──────────────────────────────────────────────
     {

@@ -1,0 +1,35 @@
+# .repo-meta.yml — governance metadata for this repository.
+# Source of truth for lifecycle, cadence, support, deployment, and criticality.
+# Audited by /check-standards. Updated via /setup-classification.
+# Synced to GitHub topics + README badges via /setup-github-meta.
+
+repository: Linearr
+
+# Lifecycle classification — pick exactly one.
+classification: Active Development
+
+# Release schedule (cadence) — pick exactly one.
+# dev publishes -dev.N prereleases continuously; main/release/* cut stable + -rc.N.
+release_schedule: Continuous
+
+# Support level — what kinds of work are accepted.
+# Self-hosted OSS, community-driven, no formal SLA.
+support_level: Best-Effort
+
+# Deployment strategy — how releases ship to production.
+# Users pull the published GHCR image and `docker compose up`.
+deployment_strategy: Rolling Release
+
+# Criticality — blast radius if this breaks.
+# Self-hosted homelab dashboard; not load-bearing for revenue/customers.
+criticality: Internal
+
+# Versioning mode — patch-only by default (see CLAUDE.md / .releaserc.js).
+# NOTE: cross-checks $versioningMode in .releaserc.json; config currently lives in
+# .releaserc.js, so the standards check will still flag the JSON migration separately.
+versioning_mode: patch-only
+
+# Optional governance fields.
+owner: "@isaiasgv"
+last_reviewed: 2026-06-25
+review_cadence: quarterly

@@ -37,7 +37,7 @@ Self-hosted TV channel schedule manager for Plex and Tunarr (Galaxy Network). Ru
 **Key files:**
 - `main.py` — all backend logic (routes, DB, Plex proxy); serves built React app from `/app/dist/`
 - `frontend/` — React + Vite app (vertical slice: `src/features/`, `src/shared/`)
-- `channels.py` — static list of Galaxy Network channels (`CHANNELS`)
+- `channels.py` — reference/seed list of Galaxy Network channels (`CHANNELS`). **Not imported at runtime** — channels live in the SQLite `channels` table; this file is a seed/reference snapshot and is excluded from the Docker image (`.dockerignore`).
 - `.env` — secrets (not committed: `PLEX_TOKEN`, `APP_PASSWORD`, `APP_SECRET`)
 - `docker-compose.yml` — service definition
 
@@ -166,7 +166,7 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 - `POST /api/auth/logout`
 
 ### Channels
-- `GET /api/channels` — returns `CHANNELS` list from `channels.py`
+- `GET /api/channels` — returns all rows from the SQLite `channels` table (ordered by number)
 - `GET /api/channels/suggest-247` — analyze Plex library, return 24/7 loop channel candidates
 - `POST /api/channels/ai-suggest` — AI-generate channel + package suggestions from DB
 
@@ -274,7 +274,7 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 
 ## Channels
 
-`channels.py` exports a `CHANNELS` list: `{number, name, tier, vibe, mode, style, dayparts, ...}`. This is the authoritative source. New channels must be added here.
+Channels are stored in the SQLite `channels` table (fields: `number, name, tier, vibe, mode, style, color, icon`) and managed at runtime via the `POST/PUT/DELETE /api/channels` routes — this is the authoritative source. `channels.py` exports a `CHANNELS` list as a **reference/seed snapshot only**; it is not imported by `main.py` and is excluded from the Docker image. If you wire it back in as a DB seed, un-ignore it in `.dockerignore` first.
 
 ---
 
