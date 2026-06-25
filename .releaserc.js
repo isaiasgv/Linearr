@@ -19,7 +19,10 @@ module.exports = {
   tagFormat: 'v${version}',
   branches: [
     'main',
-    { name: 'release/*', prerelease: 'rc' },
+    // Pin the release branch to its version range. A bare `release/*` glob makes a
+    // release branch inherit main's version (e.g. publish 1.0.1-rc instead of 0.0.x-rc);
+    // the explicit `range` keeps prereleases on the intended line.
+    { name: 'release/0.0.1', range: '0.0.x', prerelease: 'rc' },
     { name: 'dev', prerelease: 'dev' },
   ],
   plugins: [
