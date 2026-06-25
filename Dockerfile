@@ -1,4 +1,5 @@
 # ── Stage 1: Build React frontend ─────────────────────────────────────────────
+# TODO: digest-pin (run: docker buildx imagetools inspect node:20-slim)
 FROM node:20-slim AS frontend-builder
 
 WORKDIR /build
@@ -11,6 +12,7 @@ RUN npm run build
 # vite build outputs to /build/dist
 
 # ── Stage 2: Python backend ────────────────────────────────────────────────────
+# TODO: digest-pin (run: docker buildx imagetools inspect python:3.12-slim)
 FROM python:3.12-slim
 
 WORKDIR /app
