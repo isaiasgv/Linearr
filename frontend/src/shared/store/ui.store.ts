@@ -110,7 +110,6 @@ const defaultModals: Record<ModalName, boolean> = {
   settings: false,
   channelForm: false,
   blockForm: false,
-  collectionPicker: false,
   itemDetail: false,
   aiContentAdvisor: false,
   networkAdvisor: false,

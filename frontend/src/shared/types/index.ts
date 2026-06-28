@@ -293,7 +293,6 @@ export type ModalName =
   | 'settings'
   | 'channelForm'
   | 'blockForm'
-  | 'collectionPicker'
   | 'itemDetail'
   | 'aiContentAdvisor'
   | 'networkAdvisor'

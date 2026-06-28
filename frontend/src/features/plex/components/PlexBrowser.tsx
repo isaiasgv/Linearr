@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useDebounce } from '@/shared/hooks/useDebounce'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useAssignments, useAssign, useUnassign, useBulkAssign } from '@/features/assignments/hooks'
@@ -38,6 +38,32 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
   const [yearFilter, setYearFilter] = useState('')
   const [ratingFilter, setRatingFilter] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const filtersRef = useRef<HTMLDivElement>(null)
+
+  // Close the filters popover when clicking outside it.
+  useEffect(() => {
+    if (!filtersOpen) return
+    function onDown(e: MouseEvent) {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
+        setFiltersOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [filtersOpen])
+
+  // Switching source clears search + library filters so a stale search term can't
+  // override the collection preview (and vice-versa).
+  function handleSourceChange(next: Source) {
+    if (next === source) return
+    setSource(next)
+    setSearchInput('')
+    setGenreFilter('')
+    setYearFilter('')
+    setRatingFilter('')
+    setLoadLibrary(false)
+    setFiltersOpen(false)
+  }
 
   const debouncedSearch = useDebounce(searchInput, 400)
   const isSearching = debouncedSearch.trim().length > 0
@@ -152,7 +178,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
           {(['library', 'collection'] as Source[]).map((s) => (
             <button
               key={s}
-              onClick={() => setSource(s)}
+              onClick={() => handleSourceChange(s)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                 source === s ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
               }`}
@@ -213,7 +239,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
               disabled={!selectedCollection || unassignedCount === 0 || bulkAssign.isPending}
               className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs rounded-lg whitespace-nowrap"
             >
-              Add all {unassignedCount > 0 ? unassignedCount : ''}
+              {unassignedCount > 0 ? `Add all ${unassignedCount}` : 'Add all'}
             </button>
           </>
         )}
@@ -279,7 +305,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
 
         {/* Filters popover (library only) */}
         {source === 'library' && selectedLibrary && filterOptions && (
-          <div className="relative">
+          <div className="relative" ref={filtersRef}>
             <button
               onClick={() => setFiltersOpen((o) => !o)}
               className="px-2.5 py-1 text-xs rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
