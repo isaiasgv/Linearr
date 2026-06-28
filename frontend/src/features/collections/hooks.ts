@@ -38,42 +38,6 @@ export function useGenerateCollections() {
   })
 }
 
-interface LinkCollectionVars {
-  channelNumber: number
-  plex_type: 'movie' | 'show'
-  collection_rating_key: string
-  collection_title: string
-}
-
-export function useLinkCollection() {
-  const queryClient = useQueryClient()
-  const addToast = useToastStore((s) => s.addToast)
-
-  return useMutation({
-    mutationFn: ({ channelNumber, ...body }: LinkCollectionVars) =>
-      collectionsApi.linkCollection(channelNumber, body),
-    onSuccess: (data, { channelNumber }) => {
-      queryClient.setQueryData(
-        ['channel-collections', channelNumber],
-        (prev: { movie?: unknown; show?: unknown } | undefined) => ({
-          ...prev,
-          [data.plex_type]: data,
-        }),
-      )
-      void queryClient.invalidateQueries({ queryKey: ['collection-status', channelNumber] })
-      void queryClient.invalidateQueries({ queryKey: ['assignments'] })
-      if (data.assigned && data.assigned.added > 0) {
-        addToast(`Collection linked — ${data.assigned.added} items assigned`)
-      } else {
-        addToast('Collection linked successfully')
-      }
-    },
-    onError: (error: Error) => {
-      addToast(error.message || 'Failed to link collection', true)
-    },
-  })
-}
-
 interface UnlinkCollectionVars {
   channelNumber: number
   plexType: 'movie' | 'show'

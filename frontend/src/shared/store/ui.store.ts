@@ -54,6 +54,12 @@ interface UIState {
   setTierFilter: (filter: TierFilter) => void
   setAssignedTypeFilter: (filter: AssignedTypeFilter) => void
 
+  // Browse view preferences (persisted)
+  browseViewMode: BrowseViewMode
+  setBrowseViewMode: (mode: BrowseViewMode) => void
+  browsePosterSize: BrowsePosterSize
+  setBrowsePosterSize: (size: BrowsePosterSize) => void
+
   openModal: (name: ModalName, data?: Partial<UIState>) => void
   closeModal: (name: ModalName) => void
   closeAllModals: () => void
@@ -74,6 +80,29 @@ function writeCollapsed(collapsed: boolean): void {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0')
   } catch {
     /* ignore (private mode / SSR) */
+  }
+}
+
+const BROWSE_VIEW_KEY = 'linearr:browseViewMode'
+const BROWSE_SIZE_KEY = 'linearr:browsePosterSize'
+
+type BrowseViewMode = 'wall' | 'grid' | 'list'
+type BrowsePosterSize = 'small' | 'medium' | 'large'
+
+function readLS<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const v = localStorage.getItem(key)
+    return v && (allowed as readonly string[]).includes(v) ? (v as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function writeLS(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    /* ignore */
   }
 }
 
@@ -142,6 +171,17 @@ export const useUIStore = create<UIState>((set) => ({
   setActiveChannelTab: (activeChannelTab) => set({ activeChannelTab }),
   setTierFilter: (tierFilter) => set({ tierFilter }),
   setAssignedTypeFilter: (assignedTypeFilter) => set({ assignedTypeFilter }),
+
+  browseViewMode: readLS<BrowseViewMode>(BROWSE_VIEW_KEY, ['wall', 'grid', 'list'], 'wall'),
+  setBrowseViewMode: (browseViewMode) => {
+    writeLS(BROWSE_VIEW_KEY, browseViewMode)
+    set({ browseViewMode })
+  },
+  browsePosterSize: readLS<BrowsePosterSize>(BROWSE_SIZE_KEY, ['small', 'medium', 'large'], 'medium'),
+  setBrowsePosterSize: (browsePosterSize) => {
+    writeLS(BROWSE_SIZE_KEY, browsePosterSize)
+    set({ browsePosterSize })
+  },
 
   openModal: (name, data) =>
     set((s) => ({

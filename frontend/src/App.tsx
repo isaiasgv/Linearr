@@ -34,11 +34,6 @@ const SettingsView = lazy(() =>
     default: m.SettingsView,
   })),
 )
-const CollectionPickerModal = lazy(() =>
-  import('@/features/collections/components/CollectionPickerModal').then((m) => ({
-    default: m.CollectionPickerModal,
-  })),
-)
 const ItemDetailModal = lazy(() =>
   import('@/features/plex/components/ItemDetailModal').then((m) => ({
     default: m.ItemDetailModal,
@@ -152,7 +147,6 @@ export default function App() {
         <ChannelFormModal />
         <BlockFormModal />
         <TemplatesLibraryModal />
-        <CollectionPickerModal />
         <ItemDetailModal />
         <AiContentAdvisorModal />
         <NetworkAdvisorModal />
