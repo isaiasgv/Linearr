@@ -35,6 +35,15 @@ export function AssignmentGrid({ channelNumber }: AssignmentGridProps) {
     return true
   })
 
+  const showCount = assignments.filter((a) => a.plex_type === 'show').length
+  const movieCount = assignments.filter((a) => a.plex_type === 'movie').length
+  const countFor = (v: AssignedTypeFilter) =>
+    v === 'all' ? assignments.length : v === 'tv' ? showCount : movieCount
+
+  // Items exist but the active type filter hides them all — don't claim "nothing assigned".
+  const hiddenByFilter = assignments.length > 0 && filtered.length === 0
+  const activeFilterLabel = TYPE_FILTERS.find((f) => f.value === assignedTypeFilter)?.label ?? 'All'
+
   return (
     <div className="flex flex-col h-full">
       {/* Filter tabs */}
@@ -51,9 +60,7 @@ export function AssignmentGrid({ channelNumber }: AssignmentGridProps) {
             }`}
           >
             {label}
-            {value === 'all' && (
-              <span className="ml-1 text-xs opacity-70">({assignments.length})</span>
-            )}
+            <span className="ml-1 text-xs opacity-70">({countFor(value)})</span>
           </button>
         ))}
 
@@ -106,7 +113,22 @@ export function AssignmentGrid({ channelNumber }: AssignmentGridProps) {
               <rect x="2" y="7" width="20" height="15" rx="2" />
               <circle cx="12" cy="14" r="2" />
             </svg>
-            <p className="text-sm">No content assigned</p>
+            {hiddenByFilter ? (
+              <>
+                <p className="text-sm">
+                  No {activeFilterLabel.toLowerCase()} here — {assignments.length} assigned item
+                  {assignments.length !== 1 ? 's' : ''} hidden by the “{activeFilterLabel}” filter.
+                </p>
+                <button
+                  onClick={() => setAssignedTypeFilter('all')}
+                  className="text-xs px-2.5 py-1 rounded-md bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
+                >
+                  Show all
+                </button>
+              </>
+            ) : (
+              <p className="text-sm">No content assigned</p>
+            )}
           </div>
         ) : (
           <div className={`grid ${GRID_CLASSES[gridSize]} gap-3 p-4`}>
