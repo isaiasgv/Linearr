@@ -35,6 +35,14 @@ def client():
         yield c
 
 
+@pytest.fixture(autouse=True)
+def _reset_login_rate_limit():
+    # The login rate limiter is process-global and keys on the TestClient IP; clear it
+    # before each test so repeated logins across the suite don't trip the per-window cap.
+    main._login_attempts.clear()
+    yield
+
+
 @pytest.fixture()
 def auth_client(client):
     r = client.post("/api/auth/login", json={"username": TEST_USERNAME, "password": TEST_PASSWORD})

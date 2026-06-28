@@ -161,6 +161,10 @@ def init_db():
         except sqlite3.OperationalError:
             pass
         try:
+            conn.execute("ALTER TABLE channel_collections ADD COLUMN managed INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS tunarr_channel_links (
                     channel_number INTEGER PRIMARY KEY,
@@ -1668,55 +1672,44 @@ def get_channel_collections(channel_number: int):
     return result
 
 
-@app.post("/api/channel-collections/{channel_number}", status_code=201)
+@app.post("/api/channel-collections/{channel_number}", status_code=200)
 async def link_channel_collection(channel_number: int, body: ChannelCollectionIn):
-    with get_db() as conn:
-        conn.execute(
-            """INSERT INTO channel_collections (channel_number, plex_type, collection_rating_key, collection_title)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(channel_number, plex_type) DO UPDATE SET
-                   collection_rating_key=excluded.collection_rating_key,
-                   collection_title=excluded.collection_title""",
-            (channel_number, body.plex_type, body.collection_rating_key, body.collection_title),
-        )
-        row = conn.execute(
-            "SELECT * FROM channel_collections WHERE channel_number=? AND plex_type=?",
-            (channel_number, body.plex_type),
-        ).fetchone()
+    """Add all items from an existing Plex collection to a channel's assignments.
 
-    # Auto-assign collection items to the channel
+    SOURCE action only: it copies items in. It deliberately does NOT mark the
+    picked collection as the channel's managed target — Linearr manages its own
+    '{Channel} Movies/TV' collections (see generate_collections), so a user's own
+    collection can never be pruned.
+    """
     added = 0
     skipped = 0
-    try:
-        url, token = get_plex_config()
-        if token:
-            hdrs = plex_headers(token)
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(f"{url}/library/collections/{body.collection_rating_key}/children", headers=hdrs)
-            if resp.status_code == 200:
-                items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
-                with get_db() as conn:
-                    for m in items:
-                        t = m.get("type", "")
-                        if t not in ("movie", "show"):
-                            continue
-                        try:
-                            conn.execute(
-                                """INSERT INTO assignments
-                                   (channel_number, plex_rating_key, plex_title, plex_type, plex_thumb, plex_year)
-                                   VALUES (?, ?, ?, ?, ?, ?)""",
-                                (channel_number, m.get("ratingKey"), m.get("title"),
-                                 t, m.get("thumb"), m.get("year")),
-                            )
-                            added += 1
-                        except sqlite3.IntegrityError:
-                            skipped += 1
-    except Exception:
-        pass  # linking succeeded, assignment is best-effort
-
-    result = dict(row)
-    result["assigned"] = {"added": added, "skipped": skipped}
-    return result
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{url}/library/collections/{body.collection_rating_key}/children", headers=hdrs,
+        )
+    if resp.status_code == 200:
+        items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+        with get_db() as conn:
+            for m in items:
+                t = m.get("type", "")
+                if t not in ("movie", "show"):
+                    continue
+                try:
+                    conn.execute(
+                        """INSERT INTO assignments
+                           (channel_number, plex_rating_key, plex_title, plex_type, plex_thumb, plex_year)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (channel_number, m.get("ratingKey"), m.get("title"), t, m.get("thumb"), m.get("year")),
+                    )
+                    added += 1
+                except sqlite3.IntegrityError:
+                    skipped += 1
+    _log_app("assignment", f"Added {added} items from collection to ch {channel_number}")
+    return {"added": added, "skipped": skipped}
 
 
 @app.delete("/api/channel-collections/{channel_number}/{plex_type}")
@@ -1797,9 +1790,42 @@ async def collection_status(channel_number: int):
     return result
 
 
+# ── Channel collection ownership helpers ──────────────────────────────────────
+# Linearr only ever manages its OWN per-channel collections, named exactly like
+# "{Channel} Movies" / "{Channel} TV". These names are the ownership signal: the
+# generator never reads a stored rating key (which could point at a user's own
+# collection) and never deletes from anything whose title isn't one of these.
+
+_COLLECTION_SUFFIX = {"movie": "Movies", "show": "TV"}
+
+def _owned_collection_name(channel_name: str, plex_type: str) -> str:
+    suffix = _COLLECTION_SUFFIX.get(plex_type)
+    if suffix is None:
+        raise ValueError(f"Unsupported plex_type for collection: {plex_type}")
+    return f"{channel_name} {suffix}"
+
+def _is_owned_title(title: str, channel_name: str) -> bool:
+    return title in (
+        _owned_collection_name(channel_name, "movie"),
+        _owned_collection_name(channel_name, "show"),
+    )
+
+def _collection_delta(desired: set[str], current: set[str], already_managed: bool) -> tuple[set[str], set[str]]:
+    """Return (to_add, to_remove). On first touch (not yet managed) removals are
+    suppressed — Linearr will only ADD, never strip items it didn't put there."""
+    to_add = desired - current
+    to_remove = (current - desired) if already_managed else set()
+    return to_add, to_remove
+
+
 @app.post("/api/collections/generate/{channel_number}")
 async def generate_collections(channel_number: int):
-    """Create or update Plex collections for a channel's assigned movies and shows."""
+    """Create or update Plex collections for a channel's assigned movies and shows.
+
+    Linearr manages ONLY its own '{Channel} Movies' / '{Channel} TV' collections,
+    resolved by name — never a user-linked collection. First touch of any
+    collection is additive-only, so a user's own collection can never be pruned.
+    """
     url, token = get_plex_config()
     if not token:
         raise HTTPException(400, "Plex token not configured — open Settings")
@@ -1823,12 +1849,8 @@ async def generate_collections(channel_number: int):
     # Split by type
     movie_keys = [r["plex_rating_key"] for r in rows if r["plex_type"] == "movie"]
     show_keys  = [r["plex_rating_key"] for r in rows if r["plex_type"] == "show"]
-
-    # Load any user-linked collections
-    with get_db() as conn:
-        linked = {r["plex_type"]: dict(r) for r in conn.execute(
-            "SELECT * FROM channel_collections WHERE channel_number=?", (channel_number,)
-        ).fetchall()}
+    log.info("generate_collections ch %s: %d movie + %d show assignments",
+             channel_number, len(movie_keys), len(show_keys))
 
     hdrs = plex_headers(token)
 
@@ -1849,41 +1871,41 @@ async def generate_collections(channel_number: int):
 
         result = {}
 
-        for plex_type, keys, section, suffix, type_int in [
-            ("movie", movie_keys, movie_section, "Movies", 1),
-            ("show",  show_keys,  show_section,  "TV",     2),
+        for plex_type, keys, section, type_int in [
+            ("movie", movie_keys, movie_section, 1),
+            ("show",  show_keys,  show_section,  2),
         ]:
-            if not keys or not section:
+            if not keys:
+                log.info("generate_collections ch %s: no %s assignments — skipping",
+                         channel_number, plex_type)
+                continue
+            if not section:
+                msg = f"No {plex_type} library found on Plex — {len(keys)} {plex_type} item(s) not synced"
+                log.warning("generate_collections ch %s: %s", channel_number, msg)
+                result[plex_type] = {"name": None, "created": False, "added": 0,
+                                     "removed": 0, "total": len(set(keys)), "skipped": msg}
                 continue
 
             section_id = section["key"]
-            link = linked.get(plex_type)
-            coll_name  = link["collection_title"] if link else f"{ch_name} {suffix}"
+            coll_name = _owned_collection_name(ch_name, plex_type)
 
-            # 4a. Find existing collection — by linked rating key or by title
-            existing = None
+            # 4a. Resolve target ONLY by owned name. Never trust a stored rating key
+            # (it may point at one of the user's own collections).
+            coll_resp = await client.get(
+                f"{url}/library/sections/{section_id}/collections", headers=hdrs,
+            )
+            collections = []
+            if coll_resp.status_code == 200:
+                collections = coll_resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+            existing = next((c for c in collections if c.get("title") == coll_name), None)
+
             created = False
-            if link:
-                # Verify the linked collection still exists
-                ir = await client.get(f"{url}/library/collections/{link['collection_rating_key']}", headers=hdrs)
-                if ir.status_code == 200:
-                    meta = ir.json().get("MediaContainer", {}).get("Metadata", [])
-                    if meta:
-                        existing = meta[0]
-            else:
-                coll_resp = await client.get(
-                    f"{url}/library/sections/{section_id}/collections",
-                    headers=hdrs,
-                )
-                collections = []
-                if coll_resp.status_code == 200:
-                    collections = coll_resp.json().get("MediaContainer", {}).get("Metadata", []) or []
-                existing = next((c for c in collections if c.get("title") == coll_name), None)
-
             if existing:
-                coll_id = existing["ratingKey"]
+                coll_id = str(existing["ratingKey"])
+                # Defensive: never manage a collection whose title isn't ours.
+                if not _is_owned_title(existing.get("title", ""), ch_name):
+                    raise HTTPException(500, f"Refusing to manage non-owned collection: {existing.get('title')}")
             else:
-                # 4b. Create collection
                 create_resp = await client.post(
                     f"{url}/library/collections",
                     params={"type": type_int, "title": coll_name, "smart": 0, "sectionId": section_id},
@@ -1891,63 +1913,77 @@ async def generate_collections(channel_number: int):
                 )
                 if create_resp.status_code not in (200, 201):
                     raise HTTPException(502, f"Failed to create collection: {coll_name}")
-                coll_id = create_resp.json()["MediaContainer"]["Metadata"][0]["ratingKey"]
+                coll_id = str(create_resp.json()["MediaContainer"]["Metadata"][0]["ratingKey"])
                 created = True
 
-            # Always save the resolved collection link so future operations use the rating key
+            # 4b. Is this collection already managed by Linearr? (fresh-created => owned)
             with get_db() as conn:
-                conn.execute(
-                    """INSERT INTO channel_collections (channel_number, plex_type, collection_rating_key, collection_title)
-                       VALUES (?, ?, ?, ?)
-                       ON CONFLICT(channel_number, plex_type) DO UPDATE SET
-                           collection_rating_key=excluded.collection_rating_key,
-                           collection_title=excluded.collection_title""",
-                    (channel_number, plex_type, str(coll_id), coll_name),
-                )
+                prior = conn.execute(
+                    "SELECT collection_rating_key, managed FROM channel_collections "
+                    "WHERE channel_number=? AND plex_type=?",
+                    (channel_number, plex_type),
+                ).fetchone()
+            already_managed = bool(
+                created
+                or (prior and prior["managed"] == 1 and str(prior["collection_rating_key"]) == coll_id)
+            )
 
-            # 4c. Get current items
+            # 4c. Current items
             items_resp = await client.get(
-                f"{url}/library/collections/{coll_id}/children",
-                headers=hdrs,
+                f"{url}/library/collections/{coll_id}/children", headers=hdrs,
             )
             current_keys: set[str] = set()
             if items_resp.status_code == 200:
                 for item in items_resp.json().get("MediaContainer", {}).get("Metadata", []) or []:
                     current_keys.add(str(item["ratingKey"]))
 
-            desired_keys = set(keys)
+            desired_keys = {str(k) for k in keys}
+            to_add, to_remove = _collection_delta(desired_keys, current_keys, already_managed)
 
-            # 4d. Add missing
-            to_add = desired_keys - current_keys
+            # 4d. Apply add
             added = 0
             for rk in to_add:
                 uri = f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"
                 add_resp = await client.put(
-                    f"{url}/library/collections/{coll_id}/items",
-                    params={"uri": uri},
-                    headers=hdrs,
+                    f"{url}/library/collections/{coll_id}/items", params={"uri": uri}, headers=hdrs,
                 )
                 if add_resp.status_code in (200, 201):
                     added += 1
+                else:
+                    log.warning("generate_collections ch %s: failed to add %s to '%s' (%s): %s",
+                                channel_number, rk, coll_name, add_resp.status_code, add_resp.text[:200])
 
-            # 4d. Remove stale
-            to_remove = current_keys - desired_keys
+            # 4e. Apply remove (always empty on first touch — see _collection_delta)
             removed = 0
             for rk in to_remove:
                 del_resp = await client.delete(
-                    f"{url}/library/collections/{coll_id}/items",
-                    params={"items": rk},
-                    headers=hdrs,
+                    f"{url}/library/collections/{coll_id}/items", params={"items": rk}, headers=hdrs,
                 )
                 if del_resp.status_code in (200, 204):
                     removed += 1
 
+            # 4f. Persist as managed (owned collection only)
+            with get_db() as conn:
+                conn.execute(
+                    """INSERT INTO channel_collections
+                       (channel_number, plex_type, collection_rating_key, collection_title, managed)
+                       VALUES (?, ?, ?, ?, 1)
+                       ON CONFLICT(channel_number, plex_type) DO UPDATE SET
+                           collection_rating_key=excluded.collection_rating_key,
+                           collection_title=excluded.collection_title,
+                           managed=1""",
+                    (channel_number, plex_type, coll_id, coll_name),
+                )
+
+            log.info("generate_collections ch %s: %s '%s' +%d/-%d (%d desired, additive_only=%s)",
+                     channel_number, plex_type, coll_name, added, removed, len(desired_keys), not already_managed)
             result[plex_type] = {
                 "name": coll_name,
                 "created": created,
                 "added": added,
                 "removed": removed,
                 "total": len(desired_keys),
+                "additive_only": not already_managed,
             }
 
     # ── Auto-sync to Tunarr if a channel link exists ──────────────────────────
