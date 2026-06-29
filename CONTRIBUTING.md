@@ -63,11 +63,22 @@ refactor(plex): extract thumbnail proxy logic
 
 ## Pull Requests
 
-1. Fork the repo and create a branch from `main`
+1. Fork the repo and create a feature branch from `dev` (the integration branch)
 2. Make your changes with clear, conventional commits
-3. Ensure `npm run lint` and `npm run build` pass
-4. Open a PR with a clear description of what and why
+3. Ensure `npm run lint`, `npm run build`, and `pytest` pass
+4. Open a PR into `dev` with a clear description of what and why
 5. Link any relevant issues
+
+## Branch protection
+
+`main` and `dev` are protected branches:
+
+- **No direct pushes** — all changes land via pull request.
+- **CI must pass** — the `ci` and `backend` jobs (lint, typecheck, build, tests) are
+  required status checks before merge.
+- **At least one approving review** is required before a PR can be merged.
+- `main` is release-only: it receives merges from `release/<M.N>` or `dev` and is the
+  branch stable tags are cut from. Day-to-day work targets `dev`.
 
 ## Reporting Issues
 

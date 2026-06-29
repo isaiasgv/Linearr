@@ -1,6 +1,6 @@
 # ── Stage 1: Build React frontend ─────────────────────────────────────────────
-# TODO: digest-pin (run: docker buildx imagetools inspect node:20-slim)
-FROM node:20-slim AS frontend-builder
+# node:20-slim, digest-pinned for reproducible builds (refresh: docker buildx imagetools inspect node:20-slim)
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS frontend-builder
 
 WORKDIR /build
 
@@ -12,8 +12,8 @@ RUN npm run build
 # vite build outputs to /build/dist
 
 # ── Stage 2: Python backend ────────────────────────────────────────────────────
-# TODO: digest-pin (run: docker buildx imagetools inspect python:3.12-slim)
-FROM python:3.12-slim
+# python:3.12-slim, digest-pinned for reproducible builds (refresh: docker buildx imagetools inspect python:3.12-slim)
+FROM python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
 
 WORKDIR /app
 
