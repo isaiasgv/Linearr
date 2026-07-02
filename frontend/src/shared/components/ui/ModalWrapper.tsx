@@ -44,9 +44,9 @@ export function ModalWrapper({
 
       const dialog = dialogRef.current
       if (!dialog) return
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      ).filter((el) => el.offsetParent !== null || el === document.activeElement)
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      )
       if (focusable.length === 0) {
         e.preventDefault()
         dialog.focus()

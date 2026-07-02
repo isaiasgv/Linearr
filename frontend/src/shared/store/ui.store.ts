@@ -176,7 +176,11 @@ export const useUIStore = create<UIState>((set) => ({
     writeLS(BROWSE_VIEW_KEY, browseViewMode)
     set({ browseViewMode })
   },
-  browsePosterSize: readLS<BrowsePosterSize>(BROWSE_SIZE_KEY, ['small', 'medium', 'large'], 'medium'),
+  browsePosterSize: readLS<BrowsePosterSize>(
+    BROWSE_SIZE_KEY,
+    ['small', 'medium', 'large'],
+    'medium',
+  ),
   setBrowsePosterSize: (browsePosterSize) => {
     writeLS(BROWSE_SIZE_KEY, browsePosterSize)
     set({ browsePosterSize })

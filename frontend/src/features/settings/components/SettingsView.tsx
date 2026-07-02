@@ -366,7 +366,10 @@ export function SettingsView() {
                 {/* Config fields */}
                 <div className="space-y-3">
                   <div>
-                    <label htmlFor="settings-plex-url" className="block text-xs text-slate-400 mb-1.5">
+                    <label
+                      htmlFor="settings-plex-url"
+                      className="block text-xs text-slate-400 mb-1.5"
+                    >
                       Server URL
                     </label>
                     <input
@@ -379,7 +382,10 @@ export function SettingsView() {
                     />
                   </div>
                   <div>
-                    <label htmlFor="settings-plex-token" className="block text-xs text-slate-400 mb-1.5">
+                    <label
+                      htmlFor="settings-plex-token"
+                      className="block text-xs text-slate-400 mb-1.5"
+                    >
                       Token
                     </label>
                     <input
@@ -502,7 +508,10 @@ export function SettingsView() {
 
                 <div className="space-y-3">
                   <div>
-                    <label htmlFor="settings-ai-key" className="block text-xs text-slate-400 mb-1.5">
+                    <label
+                      htmlFor="settings-ai-key"
+                      className="block text-xs text-slate-400 mb-1.5"
+                    >
                       API Key
                     </label>
                     <input
@@ -515,7 +524,10 @@ export function SettingsView() {
                     />
                   </div>
                   <div>
-                    <label htmlFor="settings-ai-baseurl" className="block text-xs text-slate-400 mb-1.5">
+                    <label
+                      htmlFor="settings-ai-baseurl"
+                      className="block text-xs text-slate-400 mb-1.5"
+                    >
                       Base URL
                     </label>
                     <input
@@ -687,7 +699,10 @@ export function SettingsView() {
 
                 {/* Config */}
                 <div>
-                  <label htmlFor="settings-tunarr-url" className="block text-xs text-slate-400 mb-1.5">
+                  <label
+                    htmlFor="settings-tunarr-url"
+                    className="block text-xs text-slate-400 mb-1.5"
+                  >
                     Tunarr URL
                   </label>
                   <input

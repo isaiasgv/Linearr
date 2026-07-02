@@ -83,7 +83,12 @@ function refreshJwt(): Promise<{ ok: boolean; mode: string }> {
   return post<{ ok: boolean; mode: string }>('/api/plex/auth/jwt/refresh')
 }
 
-function authInfo(): Promise<{ mode: string; has_token: boolean; token_age_days: number | null; needs_refresh: boolean }> {
+function authInfo(): Promise<{
+  mode: string
+  has_token: boolean
+  token_age_days: number | null
+  needs_refresh: boolean
+}> {
   return get('/api/plex/auth/info')
 }
 
