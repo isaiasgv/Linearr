@@ -103,7 +103,12 @@ export function BlockFormModal() {
   const isPending = createBlock.isPending || updateBlock.isPending
 
   return (
-    <ModalWrapper open={isOpen} onClose={handleClose} maxWidth="max-w-lg" titleId="block-form-title">
+    <ModalWrapper
+      open={isOpen}
+      onClose={handleClose}
+      maxWidth="max-w-lg"
+      titleId="block-form-title"
+    >
       <form onSubmit={handleSubmit}>
         {/* Modal header */}
         <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
@@ -166,7 +171,10 @@ export function BlockFormModal() {
           {/* Time range */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor={ids.start} className="block text-xs font-medium text-slate-400 mb-1.5">
+              <label
+                htmlFor={ids.start}
+                className="block text-xs font-medium text-slate-400 mb-1.5"
+              >
                 Start Time
               </label>
               <input

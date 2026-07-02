@@ -20,9 +20,7 @@ interface ContentTabProps {
 
 function StatusDot({ ok }: { ok: boolean }) {
   return (
-    <span
-      className={`w-1.5 h-1.5 rounded-full shrink-0 ${ok ? 'bg-green-400' : 'bg-slate-600'}`}
-    />
+    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ok ? 'bg-green-400' : 'bg-slate-600'}`} />
   )
 }
 
@@ -92,7 +90,13 @@ function CollectionTypeStatus({
           className="flex items-center gap-1 text-slate-500 hover:text-red-400 transition-colors"
         >
           <span className="truncate max-w-28 text-slate-400">{linkedTitle}</span>
-          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+          <svg
+            className="w-3 h-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </button>
@@ -105,7 +109,13 @@ function CollectionTypeStatus({
               : 'border-slate-600 hover:border-blue-600 text-slate-500 hover:text-blue-400'
           }`}
         >
-          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg
+            className="w-3 h-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
             <path d="M12 5v14M5 12h14" />
           </svg>
           Add from collection
@@ -164,7 +174,13 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 plexType="movie"
                 label="Movies"
                 icon={
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
                     <rect x="2" y="7" width="20" height="15" rx="2" />
                     <circle cx="12" cy="14" r="2" />
                   </svg>
@@ -182,7 +198,13 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 plexType="show"
                 label="Shows"
                 icon={
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
                     <rect x="2" y="3" width="20" height="18" rx="2" />
                     <path d="M8 10h8M8 14h5" />
                   </svg>
@@ -203,7 +225,13 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 {generateCollections.isPending ? (
                   <Spinner size="sm" />
                 ) : (
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
                     <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                 )}

@@ -273,7 +273,10 @@ export function SettingsModal() {
                   {/* Config fields */}
                   <div className="space-y-3">
                     <div>
-                      <label htmlFor="settings-modal-plex-url" className="block text-xs text-slate-400 mb-1.5">
+                      <label
+                        htmlFor="settings-modal-plex-url"
+                        className="block text-xs text-slate-400 mb-1.5"
+                      >
                         Server URL
                       </label>
                       <input
@@ -286,7 +289,10 @@ export function SettingsModal() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="settings-modal-plex-token" className="block text-xs text-slate-400 mb-1.5">
+                      <label
+                        htmlFor="settings-modal-plex-token"
+                        className="block text-xs text-slate-400 mb-1.5"
+                      >
                         Token
                       </label>
                       <input
@@ -357,7 +363,10 @@ export function SettingsModal() {
                   {/* Config fields */}
                   <div className="space-y-3">
                     <div>
-                      <label htmlFor="settings-modal-ai-key" className="block text-xs text-slate-400 mb-1.5">
+                      <label
+                        htmlFor="settings-modal-ai-key"
+                        className="block text-xs text-slate-400 mb-1.5"
+                      >
                         API Key
                       </label>
                       <input
@@ -370,7 +379,10 @@ export function SettingsModal() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="settings-modal-ai-baseurl" className="block text-xs text-slate-400 mb-1.5">
+                      <label
+                        htmlFor="settings-modal-ai-baseurl"
+                        className="block text-xs text-slate-400 mb-1.5"
+                      >
                         Base URL
                       </label>
                       <input
@@ -384,7 +396,10 @@ export function SettingsModal() {
                     </div>
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
-                        <label htmlFor="settings-modal-ai-model" className="block text-xs text-slate-400">
+                        <label
+                          htmlFor="settings-modal-ai-model"
+                          className="block text-xs text-slate-400"
+                        >
                           Model
                         </label>
                         <button
@@ -464,7 +479,10 @@ export function SettingsModal() {
 
                   {/* Config */}
                   <div>
-                    <label htmlFor="settings-modal-tunarr-url" className="block text-xs text-slate-400 mb-1.5">
+                    <label
+                      htmlFor="settings-modal-tunarr-url"
+                      className="block text-xs text-slate-400 mb-1.5"
+                    >
                       Tunarr URL
                     </label>
                     <input

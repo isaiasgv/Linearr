@@ -263,7 +263,9 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
               key={t}
               onClick={() => setTypeFilter(t)}
               className={`px-2 py-1 rounded-md text-xs font-medium transition-colors ${
-                typeFilter === t ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                typeFilter === t
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
             >
               {t === 'all' ? 'All' : t === 'show' ? 'TV' : 'Movies'}
@@ -317,39 +319,65 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
                 {filterOptions.genres.length > 0 && (
                   <select
                     value={genreFilter}
-                    onChange={(e) => { setGenreFilter(e.target.value); setLoadLibrary(true) }}
+                    onChange={(e) => {
+                      setGenreFilter(e.target.value)
+                      setLoadLibrary(true)
+                    }}
                     aria-label="Genre"
                     className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
                   >
                     <option value="">All Genres</option>
-                    {filterOptions.genres.map((g) => <option key={g} value={g}>{g}</option>)}
+                    {filterOptions.genres.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
                   </select>
                 )}
                 {filterOptions.years.length > 0 && (
                   <select
                     value={yearFilter}
-                    onChange={(e) => { setYearFilter(e.target.value); setLoadLibrary(true) }}
+                    onChange={(e) => {
+                      setYearFilter(e.target.value)
+                      setLoadLibrary(true)
+                    }}
                     aria-label="Year"
                     className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
                   >
                     <option value="">All Years</option>
-                    {filterOptions.years.map((y) => <option key={y} value={y}>{y}</option>)}
+                    {filterOptions.years.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
                   </select>
                 )}
                 {filterOptions.content_ratings.length > 0 && (
                   <select
                     value={ratingFilter}
-                    onChange={(e) => { setRatingFilter(e.target.value); setLoadLibrary(true) }}
+                    onChange={(e) => {
+                      setRatingFilter(e.target.value)
+                      setLoadLibrary(true)
+                    }}
                     aria-label="Content rating"
                     className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
                   >
                     <option value="">All Ratings</option>
-                    {filterOptions.content_ratings.map((r) => <option key={r} value={r}>{r}</option>)}
+                    {filterOptions.content_ratings.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
                   </select>
                 )}
                 {activeFilterCount > 0 && (
                   <button
-                    onClick={() => { setGenreFilter(''); setYearFilter(''); setRatingFilter(''); setLoadLibrary(true) }}
+                    onClick={() => {
+                      setGenreFilter('')
+                      setYearFilter('')
+                      setRatingFilter('')
+                      setLoadLibrary(true)
+                    }}
                     className="text-xs text-slate-500 hover:text-slate-300"
                   >
                     Clear filters
