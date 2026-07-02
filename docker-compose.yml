@@ -12,6 +12,21 @@ services:
     networks:
       - plex_default
     restart: unless-stopped
+    # Defense-in-depth. NOTE: the entrypoint must start as root to chown the
+    # bind-mounted /app/data, then drops to the app user via gosu — so we do NOT
+    # set `user:` or `read_only` here. cap_drop ALL is safe because we re-add only
+    # the capabilities the chown-as-root + gosu privilege drop actually need.
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN        # chown -R on the data volume
+      - DAC_OVERRIDE # write to volume paths owned by another uid
+      - FOWNER       # chown files not owned by current uid
+      - SETUID       # gosu drops to the app uid
+      - SETGID       # gosu drops to the app gid
 
 networks:
   plex_default:

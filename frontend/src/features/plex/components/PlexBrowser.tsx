@@ -1,18 +1,21 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useDebounce } from '@/shared/hooks/useDebounce'
 import { useUIStore } from '@/shared/store/ui.store'
-import { useAssignments, useAssign, useUnassign } from '@/features/assignments/hooks'
+import { useAssignments, useAssign, useUnassign, useBulkAssign } from '@/features/assignments/hooks'
 import {
   usePlexLibraries,
   usePlexLibraryItems,
   usePlexSearch,
   usePlexLibraryFilters,
+  usePlexCollections,
+  usePlexCollectionItems,
 } from '@/features/plex/hooks'
 import { PosterGrid } from './PosterGrid'
 import type { PosterViewMode, PosterSize } from './PosterGrid'
 import type { PlexItem } from '@/shared/types'
 
 type TypeFilter = 'all' | 'show' | 'movie'
+type Source = 'library' | 'collection'
 
 interface PlexBrowserProps {
   channelNumber: number
@@ -20,21 +23,53 @@ interface PlexBrowserProps {
 
 export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
   const openModal = useUIStore((s) => s.openModal)
+  const viewMode = useUIStore((s) => s.browseViewMode)
+  const setViewMode = useUIStore((s) => s.setBrowseViewMode)
+  const posterSize = useUIStore((s) => s.browsePosterSize)
+  const setPosterSize = useUIStore((s) => s.setBrowsePosterSize)
 
-  const [selectedLibrary, setSelectedLibrary] = useState<string>('')
+  const [source, setSource] = useState<Source>('library')
+  const [selectedLibrary, setSelectedLibrary] = useState('')
   const [loadLibrary, setLoadLibrary] = useState(false)
+  const [selectedCollection, setSelectedCollection] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [genreFilter, setGenreFilter] = useState('')
   const [yearFilter, setYearFilter] = useState('')
   const [ratingFilter, setRatingFilter] = useState('')
-  const [viewMode, setViewMode] = useState<PosterViewMode>('grid')
-  const [posterSize, setPosterSize] = useState<PosterSize>('medium')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const filtersRef = useRef<HTMLDivElement>(null)
+
+  // Close the filters popover when clicking outside it.
+  useEffect(() => {
+    if (!filtersOpen) return
+    function onDown(e: MouseEvent) {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
+        setFiltersOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [filtersOpen])
+
+  // Switching source clears search + library filters so a stale search term can't
+  // override the collection preview (and vice-versa).
+  function handleSourceChange(next: Source) {
+    if (next === source) return
+    setSource(next)
+    setSearchInput('')
+    setGenreFilter('')
+    setYearFilter('')
+    setRatingFilter('')
+    setLoadLibrary(false)
+    setFiltersOpen(false)
+  }
 
   const debouncedSearch = useDebounce(searchInput, 400)
   const isSearching = debouncedSearch.trim().length > 0
 
   const { data: libraries = [], isLoading: librariesLoading } = usePlexLibraries()
+  const { data: collections = [] } = usePlexCollections()
 
   const searchTypeParam = typeFilter === 'all' ? undefined : typeFilter
   const { data: searchResults = [], isFetching: searchFetching } = usePlexSearch(
@@ -55,27 +90,52 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
 
   const { data: libraryItems = [], isFetching: libraryFetching } = usePlexLibraryItems(
     selectedLibrary,
-    loadLibrary && !isSearching,
+    source === 'library' && loadLibrary && !isSearching,
     libraryFilters as { genre?: string; year?: number; content_rating?: string } | undefined,
+  )
+
+  const { data: collectionItems = [], isFetching: collectionFetching } = usePlexCollectionItems(
+    source === 'collection' ? selectedCollection : '',
   )
 
   const { data: assignmentsMap = {} } = useAssignments()
   const assign = useAssign()
   const unassign = useUnassign()
+  const bulkAssign = useBulkAssign()
 
-  const channelAssignments = assignmentsMap[channelNumber] ?? []
+  const channelAssignments = useMemo(
+    () => assignmentsMap[channelNumber] ?? [],
+    [assignmentsMap, channelNumber],
+  )
   const assignedKeys = useMemo(
     () => new Set(channelAssignments.map((a) => a.plex_rating_key)),
     [channelAssignments],
   )
 
-  const rawItems: PlexItem[] = isSearching ? searchResults : loadLibrary ? libraryItems : []
+  const rawItems = useMemo<PlexItem[]>(
+    () =>
+      isSearching
+        ? searchResults
+        : source === 'collection'
+          ? collectionItems
+          : loadLibrary
+            ? libraryItems
+            : [],
+    [isSearching, searchResults, source, collectionItems, loadLibrary, libraryItems],
+  )
   const filteredItems = useMemo(
     () => (typeFilter === 'all' ? rawItems : rawItems.filter((i) => i.type === typeFilter)),
     [rawItems, typeFilter],
   )
 
-  const isLoading = isSearching ? searchFetching : libraryFetching
+  const isLoading = isSearching
+    ? searchFetching
+    : source === 'collection'
+      ? collectionFetching
+      : libraryFetching
+
+  const activeFilterCount = [genreFilter, yearFilter, ratingFilter].filter(Boolean).length
+  const unassignedCount = filteredItems.filter((i) => !assignedKeys.has(i.rating_key)).length
 
   function handleAssign(item: PlexItem) {
     assign.mutate({
@@ -92,231 +152,210 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
     unassign.mutate({ id, channelNumber })
   }
 
+  function handleAddAll() {
+    const items = filteredItems
+      .filter((i) => !assignedKeys.has(i.rating_key))
+      .map((i) => ({
+        plex_rating_key: i.rating_key,
+        plex_title: i.title,
+        plex_type: i.type,
+        plex_thumb: i.thumb,
+        plex_year: i.year,
+      }))
+    if (items.length > 0) bulkAssign.mutate({ channelNumber, items })
+  }
+
   function handleDetail(ratingKey: string) {
     openModal('itemDetail', { itemDetailRatingKey: ratingKey })
   }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Controls */}
-      <div className="flex-shrink-0 p-3 border-b border-slate-800 flex flex-col gap-2">
-        {/* Library select + load button */}
-        <div className="flex gap-2">
-          <select
-            value={selectedLibrary}
-            onChange={(e) => {
-              setSelectedLibrary(e.target.value)
-              setLoadLibrary(false)
-              setGenreFilter('')
-              setYearFilter('')
-              setRatingFilter('')
-            }}
-            disabled={librariesLoading}
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-          >
-            <option value="">Select library…</option>
-            {libraries.map((lib) => (
-              <option key={lib.id} value={lib.id}>
-                {lib.title} ({lib.type})
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => setLoadLibrary(true)}
-            disabled={!selectedLibrary || isSearching}
-            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-sm rounded-lg transition-colors whitespace-nowrap"
-          >
-            Browse library
-          </button>
+      {/* Slim sticky toolbar */}
+      <div className="flex-shrink-0 sticky top-0 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800 px-3 py-2 flex items-center gap-2 flex-wrap">
+        {/* Source toggle */}
+        <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
+          {(['library', 'collection'] as Source[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => handleSourceChange(s)}
+              className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                source === s ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {s === 'library' ? 'Library' : 'Collection'}
+            </button>
+          ))}
         </div>
 
+        {/* Source picker */}
+        {source === 'library' ? (
+          <>
+            <select
+              value={selectedLibrary}
+              onChange={(e) => {
+                setSelectedLibrary(e.target.value)
+                setLoadLibrary(false)
+                setGenreFilter('')
+                setYearFilter('')
+                setRatingFilter('')
+              }}
+              disabled={librariesLoading}
+              aria-label="Plex library"
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"
+            >
+              <option value="">Select library…</option>
+              {libraries.map((lib) => (
+                <option key={lib.id} value={lib.id}>
+                  {lib.title}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setLoadLibrary(true)}
+              disabled={!selectedLibrary || isSearching}
+              className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-xs rounded-lg whitespace-nowrap"
+            >
+              Browse
+            </button>
+          </>
+        ) : (
+          <>
+            <select
+              value={selectedCollection}
+              onChange={(e) => setSelectedCollection(e.target.value)}
+              aria-label="Plex collection"
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 max-w-[14rem]"
+            >
+              <option value="">Select collection…</option>
+              {collections.map((c) => (
+                <option key={c.rating_key} value={c.rating_key}>
+                  {c.title} ({c.child_count})
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleAddAll}
+              disabled={!selectedCollection || unassignedCount === 0 || bulkAssign.isPending}
+              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs rounded-lg whitespace-nowrap"
+            >
+              {unassignedCount > 0 ? `Add all ${unassignedCount}` : 'Add all'}
+            </button>
+          </>
+        )}
+
         {/* Search */}
-        <div className="relative">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.35-4.35" />
-          </svg>
+        <div className="relative flex-1 min-w-[8rem]">
           <input
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search Plex…"
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+            placeholder="Search…"
+            aria-label="Search Plex"
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           />
-          {searchInput && (
-            <button
-              onClick={() => setSearchInput('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-            >
-              <svg
-                className="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
-          )}
         </div>
 
-        {/* Type filter tabs + view controls */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex gap-1">
-            {(['all', 'show', 'movie'] as TypeFilter[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTypeFilter(t)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  typeFilter === t
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                {t === 'all' ? 'All' : t === 'show' ? 'Shows' : 'Movies'}
-              </button>
-            ))}
-          </div>
-
-          {/* View mode toggle */}
-          <div className="flex gap-1 bg-slate-900 border border-slate-700 rounded-lg p-1 ml-auto">
+        {/* Type filter */}
+        <div className="flex gap-0.5">
+          {(['all', 'show', 'movie'] as TypeFilter[]).map((t) => (
             <button
-              onClick={() => setViewMode('grid')}
-              title="Grid"
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'grid'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-slate-100'
+              key={t}
+              onClick={() => setTypeFilter(t)}
+              className={`px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                typeFilter === t ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
             >
-              <svg
-                className="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
-              Grid
+              {t === 'all' ? 'All' : t === 'show' ? 'TV' : 'Movies'}
             </button>
-            <button
-              onClick={() => setViewMode('list')}
-              title="List"
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              <svg
-                className="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
-              </svg>
-              List
-            </button>
-          </div>
-
-          {/* Poster size toggle */}
-          <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
-            {(['small', 'medium', 'large'] as PosterSize[]).map((s) => (
-              <button
-                key={s}
-                onClick={() => setPosterSize(s)}
-                title={s.charAt(0).toUpperCase() + s.slice(1)}
-                className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                  posterSize === s
-                    ? 'bg-slate-600 text-white'
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                {s.charAt(0).toUpperCase()}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
 
-        {/* Genre / Year / Rating filters — only when browsing a library */}
-        {selectedLibrary && filterOptions && (
-          <div className="flex gap-2 flex-wrap">
-            {filterOptions.genres.length > 0 && (
-              <select
-                value={genreFilter}
-                onChange={(e) => {
-                  setGenreFilter(e.target.value)
-                  setLoadLibrary(true)
-                }}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-              >
-                <option value="">All Genres</option>
-                {filterOptions.genres.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            )}
-            {filterOptions.years.length > 0 && (
-              <select
-                value={yearFilter}
-                onChange={(e) => {
-                  setYearFilter(e.target.value)
-                  setLoadLibrary(true)
-                }}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-              >
-                <option value="">All Years</option>
-                {filterOptions.years.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            )}
-            {filterOptions.content_ratings.length > 0 && (
-              <select
-                value={ratingFilter}
-                onChange={(e) => {
-                  setRatingFilter(e.target.value)
-                  setLoadLibrary(true)
-                }}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-              >
-                <option value="">All Ratings</option>
-                {filterOptions.content_ratings.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            )}
-            {(genreFilter || yearFilter || ratingFilter) && (
-              <button
-                onClick={() => {
-                  setGenreFilter('')
-                  setYearFilter('')
-                  setRatingFilter('')
-                  setLoadLibrary(true)
-                }}
-                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
-              >
-                Clear filters
-              </button>
+        {/* View mode */}
+        <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
+          {(['wall', 'grid', 'list'] as PosterViewMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setViewMode(m)}
+              title={m}
+              className={`px-2 py-1 text-xs rounded-md capitalize transition-colors ${
+                viewMode === m ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-100'
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+
+        {/* Size */}
+        <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
+          {(['small', 'medium', 'large'] as PosterSize[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => setPosterSize(s)}
+              title={s}
+              className={`px-1.5 py-1 text-xs rounded-md transition-colors ${
+                posterSize === s ? 'bg-slate-600 text-white' : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {s.charAt(0).toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        {/* Filters popover (library only) */}
+        {source === 'library' && selectedLibrary && filterOptions && (
+          <div className="relative" ref={filtersRef}>
+            <button
+              onClick={() => setFiltersOpen((o) => !o)}
+              className="px-2.5 py-1 text-xs rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+            >
+              Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+            </button>
+            {filtersOpen && (
+              <div className="absolute right-0 mt-1 z-20 bg-slate-900 border border-slate-700 rounded-lg p-2 flex flex-col gap-2 shadow-xl">
+                {filterOptions.genres.length > 0 && (
+                  <select
+                    value={genreFilter}
+                    onChange={(e) => { setGenreFilter(e.target.value); setLoadLibrary(true) }}
+                    aria-label="Genre"
+                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
+                  >
+                    <option value="">All Genres</option>
+                    {filterOptions.genres.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                )}
+                {filterOptions.years.length > 0 && (
+                  <select
+                    value={yearFilter}
+                    onChange={(e) => { setYearFilter(e.target.value); setLoadLibrary(true) }}
+                    aria-label="Year"
+                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
+                  >
+                    <option value="">All Years</option>
+                    {filterOptions.years.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                )}
+                {filterOptions.content_ratings.length > 0 && (
+                  <select
+                    value={ratingFilter}
+                    onChange={(e) => { setRatingFilter(e.target.value); setLoadLibrary(true) }}
+                    aria-label="Content rating"
+                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
+                  >
+                    <option value="">All Ratings</option>
+                    {filterOptions.content_ratings.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                )}
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => { setGenreFilter(''); setYearFilter(''); setRatingFilter(''); setLoadLibrary(true) }}
+                    className="text-xs text-slate-500 hover:text-slate-300"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -324,19 +363,13 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
 
       {/* Grid */}
       <div className="flex-1 overflow-y-auto">
-        {!isSearching && !loadLibrary ? (
+        {!isSearching && source === 'library' && !loadLibrary ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-500 text-sm gap-2">
-            <svg
-              className="w-8 h-8"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.35-4.35" />
-            </svg>
-            <p>Search or browse a library</p>
+            <p>Pick a library and hit Browse, search, or switch to Collection.</p>
+          </div>
+        ) : !isSearching && source === 'collection' && !selectedCollection ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-500 text-sm gap-2">
+            <p>Pick a collection to preview its items, then “Add all”.</p>
           </div>
         ) : (
           <PosterGrid

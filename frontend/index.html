@@ -2,7 +2,7 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Linearr</title>
 
     <!-- PWA -->
@@ -16,6 +16,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
 
     <!-- SEO / meta -->
     <meta name="description" content="TV channel schedule manager for Plex and Tunarr" />
@@ -33,6 +34,7 @@
         .splash svg{animation:splash-pulse 2s ease-in-out infinite}
         @keyframes splash-in{from{opacity:0}to{opacity:1}}
         @keyframes splash-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(1.04)}}
+        @media (prefers-reduced-motion: reduce){.splash{animation:none}.splash svg{animation:none}}
       </style>
       <div class="splash">
         <svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -48,12 +50,7 @@
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {})
-        })
-      }
-    </script>
+    <!-- Service worker registration is handled in src/shared/hooks/useServiceWorkerUpdate.ts
+         so the app can detect a waiting worker and surface an update prompt. -->
   </body>
 </html>

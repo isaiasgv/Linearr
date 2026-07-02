@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react'
+import { useState, useEffect, useMemo, useRef, useId, type FormEvent } from 'react'
 import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
@@ -315,6 +315,16 @@ export function ChannelFormModal() {
   const aiSuggest = useAiSuggestChannels()
   const { data: existingChannels = [] } = useChannels()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fieldId = useId()
+  const ids = {
+    number: `${fieldId}-number`,
+    color: `${fieldId}-color`,
+    name: `${fieldId}-name`,
+    tier: `${fieldId}-tier`,
+    mode: `${fieldId}-mode`,
+    vibe: `${fieldId}-vibe`,
+    style: `${fieldId}-style`,
+  }
 
   const [number, setNumber] = useState<string>('')
   const [numberTouched, setNumberTouched] = useState(false)
@@ -455,10 +465,15 @@ export function ChannelFormModal() {
   const isPending = createChannel.isPending || updateChannel.isPending
 
   return (
-    <ModalWrapper open={open} onClose={handleClose} maxWidth="max-w-lg">
+    <ModalWrapper
+      open={open}
+      onClose={handleClose}
+      maxWidth="max-w-lg"
+      titleId="channel-form-title"
+    >
       <form onSubmit={handleSubmit}>
         <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-100">
+          <h2 id="channel-form-title" className="text-base font-semibold text-slate-100">
             {isEditing ? `Edit Channel ${editingChannel!.number}` : 'New Channel'}
           </h2>
           <button
@@ -574,8 +589,11 @@ export function ChannelFormModal() {
           <div className="grid grid-cols-2 gap-3">
             {/* Channel Number */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Channel Number</label>
+              <label htmlFor={ids.number} className="block text-xs text-slate-400 mb-1">
+                Channel Number
+              </label>
               <input
+                id={ids.number}
                 type="number"
                 value={number}
                 onChange={(e) => {
@@ -586,43 +604,52 @@ export function ChannelFormModal() {
                 min={1}
                 max={9999}
                 disabled={isEditing}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
 
             {/* Color */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Color</label>
+              <label htmlFor={ids.color} className="block text-xs text-slate-400 mb-1">
+                Color
+              </label>
               <input
+                id={ids.color}
                 type="text"
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
                 placeholder="#hex"
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
           </div>
 
           {/* Name */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Name</label>
+            <label htmlFor={ids.name} className="block text-xs text-slate-400 mb-1">
+              Name
+            </label>
             <input
+              id={ids.name}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             {/* Tier */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Tier</label>
+              <label htmlFor={ids.tier} className="block text-xs text-slate-400 mb-1">
+                Tier
+              </label>
               <select
+                id={ids.tier}
                 value={tier}
                 onChange={(e) => setTier(e.target.value as Channel['tier'])}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
               >
                 {TIERS.map((t) => (
                   <option key={t} value={t}>
@@ -634,11 +661,14 @@ export function ChannelFormModal() {
 
             {/* Mode */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Mode</label>
+              <label htmlFor={ids.mode} className="block text-xs text-slate-400 mb-1">
+                Mode
+              </label>
               <select
+                id={ids.mode}
                 value={mode}
                 onChange={(e) => setMode(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
               >
                 {MODES.map((m) => (
                   <option key={m} value={m}>
@@ -651,14 +681,17 @@ export function ChannelFormModal() {
 
           {/* Vibe */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Vibe</label>
+            <label htmlFor={ids.vibe} className="block text-xs text-slate-400 mb-1">
+              Vibe
+            </label>
             <input
+              id={ids.vibe}
               type="text"
               value={vibe}
               onChange={(e) => setVibe(e.target.value)}
               placeholder="e.g. Cozy crime procedurals"
               list="vibe-templates"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
             <datalist id="vibe-templates">
               {VIBE_TEMPLATES.map((v) => (
@@ -670,7 +703,9 @@ export function ChannelFormModal() {
           {/* Style */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-xs text-slate-400">Style</label>
+              <label htmlFor={ids.style} className="text-xs text-slate-400">
+                Style
+              </label>
               <details className="relative">
                 <summary className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer list-none">
                   Quick templates ▾
@@ -700,11 +735,12 @@ export function ChannelFormModal() {
               </details>
             </div>
             <textarea
+              id={ids.style}
               value={style}
               onChange={(e) => setStyle(e.target.value)}
               rows={3}
               placeholder="Brief channel identity description"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 resize-none"
             />
           </div>
 

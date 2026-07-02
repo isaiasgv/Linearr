@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react'
-import { useUIStore } from '@/shared/store/ui.store'
 import { useChannelAssignments } from '@/features/assignments/hooks'
 import {
   useChannelCollections,
@@ -109,7 +108,7 @@ function CollectionTypeStatus({
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path d="M12 5v14M5 12h14" />
           </svg>
-          Link
+          Add from collection
         </button>
       )}
     </div>
@@ -119,7 +118,6 @@ function CollectionTypeStatus({
 export function ContentTab({ channelNumber }: ContentTabProps) {
   const [subTab, setSubTab] = useState<ContentSubTab>('assigned')
   const [barOpen, setBarOpen] = useState(true)
-  const { openModal } = useUIStore()
 
   const { data: assignments = [] } = useChannelAssignments(channelNumber)
   const { data: channelCollections } = useChannelCollections(channelNumber)
@@ -174,7 +172,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 status={collectionStatus?.movie}
                 linkedTitle={movieCollection?.collection_title}
                 tunarrLinked={movieTunarrLinked}
-                onLink={() => openModal('collectionPicker', { collectionPickerType: 'movie' })}
+                onLink={() => setSubTab('browse')}
                 onUnlink={() => unlinkCollection.mutate({ channelNumber, plexType: 'movie' })}
               />
 
@@ -192,13 +190,14 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 status={collectionStatus?.show}
                 linkedTitle={showCollection?.collection_title}
                 tunarrLinked={showTunarrLinked}
-                onLink={() => openModal('collectionPicker', { collectionPickerType: 'show' })}
+                onLink={() => setSubTab('browse')}
                 onUnlink={() => unlinkCollection.mutate({ channelNumber, plexType: 'show' })}
               />
 
               <button
                 onClick={() => generateCollections.mutate(channelNumber)}
                 disabled={generateCollections.isPending}
+                title="Builds Linearr's own “{Channel} Movies/TV” collections from the assigned items and syncs them to Plex + Tunarr. Your own collections are never modified."
                 className="ml-auto flex items-center gap-1.5 text-xs px-2.5 py-1 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700 text-indigo-300 hover:text-indigo-200 rounded-lg transition-colors disabled:opacity-50"
               >
                 {generateCollections.isPending ? (
@@ -208,7 +207,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                     <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                 )}
-                Generate
+                Build collections
               </button>
             </>
           )}

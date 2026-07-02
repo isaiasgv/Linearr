@@ -210,6 +210,7 @@ function LibraryBrowser({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter..."
+              aria-label="Filter library items"
               className="w-40 bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2 py-1 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
           </div>

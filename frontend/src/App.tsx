@@ -34,11 +34,6 @@ const SettingsView = lazy(() =>
     default: m.SettingsView,
   })),
 )
-const CollectionPickerModal = lazy(() =>
-  import('@/features/collections/components/CollectionPickerModal').then((m) => ({
-    default: m.CollectionPickerModal,
-  })),
-)
 const ItemDetailModal = lazy(() =>
   import('@/features/plex/components/ItemDetailModal').then((m) => ({
     default: m.ItemDetailModal,
@@ -117,11 +112,15 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col h-screen bg-[#020617] items-center justify-center">
-        <div style={{ animation: 'splash-pulse 2s ease-in-out infinite' }}>
+      <div
+        role="status"
+        className="flex flex-col h-screen bg-[#020617] items-center justify-center"
+      >
+        <div className="splash-pulse" style={{ animation: 'splash-pulse 2s ease-in-out infinite' }}>
           <Logo size={80} />
         </div>
         <p className="mt-4 text-lg font-semibold tracking-wide text-slate-400">Linearr</p>
+        <span className="sr-only">Loading Linearr</span>
       </div>
     )
   }
@@ -148,7 +147,6 @@ export default function App() {
         <ChannelFormModal />
         <BlockFormModal />
         <TemplatesLibraryModal />
-        <CollectionPickerModal />
         <ItemDetailModal />
         <AiContentAdvisorModal />
         <NetworkAdvisorModal />

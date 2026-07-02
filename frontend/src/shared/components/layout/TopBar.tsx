@@ -49,7 +49,7 @@ export function TopBar() {
 
   const plexConnected = plexInfo ? true : plexError ? false : null
   const tunarrConnected = tunarrCheck?.version ? true : tunarrCheck ? false : null
-  const aiConfigured = Boolean(settings?.openai_api_key)
+  const aiConfigured = Boolean(settings?.openai_api_key_set || settings?.openai_api_key)
 
   const totalAssigned = Object.values(assignments).reduce((n, arr) => n + arr.length, 0)
 
@@ -148,6 +148,9 @@ export function TopBar() {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
+            aria-label="Settings menu"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition text-sm"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -50,9 +50,26 @@ jobs:
       - name: Build
         run: npm run build
 
+  # ── Backend tests (Python / FastAPI) ─────────────────────────────────────
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q
+
   # ── Release: runs on push to main or release/*, or workflow_dispatch ──────
   release:
-    needs: ci
+    needs: [ci, backend]
     if: |
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))) ||
       github.event_name == 'workflow_dispatch'
@@ -104,6 +121,9 @@ jobs:
         with:
           ref: ${{ needs.release.outputs.new_release_git_tag }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -131,7 +151,23 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build and push Docker image
+      - name: Build Docker image (load locally for scanning)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: linearr:scan
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: linearr:scan
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .

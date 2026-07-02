@@ -1,4 +1,5 @@
 {
+  "id": "/?app=linearr",
   "name": "Linearr",
   "short_name": "Linearr",
   "description": "TV channel schedule manager for Plex and Tunarr",

@@ -2,7 +2,7 @@ import { Spinner } from '@/shared/components/ui/Spinner'
 import { PlexThumb } from './PlexThumb'
 import type { Assignment, PlexItem } from '@/shared/types'
 
-export type PosterViewMode = 'grid' | 'list'
+export type PosterViewMode = 'wall' | 'grid' | 'list'
 export type PosterSize = 'small' | 'medium' | 'large'
 
 // Grid column counts per poster size — static strings so Tailwind keeps them.
@@ -10,6 +10,13 @@ const GRID_COLS: Record<PosterSize, string> = {
   small: 'grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8',
   medium: 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-6',
   large: 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',
+}
+
+// Poster-wall is denser than grid at every size (no caption row).
+const WALL_COLS: Record<PosterSize, string> = {
+  small: 'grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 xl:grid-cols-[repeat(14,minmax(0,1fr))]',
+  medium: 'grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12',
+  large: 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8',
 }
 
 // List-row thumbnail size per poster size.
@@ -139,6 +146,63 @@ export function PosterGrid({
                   Assign
                 </button>
               )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  if (viewMode === 'wall') {
+    return (
+      <div className={`grid ${WALL_COLS[posterSize]} gap-1.5 p-3`}>
+        {items.map((item) => {
+          const isAssigned = assignedKeys.has(item.rating_key)
+          const assignment = assignments.find((a) => a.plex_rating_key === item.rating_key)
+          return (
+            <div
+              key={item.rating_key}
+              title={`${item.title}${item.year ? ` (${item.year})` : ''}`}
+              className={`group relative aspect-[2/3] rounded overflow-hidden border ${
+                isAssigned ? 'border-emerald-500' : 'border-slate-700 hover:border-slate-500'
+              }`}
+            >
+              <div
+                className="absolute inset-0 bg-slate-900 cursor-pointer"
+                onClick={() => onDetail?.(item.rating_key)}
+              >
+                {item.thumb ? (
+                  <PlexThumb path={item.thumb} alt={item.title} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-700 text-[10px] px-1 text-center">
+                    {item.title}
+                  </div>
+                )}
+              </div>
+              {isAssigned && (
+                <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shadow">
+                  <svg className="w-2 h-2 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+              )}
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-2">
+                {isAssigned && assignment ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onUnassign(assignment.id) }}
+                    className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-[10px] rounded font-medium"
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onAssign(item) }}
+                    className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] rounded font-medium"
+                  >
+                    Add
+                  </button>
+                )}
+              </div>
             </div>
           )
         })}

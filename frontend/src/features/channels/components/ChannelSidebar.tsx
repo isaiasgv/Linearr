@@ -284,6 +284,7 @@ export function ChannelSidebar() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search channels..."
+              aria-label="Search channels"
               className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
             />
             {search && (

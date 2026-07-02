@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Linearr — Self-hosted TV Schedule Manager for Plex and Tunarr">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="55%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="55%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <radialGradient id="orb1" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="orb2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="220" cy="140" r="320" fill="url(#orb1)"/>
+  <circle cx="1010" cy="520" r="300" fill="url(#orb2)"/>
+
+  <!-- Subtle EPG grid -->
+  <g stroke="#6366f1" stroke-opacity="0.06" stroke-width="1">
+    <line x1="0" y1="105" x2="1200" y2="105"/>
+    <line x1="0" y1="210" x2="1200" y2="210"/>
+    <line x1="0" y1="315" x2="1200" y2="315"/>
+    <line x1="0" y1="420" x2="1200" y2="420"/>
+    <line x1="0" y1="525" x2="1200" y2="525"/>
+    <line x1="240" y1="0" x2="240" y2="630"/>
+    <line x1="480" y1="0" x2="480" y2="630"/>
+    <line x1="720" y1="0" x2="720" y2="630"/>
+    <line x1="960" y1="0" x2="960" y2="630"/>
+  </g>
+
+  <!-- L-mark logo (matches favicon: L-shape + EPG schedule bars) -->
+  <g transform="translate(96, 150)">
+    <rect width="180" height="180" rx="40" fill="url(#mark)"/>
+    <rect x="36" y="36" width="23" height="101" rx="9" fill="white"/>
+    <rect x="36" y="113" width="101" height="23" rx="9" fill="white"/>
+    <rect x="72" y="36" width="65" height="13" rx="5" fill="white" fill-opacity="0.55"/>
+    <rect x="72" y="59" width="45" height="13" rx="5" fill="white" fill-opacity="0.38"/>
+    <rect x="72" y="82" width="56" height="13" rx="5" fill="white" fill-opacity="0.38"/>
+  </g>
+
+  <!-- Wordmark + tagline -->
+  <g font-family="'Inter','Segoe UI',system-ui,sans-serif">
+    <text x="312" y="232" font-size="104" font-weight="800" letter-spacing="-3" fill="#f8fafc">Linearr</text>
+    <text x="316" y="300" font-size="40" font-weight="700" fill="url(#brand)">Your TV network, your schedule.</text>
+  </g>
+
+  <!-- Tagline strip -->
+  <text x="96" y="430" font-family="'Inter','Segoe UI',system-ui,sans-serif" font-size="38" font-weight="600" fill="#cbd5e1">Self-hosted TV Schedule Manager for Plex &amp; Tunarr</text>
+
+  <!-- Feature pills -->
+  <g font-family="'Inter','Segoe UI',system-ui,sans-serif" font-size="26" font-weight="600">
+    <g>
+      <rect x="96" y="486" width="266" height="58" rx="29" fill="#6366f1" fill-opacity="0.12" stroke="#6366f1" stroke-opacity="0.35"/>
+      <text x="129" y="524" fill="#c7d2fe">Schedule Blocks</text>
+    </g>
+    <g>
+      <rect x="386" y="486" width="232" height="58" rx="29" fill="#a855f7" fill-opacity="0.12" stroke="#a855f7" stroke-opacity="0.35"/>
+      <text x="419" y="524" fill="#e9d5ff">AI Advisor</text>
+    </g>
+    <g>
+      <rect x="642" y="486" width="318" height="58" rx="29" fill="#ec4899" fill-opacity="0.12" stroke="#ec4899" stroke-opacity="0.35"/>
+      <text x="675" y="524" fill="#fbcfe8">Tunarr EPG Push</text>
+    </g>
+  </g>
+
+  <!-- URL -->
+  <text x="96" y="600" font-family="'Inter','Segoe UI',system-ui,sans-serif" font-size="24" font-weight="500" fill="#64748b">linearr.oribion.com</text>
+</svg>

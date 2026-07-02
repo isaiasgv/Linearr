@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ErrorBoundary } from '@/shared/components/ui/ErrorBoundary'
+import { UpdateBanner } from '@/shared/components/ui/UpdateBanner'
 import './index.css'
 import App from './App'
 
@@ -24,6 +25,7 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <App />
+        <UpdateBanner />
       </QueryClientProvider>
     </ErrorBoundary>
   </StrictMode>,

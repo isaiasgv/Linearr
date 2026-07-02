@@ -23,19 +23,6 @@ function getChannelCollections(
   )
 }
 
-interface LinkCollectionBody {
-  plex_type: 'movie' | 'show'
-  collection_rating_key: string
-  collection_title: string
-}
-
-function linkCollection(
-  channelNumber: number,
-  body: LinkCollectionBody,
-): Promise<ChannelCollection> {
-  return post<ChannelCollection>(`/api/channel-collections/${channelNumber}`, body)
-}
-
 function unlinkCollection(channelNumber: number, plexType: 'movie' | 'show'): Promise<void> {
   return del<void>(`/api/channel-collections/${channelNumber}/${plexType}`)
 }
@@ -44,6 +31,5 @@ export const collectionsApi = {
   getCollectionStatus,
   generateCollections,
   getChannelCollections,
-  linkCollection,
   unlinkCollection,
 }
