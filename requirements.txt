@@ -4,3 +4,6 @@ httpx==0.28.1
 # Ed25519 keypair + JWK + JWT signing for Plex's JWT/JWK device auth (API Unlocked).
 # Only required for the optional JWT auth flow; legacy token auth works without it.
 cryptography==49.0.0
+# MCP server (streamable HTTP endpoint at /mcp) — lets AI assistants manage
+# channels, browse the library, assign content, and build collections.
+mcp==1.28.1
