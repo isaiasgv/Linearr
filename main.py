@@ -9,6 +9,7 @@ import sqlite3
 import time
 import uuid
 from collections import defaultdict
+from urllib.parse import urlencode as _urlencode
 import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -366,20 +367,50 @@ def _ensure_webhook_secret() -> str:
         conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_webhook_secret', ?)", (secret,))
     return secret
 
+def _get_mcp_token() -> str:
+    """Get-or-create the bearer token that authenticates the /mcp endpoint."""
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key='mcp_token'").fetchone()
+        if row and row["value"]:
+            return row["value"]
+        token = secrets.token_hex(24)
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('mcp_token', ?)", (token,))
+    return token
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     _check_db_writable()
     _ensure_webhook_secret()
+    _get_mcp_token()
     _purge_old_logs()
     _log_app("system", "Linearr started")
-    yield
+    # The MCP streamable-HTTP transport needs a running session manager for the
+    # lifetime of the app. A manager instance can only be run once, so build a
+    # fresh one per lifespan (the app restarts in tests / uvicorn --reload).
+    # Names resolve at startup, after the module has fully loaded.
+    global _mcp_session_manager
+    _mcp_session_manager = _make_mcp_session_manager()
+    async with _mcp_session_manager.run():
+        yield
 
 app = FastAPI(lifespan=lifespan)
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
+    # MCP endpoint: bearer-token auth (MCP clients can't do the cookie flow).
+    if path == "/mcp" or path.startswith("/mcp/"):
+        auth = request.headers.get("authorization", "")
+        expected = _get_mcp_token()
+        if not (auth.startswith("Bearer ") and expected
+                and hmac.compare_digest(auth[7:], expected)):
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        # Starlette 1.x mounts only match "/mcp/..." — normalize the bare path
+        # so clients configured with ".../mcp" (no slash) work too.
+        if path == "/mcp":
+            request.scope["path"] = "/mcp/"
+        return await call_next(request)
     # Only /api/* is protected. Everything else is the static SPA shell / assets,
     # which is public by nature — this avoids the fragile suffix-allowlist foot-gun
     # where a future route like /api/export/config.json would silently become public.
@@ -1674,6 +1705,8 @@ async def plex_collections():
                     "type": section["type"],
                     "thumb": c.get("thumb"),
                     "child_count": int(c.get("childCount", c.get("leafCount", 0))),
+                    "smart": bool(int(c.get("smart", 0) or 0)),
+                    "section_id": section["key"],
                 })
     return result
 
@@ -2473,6 +2506,163 @@ async def plex_update_collection(rating_key: str, request: Request):
     if resp.status_code not in (200, 204):
         raise HTTPException(resp.status_code, "Failed to update collection")
     return {"ok": True}
+
+# ── Plex smart collections ────────────────────────────────────────────────────
+# Rule-based, self-updating Plex collections (smart=1 + a filter URI), built on
+# the same /library/collections API used above for regular collections.
+
+class SmartCollectionFilters(BaseModel):
+    genres: list[str] = []          # genre names, resolved to Plex tag IDs
+    year_min: int | None = None     # inclusive
+    year_max: int | None = None     # inclusive
+    decade: int | None = None       # e.g. 1980
+    unwatched: bool = False
+    content_rating: str | None = None   # e.g. "PG", "TV-14"
+    title_contains: str | None = None
+
+class SmartCollectionIn(BaseModel):
+    section_id: str
+    type: str = "movie"             # movie | show
+    title: str
+    filters: SmartCollectionFilters = SmartCollectionFilters()
+    sort: str | None = None         # title_asc|title_desc|year_asc|year_desc|added_desc|random
+    limit: int | None = None
+
+class SmartCollectionUpdateIn(BaseModel):
+    section_id: str
+    type: str = "movie"
+    title: str | None = None
+    filters: SmartCollectionFilters | None = None
+    sort: str | None = None
+    limit: int | None = None
+
+_SMART_SORT = {
+    "title_asc": "titleSort:asc", "title_desc": "titleSort:desc",
+    "year_asc": "year:asc", "year_desc": "year:desc",
+    "added_desc": "addedAt:desc", "random": "random",
+}
+
+async def _resolve_genre_ids(client, url: str, hdrs: dict, section_id: str,
+                             type_int: str, names: list[str]) -> tuple[list[str], list[str]]:
+    """Resolve genre names (case-insensitive) to Plex tag IDs for a section."""
+    r = await client.get(f"{url}/library/sections/{section_id}/genre",
+                         headers=hdrs, params={"type": type_int})
+    dirs = r.json().get("MediaContainer", {}).get("Directory", []) if r.status_code == 200 else []
+    by_name: dict[str, str] = {}
+    for d in dirs:
+        title = (d.get("title") or "").lower()
+        key = str(d.get("key") or "")
+        if "genre=" in key:  # some servers return a fastKey-style path
+            key = key.split("genre=")[-1].split("&")[0]
+        if title and key:
+            by_name[title] = key
+    ids, missing = [], []
+    for n in names:
+        k = by_name.get(n.strip().lower())
+        (ids.append(k) if k else missing.append(n))
+    return ids, missing
+
+async def _build_smart_uri(client, url: str, hdrs: dict, section_id: str, plex_type: str,
+                           filters: SmartCollectionFilters, sort: str | None,
+                           limit: int | None) -> tuple[str, list[str]]:
+    """Build a Plex smart-filter URI. Returns (uri, unresolved_genre_names)."""
+    type_int = "1" if plex_type == "movie" else "2"
+    idr = await client.get(f"{url}/identity", headers=hdrs)
+    machine_id = idr.json().get("MediaContainer", {}).get("machineIdentifier", "") if idr.status_code == 200 else ""
+    if not machine_id:
+        raise HTTPException(502, "Could not read Plex server identity")
+    params: list[tuple[str, str]] = [("type", type_int)]
+    missing: list[str] = []
+    if filters.genres:
+        ids, missing = await _resolve_genre_ids(client, url, hdrs, section_id, type_int, filters.genres)
+        if not ids:
+            raise HTTPException(400, f"None of the genres matched this library: {', '.join(filters.genres)}")
+        params.append(("genre", ",".join(ids)))
+    # Plex's >>= / <<= operators are strict greater/less-than; offset by 1 so
+    # year_min/year_max behave inclusively.
+    if filters.year_min is not None:
+        params.append(("year>>", str(filters.year_min - 1)))
+    if filters.year_max is not None:
+        params.append(("year<<", str(filters.year_max + 1)))
+    if filters.decade is not None:
+        params.append(("decade", str(filters.decade)))
+    if filters.unwatched:
+        params.append(("unwatched", "1"))
+    if filters.content_rating:
+        params.append(("contentRating", filters.content_rating))
+    if filters.title_contains:
+        params.append(("title", filters.title_contains))
+    if sort:
+        mapped = _SMART_SORT.get(sort)
+        if not mapped:
+            raise HTTPException(400, f"Unknown sort '{sort}' — use one of {', '.join(_SMART_SORT)}")
+        params.append(("sort", mapped))
+    if limit:
+        params.append(("limit", str(limit)))
+    query = _urlencode(params)
+    uri = f"server://{machine_id}/com.plexapp.plugins.library/library/sections/{section_id}/all?{query}"
+    return uri, missing
+
+@app.post("/api/plex/smart-collections", status_code=201)
+async def plex_create_smart_collection(body: SmartCollectionIn):
+    """Create a rule-based (smart) Plex collection that stays current automatically."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured — open Settings")
+    if body.type not in ("movie", "show"):
+        raise HTTPException(400, "type must be 'movie' or 'show'")
+    hdrs = plex_headers(token)
+    async with httpx.AsyncClient(timeout=15) as client:
+        uri, missing = await _build_smart_uri(client, url, hdrs, body.section_id,
+                                              body.type, body.filters, body.sort, body.limit)
+        resp = await client.post(
+            f"{url}/library/collections",
+            headers=hdrs,
+            params={"type": "1" if body.type == "movie" else "2", "title": body.title,
+                    "smart": "1", "sectionId": body.section_id, "uri": uri},
+        )
+    if resp.status_code not in (200, 201):
+        raise HTTPException(resp.status_code, f"Plex error: {resp.text[:200]}")
+    coll = (resp.json().get("MediaContainer", {}).get("Metadata", [{}]) or [{}])[0]
+    _log_app("collection", f"Created smart collection '{body.title}'",
+             metadata={"section_id": body.section_id, "type": body.type})
+    return {
+        "rating_key": coll.get("ratingKey"),
+        "title": coll.get("title", body.title),
+        "type": body.type,
+        "smart": True,
+        "unresolved_genres": missing,
+    }
+
+@app.put("/api/plex/smart-collections/{rating_key}")
+async def plex_update_smart_collection(rating_key: str, body: SmartCollectionUpdateIn):
+    """Update a smart collection's title and/or filter rules."""
+    url, token = get_plex_config()
+    if not token:
+        raise HTTPException(400, "Plex token not configured — open Settings")
+    if body.type not in ("movie", "show"):
+        raise HTTPException(400, "type must be 'movie' or 'show'")
+    hdrs = plex_headers(token)
+    updated: list[str] = []
+    missing: list[str] = []
+    async with httpx.AsyncClient(timeout=15) as client:
+        if body.filters is not None:
+            uri, missing = await _build_smart_uri(client, url, hdrs, body.section_id,
+                                                  body.type, body.filters, body.sort, body.limit)
+            r = await client.put(f"{url}/library/collections/{rating_key}/items",
+                                 headers=hdrs, params={"uri": uri})
+            if r.status_code not in (200, 201, 204):
+                raise HTTPException(r.status_code, f"Failed to update filters: {r.text[:200]}")
+            updated.append("filters")
+        if body.title:
+            r = await client.put(f"{url}/library/metadata/{rating_key}",
+                                 headers=hdrs, params={"title.value": body.title})
+            if r.status_code not in (200, 204):
+                raise HTTPException(r.status_code, "Failed to update title")
+            updated.append("title")
+    if not updated:
+        raise HTTPException(400, "Nothing to update — provide filters and/or title")
+    return {"ok": True, "updated": updated, "unresolved_genres": missing}
 
 # ── Blocks ────────────────────────────────────────────────────────────────────
 
@@ -5755,6 +5945,368 @@ async def restore_db(request: Request):
     log.info("Database restored from upload (%d bytes)", len(body))
     _log_app("backup", f"Database restored from upload ({len(body)} bytes)", "warn")
     return {"ok": True, "size": len(body)}
+
+# ── MCP server ────────────────────────────────────────────────────────────────
+# Streamable-HTTP Model Context Protocol endpoint at /mcp. Lets AI assistants
+# (Claude Code, Claude Desktop, any MCP client) manage channels, browse the
+# Plex library, assign content, and build/manage collections. Auth: bearer
+# token (settings key `mcp_token`), enforced in auth_middleware. Tools call
+# the internal route handlers directly — no HTTP-to-self loop.
+
+from mcp.server.fastmcp import FastMCP
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.transport_security import TransportSecuritySettings
+
+mcp_server = FastMCP(
+    "linearr",
+    instructions=(
+        "Linearr manages TV channel lineups for Plex + Tunarr. Channels hold "
+        "content assignments (movies/shows from the user's Plex library). "
+        "Typical flow: browse or search the library, create/pick a channel, "
+        "assign items to it, then build Plex collections from the channel."
+    ),
+)
+
+_mcp_session_manager: StreamableHTTPSessionManager | None = None
+
+def _make_mcp_session_manager() -> StreamableHTTPSessionManager:
+    """One manager per app lifecycle — an instance can only be run once."""
+    return StreamableHTTPSessionManager(
+        app=mcp_server._mcp_server,
+        json_response=True,
+        stateless=True,
+        # We do our own bearer auth in auth_middleware; Linearr is reached by
+        # arbitrary LAN hostnames so Host-header pinning would break setups.
+        security_settings=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
+
+def _tool_error(exc: HTTPException) -> RuntimeError:
+    """Convert an internal HTTPException into a human-readable tool error."""
+    return RuntimeError(f"{exc.detail}" if exc.detail else f"HTTP {exc.status_code}")
+
+# ---- Channels ----------------------------------------------------------------
+
+@mcp_server.tool(name="list_channels")
+async def mcp_list_channels() -> list[dict]:
+    """List all channels in the lineup (number, name, tier, vibe, mode, style, color)."""
+    return list_channels()
+
+@mcp_server.tool(name="get_channel")
+async def mcp_get_channel(number: int) -> dict:
+    """Get one channel plus everything assigned to it (titles, types, years)."""
+    ch = _get_channel(number)
+    if not ch:
+        raise RuntimeError(f"Channel {number} not found")
+    ch.pop("icon", None)  # base64 blob — noise for an LLM
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, plex_rating_key, plex_title, plex_type, plex_year FROM assignments "
+            "WHERE channel_number=? ORDER BY plex_title", (number,)).fetchall()
+    ch["assignments"] = [dict(r) for r in rows]
+    ch["assignment_count"] = len(ch["assignments"])
+    return ch
+
+@mcp_server.tool(name="create_channel")
+async def mcp_create_channel(number: int, name: str, tier: str = "Galaxy Main",
+                             vibe: str = "", mode: str = "Shuffle", style: str = "",
+                             color: str = "blue") -> dict:
+    """Create a channel. tier: 'Galaxy Main' | 'Classics' | 'Galaxy Premium'.
+    mode: 'Shuffle' | 'Flex' | 'Sequential'. Auto-syncs to Tunarr if linked."""
+    try:
+        result = await create_channel(ChannelIn(number=number, name=name, tier=tier,
+                                                vibe=vibe, mode=mode, style=style, color=color))
+    except HTTPException as e:
+        raise _tool_error(e)
+    result.pop("icon", None)
+    return result
+
+@mcp_server.tool(name="update_channel")
+async def mcp_update_channel(number: int, new_number: int | None = None,
+                             name: str | None = None, tier: str | None = None,
+                             vibe: str | None = None, mode: str | None = None,
+                             style: str | None = None, color: str | None = None) -> dict:
+    """Update a channel. Only the fields you pass change; pass new_number to renumber
+    (assignments, blocks and links follow the channel)."""
+    existing = _get_channel(number)
+    if not existing:
+        raise RuntimeError(f"Channel {number} not found")
+    body = ChannelIn(
+        number=new_number if new_number is not None else number,
+        name=name if name is not None else existing["name"],
+        tier=tier if tier is not None else existing["tier"],
+        vibe=vibe if vibe is not None else (existing.get("vibe") or ""),
+        mode=mode if mode is not None else (existing.get("mode") or "Shuffle"),
+        style=style if style is not None else (existing.get("style") or ""),
+        color=color if color is not None else (existing.get("color") or "blue"),
+        icon=existing.get("icon"),
+    )
+    try:
+        result = await update_channel(number, body)
+    except HTTPException as e:
+        raise _tool_error(e)
+    result.pop("icon", None)
+    return result
+
+@mcp_server.tool(name="delete_channel")
+async def mcp_delete_channel(number: int) -> dict:
+    """Delete a channel. DESTRUCTIVE: also removes its assignments, schedule
+    blocks, collection links and Tunarr links. Cannot be undone."""
+    try:
+        return delete_channel(number)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+# ---- Plex library ------------------------------------------------------------
+
+@mcp_server.tool(name="list_libraries")
+async def mcp_list_libraries() -> list[dict]:
+    """List the Plex libraries (movie/show sections) with their section ids."""
+    try:
+        return await plex_libraries()
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="browse_library")
+async def mcp_browse_library(section_id: str, type_filter: str = "all",
+                             genre: str | None = None, year: int | None = None,
+                             content_rating: str | None = None,
+                             offset: int = 0, limit: int = 50) -> dict:
+    """Browse a Plex library section. type_filter: all|movie|show. Filter by genre
+    name, year, or content rating. Paged — returns total plus a window."""
+    try:
+        items = await plex_library(section_id, type_filter=type_filter, genre=genre,
+                                   year=year, content_rating=content_rating)
+    except HTTPException as e:
+        raise _tool_error(e)
+    return {"total": len(items), "offset": offset,
+            "items": items[offset:offset + max(1, min(limit, 200))]}
+
+@mcp_server.tool(name="search_library")
+async def mcp_search_library(query: str, type_filter: str = "all") -> list[dict]:
+    """Search the whole Plex server for movies/shows by title. type_filter: all|movie|show."""
+    try:
+        return await plex_search(q=query, type_filter=type_filter)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="get_item")
+async def mcp_get_item(rating_key: str) -> dict:
+    """Full details for one Plex item: summary, genres, duration, ratings, media quality."""
+    try:
+        return await plex_item(rating_key)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="get_show_seasons")
+async def mcp_get_show_seasons(rating_key: str) -> list[dict]:
+    """List a show's seasons (pass the show's rating_key)."""
+    try:
+        return await plex_show_seasons(rating_key)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="get_season_episodes")
+async def mcp_get_season_episodes(rating_key: str) -> list[dict]:
+    """List a season's episodes (pass the season's rating_key from get_show_seasons)."""
+    try:
+        return await plex_season_episodes(rating_key)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+# ---- Assignments ---------------------------------------------------------------
+
+@mcp_server.tool(name="list_assignments")
+async def mcp_list_assignments(channel_number: int | None = None) -> dict:
+    """List content assignments — all channels, or one channel if channel_number given."""
+    with get_db() as conn:
+        if channel_number is not None:
+            rows = conn.execute(
+                "SELECT id, channel_number, plex_rating_key, plex_title, plex_type, plex_year "
+                "FROM assignments WHERE channel_number=? ORDER BY plex_title",
+                (channel_number,)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, channel_number, plex_rating_key, plex_title, plex_type, plex_year "
+                "FROM assignments ORDER BY channel_number, plex_title").fetchall()
+    grouped: dict[str, list] = {}
+    for r in rows:
+        grouped.setdefault(str(r["channel_number"]), []).append(
+            {k: r[k] for k in ("id", "plex_rating_key", "plex_title", "plex_type", "plex_year")})
+    return {"channels": grouped, "total": len(rows)}
+
+@mcp_server.tool(name="assign_items")
+async def mcp_assign_items(channel_number: int, rating_keys: list[str]) -> dict:
+    """Assign Plex items (movies/shows) to a channel by rating key. Fetches each
+    item's metadata from Plex; duplicates are skipped, not errors."""
+    if not _get_channel(channel_number):
+        raise RuntimeError(f"Channel {channel_number} not found")
+    items, failed = [], []
+    for rk in rating_keys:
+        try:
+            it = await plex_item(rk)
+            items.append(AssignmentIn(
+                channel_number=channel_number, plex_rating_key=str(it["rating_key"]),
+                plex_title=it.get("title") or rk, plex_type=it.get("type") or "movie",
+                plex_thumb=it.get("thumb"), plex_year=it.get("year")))
+        except HTTPException as e:
+            failed.append({"rating_key": rk, "error": str(e.detail)})
+    if not items and failed:
+        raise RuntimeError(f"No items could be fetched from Plex: {failed}")
+    result = bulk_assignments(BulkAssignmentIn(channel_number=channel_number, items=items))
+    return {"added": result["added"], "skipped_duplicates": result["skipped"], "failed": failed}
+
+@mcp_server.tool(name="unassign_item")
+async def mcp_unassign_item(channel_number: int, rating_key: str) -> dict:
+    """Remove one assigned item from a channel (by Plex rating key)."""
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM assignments WHERE channel_number=? AND plex_rating_key=?",
+            (channel_number, rating_key))
+    if cur.rowcount == 0:
+        raise RuntimeError(f"Nothing assigned with rating key {rating_key} on channel {channel_number}")
+    return {"ok": True, "removed": cur.rowcount}
+
+# ---- Collections ---------------------------------------------------------------
+
+@mcp_server.tool(name="get_collection_status")
+async def mcp_get_collection_status(channel_number: int) -> dict:
+    """Check whether Plex collections already exist for a channel's movies/shows."""
+    try:
+        return await collection_status(channel_number)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="build_collections")
+async def mcp_build_collections(channel_number: int) -> dict:
+    """Create/update Plex collections from a channel's assignments (one for movies,
+    one for shows) and link them to the channel. Also syncs Tunarr if linked."""
+    try:
+        return await generate_collections(channel_number)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="list_plex_collections")
+async def mcp_list_plex_collections() -> list[dict]:
+    """List every collection on the Plex server (title, type, item count, smart flag)."""
+    try:
+        return await plex_collections()
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="get_collection_items")
+async def mcp_get_collection_items(rating_key: str) -> list[dict]:
+    """List the items inside a Plex collection."""
+    try:
+        return await plex_collection_items(rating_key)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="create_smart_collection")
+async def mcp_create_smart_collection(section_id: str, title: str, type: str = "movie",
+                                      genres: list[str] = [], year_min: int | None = None,
+                                      year_max: int | None = None, decade: int | None = None,
+                                      unwatched: bool = False, content_rating: str | None = None,
+                                      title_contains: str | None = None, sort: str | None = None,
+                                      limit: int | None = None) -> dict:
+    """Create a rule-based Plex smart collection that stays current automatically.
+    Genres are names (e.g. ['Horror']); sort: title_asc|title_desc|year_asc|
+    year_desc|added_desc|random. type: movie|show."""
+    body = SmartCollectionIn(
+        section_id=section_id, type=type, title=title, sort=sort, limit=limit,
+        filters=SmartCollectionFilters(genres=genres, year_min=year_min, year_max=year_max,
+                                       decade=decade, unwatched=unwatched,
+                                       content_rating=content_rating,
+                                       title_contains=title_contains))
+    try:
+        return await plex_create_smart_collection(body)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="update_smart_collection")
+async def mcp_update_smart_collection(rating_key: str, section_id: str, type: str = "movie",
+                                      title: str | None = None, genres: list[str] = [],
+                                      year_min: int | None = None, year_max: int | None = None,
+                                      decade: int | None = None, unwatched: bool = False,
+                                      content_rating: str | None = None,
+                                      title_contains: str | None = None, sort: str | None = None,
+                                      limit: int | None = None,
+                                      update_filters: bool = True) -> dict:
+    """Update a smart collection's title and/or replace its filter rules.
+    Set update_filters=false to rename only."""
+    filters = SmartCollectionFilters(genres=genres, year_min=year_min, year_max=year_max,
+                                     decade=decade, unwatched=unwatched,
+                                     content_rating=content_rating,
+                                     title_contains=title_contains) if update_filters else None
+    body = SmartCollectionUpdateIn(section_id=section_id, type=type, title=title,
+                                   filters=filters, sort=sort, limit=limit)
+    try:
+        return await plex_update_smart_collection(rating_key, body)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="delete_collection")
+async def mcp_delete_collection(rating_key: str) -> dict:
+    """Delete a Plex collection (regular or smart). DESTRUCTIVE — removes it from
+    Plex and unlinks it from any channel. Library items themselves are untouched."""
+    try:
+        return await plex_delete_collection(rating_key)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+# ---- Server --------------------------------------------------------------------
+
+@mcp_server.tool(name="get_server_info")
+async def mcp_get_server_info() -> dict:
+    """Plex server metadata: name, version, platform, library summary. Good health check."""
+    try:
+        return await plex_server_info()
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="get_now_playing")
+async def mcp_get_now_playing() -> list[dict]:
+    """What's streaming on the Plex server right now (active sessions)."""
+    try:
+        return await plex_sessions()
+    except HTTPException as e:
+        raise _tool_error(e)
+
+@mcp_server.tool(name="get_recent_events")
+async def mcp_get_recent_events(limit: int = 50) -> list[dict]:
+    """Recent Plex webhook events recorded by Linearr (new content, playback, etc.)."""
+    try:
+        return plex_events(event_type=None, limit=limit)
+    except HTTPException as e:
+        raise _tool_error(e)
+
+async def _mcp_asgi(scope, receive, send):
+    """Thin delegate so the mount always talks to the CURRENT session manager
+    (a fresh one is created per app lifecycle in lifespan)."""
+    if _mcp_session_manager is None:
+        raise RuntimeError("MCP session manager not started")
+    await _mcp_session_manager.handle_request(scope, receive, send)
+
+app.mount("/mcp", _mcp_asgi)
+
+# ---- MCP management (session-cookie auth, like the rest of /api) --------------
+
+@app.get("/api/mcp/info")
+def mcp_info():
+    """Connection info for the MCP endpoint (shown in Settings)."""
+    return {
+        "endpoint": "/mcp",
+        "token": _get_mcp_token(),
+        "tool_count": len(mcp_server._tool_manager.list_tools()),
+    }
+
+@app.post("/api/mcp/regenerate-token")
+def mcp_regenerate_token():
+    """Rotate the MCP bearer token (invalidates the old one immediately)."""
+    token = secrets.token_hex(24)
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('mcp_token', ?)", (token,))
+    _log_app("system", "MCP token regenerated", "warn")
+    return {"token": token}
 
 # ── Frontend (SPA catch-all — must be last) ───────────────────────────────────
 # Handles both /assets/* static files and all SPA routes.

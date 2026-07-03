@@ -66,6 +66,29 @@ export function useFetchAiModels() {
   })
 }
 
+export function useMcpInfo() {
+  return useQuery({
+    queryKey: ['mcp', 'info'],
+    queryFn: () => settingsApi.getMcpInfo(),
+  })
+}
+
+export function useRegenerateMcpToken() {
+  const queryClient = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+
+  return useMutation({
+    mutationFn: () => settingsApi.regenerateMcpToken(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['mcp', 'info'] })
+      addToast('MCP token regenerated')
+    },
+    onError: (error: Error) => {
+      addToast(error.message || 'Failed to regenerate MCP token', true)
+    },
+  })
+}
+
 export function useTestPlex() {
   const addToast = useToastStore((s) => s.addToast)
 

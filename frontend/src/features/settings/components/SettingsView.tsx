@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import Swal from 'sweetalert2'
-import { SegmentedControl, Spinner, StatusDot } from '@/shared/components/ui'
+import {
+  Button,
+  IconButton,
+  SegmentedControl,
+  Spinner,
+  StatusDot,
+  confirmDialog,
+} from '@/shared/components/ui'
 import type { StatusDotState } from '@/shared/components/ui'
 import {
   useSettings,
@@ -8,6 +15,8 @@ import {
   useTestAi,
   useFetchAiModels,
   useTestPlex,
+  useMcpInfo,
+  useRegenerateMcpToken,
 } from '@/features/settings/hooks'
 import { useTestTunarr, useTunarrVersionCheck } from '@/features/tunarr/hooks'
 import { useAiLogs, useClearAiLogs, useAppLogs, useClearAppLogs } from '@/features/ai/hooks'
@@ -813,6 +822,7 @@ export function SettingsView() {
                     Restore will reload the page after upload.
                   </p>
                 </div>
+                <McpServerCard />
                 <div>
                   <a
                     href="/docs"
@@ -844,6 +854,186 @@ export function SettingsView() {
             </button>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+/* ── MCP Server card ─────────────────────────────────────────────────────── */
+
+/** Copy text to the clipboard with a legacy execCommand fallback. */
+function copyText(value: string) {
+  const fallback = () => {
+    const el = document.createElement('textarea')
+    el.value = value
+    el.style.position = 'fixed'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    el.select()
+    document.execCommand('copy')
+    document.body.removeChild(el)
+  }
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(value).catch(fallback)
+  } else {
+    fallback()
+  }
+}
+
+function McpServerCard() {
+  const addToast = useToastStore((s) => s.addToast)
+  const { data: mcpInfo, isLoading, isError } = useMcpInfo()
+  const regenerateToken = useRegenerateMcpToken()
+  const [showToken, setShowToken] = useState(false)
+
+  const endpointUrl = `${window.location.origin}${mcpInfo?.endpoint ?? '/mcp'}`
+  const connectCommand = mcpInfo
+    ? `claude mcp add --transport http linearr ${endpointUrl} --header "Authorization: Bearer ${mcpInfo.token}"`
+    : ''
+
+  const handleCopy = (value: string, label: string) => {
+    copyText(value)
+    addToast(`${label} copied`)
+  }
+
+  const handleRegenerate = async () => {
+    const confirmed = await confirmDialog({
+      title: 'Regenerate MCP token?',
+      text: 'Existing MCP client connections will stop working until updated with the new token.',
+      confirmText: 'Regenerate',
+      danger: true,
+    })
+    if (confirmed) regenerateToken.mutate()
+  }
+
+  return (
+    <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3">
+      <div>
+        <h3 className="text-sm font-medium text-slate-200">MCP Server</h3>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Let AI assistants like Claude manage your channels, assignments and collections via the
+          Model Context Protocol.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-4">
+          <Spinner />
+        </div>
+      ) : isError || !mcpInfo ? (
+        <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded px-3 py-2">
+          Could not load MCP server info
+        </p>
+      ) : (
+        <>
+          <div>
+            <label htmlFor="settings-mcp-endpoint" className="block text-xs text-slate-400 mb-1.5">
+              Endpoint URL
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="settings-mcp-endpoint"
+                type="text"
+                readOnly
+                value={endpointUrl}
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono"
+                onClick={(e) => (e.target as HTMLInputElement).select()}
+              />
+              <button
+                onClick={() => handleCopy(endpointUrl, 'Endpoint URL')}
+                className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs transition"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="settings-mcp-token" className="block text-xs text-slate-400 mb-1.5">
+              Bearer token
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="settings-mcp-token"
+                type={showToken ? 'text' : 'password'}
+                readOnly
+                value={mcpInfo.token}
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono"
+                onClick={(e) => (e.target as HTMLInputElement).select()}
+              />
+              <IconButton
+                label={showToken ? 'Hide token' : 'Show token'}
+                onClick={() => setShowToken((v) => !v)}
+              >
+                {showToken ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                    />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                    />
+                  </svg>
+                )}
+              </IconButton>
+              <button
+                onClick={() => handleCopy(mcpInfo.token, 'Bearer token')}
+                className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs transition"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-400">{mcpInfo.tool_count} tools available</p>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs text-slate-400">Connect with Claude Code</p>
+              <button
+                onClick={() => handleCopy(connectCommand, 'Connect command')}
+                className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs transition"
+              >
+                Copy
+              </button>
+            </div>
+            <pre className="bg-slate-950 rounded-lg p-3 text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap break-all">
+              {showToken
+                ? connectCommand
+                : `claude mcp add --transport http linearr ${endpointUrl} --header "Authorization: Bearer ${'•'.repeat(12)}"`}
+            </pre>
+            <p className="text-xs text-slate-500 mt-1.5">
+              Claude Desktop and other clients: see{' '}
+              <code className="text-slate-400">docs/MCP.md</code>.
+            </p>
+          </div>
+
+          <div className="border-t border-slate-800 pt-3">
+            <Button
+              variant="dangerSoft"
+              size="sm"
+              loading={regenerateToken.isPending}
+              onClick={handleRegenerate}
+            >
+              Regenerate token
+            </Button>
+          </div>
+        </>
       )}
     </div>
   )
