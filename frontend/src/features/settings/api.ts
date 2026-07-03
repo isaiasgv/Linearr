@@ -48,10 +48,26 @@ function testPlex(): Promise<PlexTestResult> {
   return post<PlexTestResult>('/api/plex/test')
 }
 
+export interface McpInfo {
+  endpoint: string
+  token: string
+  tool_count: number
+}
+
+function getMcpInfo(): Promise<McpInfo> {
+  return get<McpInfo>('/api/mcp/info')
+}
+
+function regenerateMcpToken(): Promise<{ token: string }> {
+  return post<{ token: string }>('/api/mcp/regenerate-token')
+}
+
 export const settingsApi = {
   getSettings,
   saveSettings,
   testAi,
   fetchAiModels,
   testPlex,
+  getMcpInfo,
+  regenerateMcpToken,
 }
