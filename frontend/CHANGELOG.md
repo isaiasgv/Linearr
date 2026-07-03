@@ -1,3 +1,9 @@
+## [0.0.1-rc.4](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.3...v0.0.1-rc.4) (2026-07-03)
+
+### Bug Fixes
+
+* **ci:** bump trivy-action to v0.36.0 (v0.28.0 depends on a deleted setup-trivy tag) ([7ef5d5b](https://github.com/isaiasgv/Linearr/commit/7ef5d5bdda5ede207ab0f8d28ab8d5ff7d8153ce))
+
 ## [0.0.1-rc.3](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.2...v0.0.1-rc.3) (2026-07-03)
 
 ### Bug Fixes
