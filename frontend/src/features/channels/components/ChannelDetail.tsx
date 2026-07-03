@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useUIStore, type ActiveChannelTab } from '@/shared/store/ui.store'
-import { useDeleteChannel } from '@/features/channels/hooks'
+import { useChannels, useDeleteChannel } from '@/features/channels/hooks'
 import { useChannelAssignments } from '@/features/assignments/hooks'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
 import { TierBadge, tierColor } from '@/shared/components/ui/TierBadge'
@@ -30,6 +30,7 @@ export function ChannelDetail() {
   const { selectedChannel, activeChannelTab, setActiveChannelTab, openModal, selectChannel } =
     useUIStore()
   const deleteChannel = useDeleteChannel()
+  const { data: channels } = useChannels()
   const { data: assignments = [] } = useChannelAssignments(selectedChannel?.number ?? 0)
   const { data: tunarrLinks = [] } = useTunarrLinks()
 
@@ -45,7 +46,9 @@ export function ChannelDetail() {
 
   if (!selectedChannel) return null
 
-  const ch = selectedChannel
+  // Resolve the live channel from the query cache — the store snapshot goes
+  // stale after edits via ChannelFormModal.
+  const ch = channels?.find((c) => c.number === selectedChannel.number) ?? selectedChannel
   const tunarrLink = tunarrLinks.find((l) => l.channel_number === ch.number)
 
   function handleDelete() {

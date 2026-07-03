@@ -335,8 +335,6 @@ export function ChannelFormModal() {
   const [style, setStyle] = useState('')
   const [color, setColor] = useState('')
   const [icon, setIcon] = useState<string | null>(null)
-  const [autoAssign, setAutoAssign] = useState(false)
-  const [createTunarr, setCreateTunarr] = useState(false)
 
   // Smart channel creation: preset picker + AI suggestions
   const [presetCategory, setPresetCategory] = useState<string>('all')
@@ -370,8 +368,6 @@ export function ChannelFormModal() {
       setStyle(editingChannel?.style ?? '')
       setColor(editingChannel?.color ?? '')
       setIcon(editingChannel?.icon ?? null)
-      setAutoAssign(false)
-      setCreateTunarr(false)
       setPresetCategory('all')
       setPresetSearch('')
       setQuickStartMode('collapsed')
@@ -743,30 +739,6 @@ export function ChannelFormModal() {
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 resize-none"
             />
           </div>
-
-          {/* Create-only checkboxes */}
-          {!isEditing && (
-            <div className="flex flex-col gap-2 pt-1">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={autoAssign}
-                  onChange={(e) => setAutoAssign(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-600 bg-slate-900 accent-indigo-500"
-                />
-                <span className="text-sm text-slate-300">Auto-assign 24/7 content</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={createTunarr}
-                  onChange={(e) => setCreateTunarr(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-600 bg-slate-900 accent-indigo-500"
-                />
-                <span className="text-sm text-slate-300">Create Tunarr channel</span>
-              </label>
-            </div>
-          )}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-700 flex justify-end gap-2">

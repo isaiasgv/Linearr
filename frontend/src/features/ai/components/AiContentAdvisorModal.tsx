@@ -4,6 +4,7 @@ import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useAiContentAdvisor } from '@/features/ai/hooks'
 import { useAssign } from '@/features/assignments/hooks'
+import { PlexThumb } from '@/features/plex/components/PlexThumb'
 import type { PlexItem } from '@/shared/types'
 import type { AiContentAdvisorResult } from '@/features/ai/types'
 
@@ -27,12 +28,7 @@ function PosterCard({ item, channelNumber }: { item: PlexItem; channelNumber: nu
     <div className="bg-slate-900 border border-slate-700 rounded-lg overflow-hidden group">
       <div className="aspect-[2/3] bg-slate-800 relative overflow-hidden">
         {item.thumb ? (
-          <img
-            src={item.thumb}
-            alt={item.title}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
+          <PlexThumb path={item.thumb} alt={item.title} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-600">
             <svg

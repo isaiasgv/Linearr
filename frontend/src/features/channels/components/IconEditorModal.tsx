@@ -5,6 +5,7 @@ import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useToastStore } from '@/shared/store/toast.store'
+import { useChannels } from '@/features/channels/hooks'
 import { useSaveIcon, useAssignIconToChannel } from '@/features/icons/hooks'
 import { iconsApi } from '@/features/icons/api'
 import { IconEditor } from '@/features/icons/editor/IconEditor'
@@ -35,7 +36,12 @@ type SaveMode = 'png' | 'svg' | 'all'
 export function IconEditorModal() {
   const open = useUIStore((s) => s.modals.iconEditor)
   const closeModal = useUIStore((s) => s.closeModal)
-  const selectedChannel = useUIStore((s) => s.selectedChannel)
+  const selectedChannelSnapshot = useUIStore((s) => s.selectedChannel)
+  const { data: channelList } = useChannels()
+  // Resolve the live channel — the store snapshot goes stale after edits.
+  const selectedChannel =
+    channelList?.find((c) => c.number === selectedChannelSnapshot?.number) ??
+    selectedChannelSnapshot
   const iconEditorCallback = useUIStore((s) => s.iconEditorCallback)
   const incomingComposition = useUIStore((s) => s.iconEditorComposition)
   const incomingId = useUIStore((s) => s.iconEditorId)

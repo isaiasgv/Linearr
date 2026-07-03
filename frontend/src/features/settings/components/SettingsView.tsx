@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
+import Swal from 'sweetalert2'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import {
   useSettings,
@@ -760,9 +761,29 @@ export function SettingsView() {
                         i.onchange = async () => {
                           const f = i.files?.[0]
                           if (!f) return
-                          const b = await f.arrayBuffer()
-                          const r = await fetch('/api/restore', { method: 'POST', body: b })
-                          if (r.ok) window.location.reload()
+                          const { isConfirmed } = await Swal.fire({
+                            title: 'Restore database?',
+                            html: `This will <b>overwrite the current database</b> with <b>${f.name}</b>. This cannot be undone.`,
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonText: 'Restore',
+                            cancelButtonText: 'Cancel',
+                            background: '#1e293b',
+                            color: '#e2e8f0',
+                            confirmButtonColor: '#dc2626',
+                          })
+                          if (!isConfirmed) return
+                          try {
+                            const b = await f.arrayBuffer()
+                            const r = await fetch('/api/restore', { method: 'POST', body: b })
+                            if (r.ok) {
+                              window.location.reload()
+                            } else {
+                              addToast(`Restore failed (${r.status})`, true)
+                            }
+                          } catch {
+                            addToast('Restore failed — could not reach the server', true)
+                          }
                         }
                         i.click()
                       }}
