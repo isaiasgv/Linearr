@@ -83,13 +83,21 @@ export function TemplatesLibraryModal() {
   }
 
   return (
-    <ModalWrapper open={isOpen} onClose={handleClose} maxWidth="max-w-3xl">
+    <ModalWrapper
+      open={isOpen}
+      onClose={handleClose}
+      maxWidth="max-w-3xl"
+      titleId="templates-library-title"
+    >
       {/* Header */}
       <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-slate-100">Schedule Templates</h2>
+        <h2 id="templates-library-title" className="text-base font-semibold text-slate-100">
+          Schedule Templates
+        </h2>
         <button
           onClick={handleClose}
-          className="p-1.5 text-slate-400 hover:text-slate-200 rounded transition-colors"
+          aria-label="Close"
+          className="p-1.5 text-slate-400 hover:text-slate-200 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <svg
             className="w-4 h-4"

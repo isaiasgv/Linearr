@@ -223,7 +223,7 @@ export function SlotEditor({ blockId, targetHour }: SlotEditorProps) {
         )}
 
         {!isLoading && !debouncedQuery && displaySuggestions.length === 0 && (
-          <p className="text-xs text-slate-600 text-center py-4">Search Plex to add content</p>
+          <p className="text-xs text-slate-500 text-center py-4">Search Plex to add content</p>
         )}
       </div>
     </div>

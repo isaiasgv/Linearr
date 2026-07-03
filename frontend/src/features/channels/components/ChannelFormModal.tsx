@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useId, type FormEvent } from 'react'
-import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { Button, ModalWrapper, Spinner } from '@/shared/components/ui'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useChannels, useCreateChannel, useUpdateChannel } from '@/features/channels/hooks'
 import { useAiSuggestChannels, use247Suggestions } from '@/features/ai/hooks'
@@ -140,12 +139,14 @@ function QuickStart({
               value={presetSearch}
               onChange={(e) => setPresetSearch(e.target.value)}
               placeholder="Search HBO, Disney, FX…"
-              className="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              aria-label="Search network presets"
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
             <select
               value={presetCategory}
               onChange={(e) => setPresetCategory(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-300"
+              aria-label="Preset category"
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             >
               <option value="all">All categories</option>
               {NETWORK_CATEGORIES.map((c) => (
@@ -460,6 +461,14 @@ export function ChannelFormModal() {
 
   const isPending = createChannel.isPending || updateChannel.isPending
 
+  // Basic color validation — accepts empty, #hex (3/6), or any CSS color keyword.
+  // Feedback only; does not block submit.
+  const trimmedColor = color.trim()
+  const colorValid =
+    trimmedColor === '' ||
+    /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(trimmedColor) ||
+    (typeof CSS !== 'undefined' && CSS.supports('color', trimmedColor))
+
   return (
     <ModalWrapper
       open={open}
@@ -475,7 +484,8 @@ export function ChannelFormModal() {
           <button
             type="button"
             onClick={handleClose}
-            className="text-slate-500 hover:text-slate-300 transition-colors"
+            aria-label="Close"
+            className="rounded text-slate-500 hover:text-slate-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
             <svg
               className="w-5 h-5"
@@ -521,7 +531,7 @@ export function ChannelFormModal() {
                   className="w-16 h-16 rounded-lg border border-slate-700 object-contain bg-slate-900"
                 />
               ) : (
-                <div className="w-16 h-16 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-600 text-[10px]">
+                <div className="w-16 h-16 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-500 text-[10px]">
                   No icon
                 </div>
               )}
@@ -609,14 +619,30 @@ export function ChannelFormModal() {
               <label htmlFor={ids.color} className="block text-xs text-slate-400 mb-1">
                 Color
               </label>
-              <input
-                id={ids.color}
-                type="text"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                placeholder="#hex"
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
-              />
+              <div className="relative">
+                <input
+                  id={ids.color}
+                  type="text"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder="#hex"
+                  aria-invalid={!colorValid || undefined}
+                  className={`w-full bg-slate-900 border rounded-lg pl-3 pr-9 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                    colorValid ? 'border-slate-600 focus:border-indigo-500' : 'border-red-500'
+                  }`}
+                />
+                <span
+                  aria-hidden="true"
+                  title={colorValid ? color || 'No color' : 'Invalid color'}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded border border-slate-600"
+                  style={{
+                    backgroundColor: colorValid && color.trim() ? color.trim() : 'transparent',
+                  }}
+                />
+              </div>
+              {!colorValid && (
+                <p className="mt-1 text-xs text-red-400">Enter a hex value or CSS color name</p>
+              )}
             </div>
           </div>
 
@@ -749,26 +775,9 @@ export function ChannelFormModal() {
           >
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={isPending}
-            className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-          >
-            {isPending && (
-              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-            )}
+          <Button type="submit" loading={isPending}>
             {isEditing ? 'Save Changes' : 'Create Channel'}
-          </button>
+          </Button>
         </div>
       </form>
     </ModalWrapper>

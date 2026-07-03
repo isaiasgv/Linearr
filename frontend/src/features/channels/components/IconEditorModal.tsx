@@ -237,12 +237,19 @@ export function IconEditorModal() {
   const disabled = busy || composition.layers.length === 0
 
   return (
-    <ModalWrapper open={open} onClose={handleClose} maxWidth="max-w-7xl">
+    <ModalWrapper
+      open={open}
+      onClose={handleClose}
+      maxWidth="max-w-7xl"
+      titleId="icon-editor-title"
+    >
       <div className="flex flex-col h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-slate-100">Icon Editor</h2>
+            <h2 id="icon-editor-title" className="text-lg font-semibold text-slate-100">
+              Icon Editor
+            </h2>
             {editingId && (
               <span className="text-xs bg-amber-900/40 text-amber-300 rounded-full px-2 py-0.5">
                 Editing project

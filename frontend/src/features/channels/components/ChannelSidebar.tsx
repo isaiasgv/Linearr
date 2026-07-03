@@ -5,7 +5,8 @@ import { useAssignments } from '@/features/assignments/hooks'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
 import { usePlexSessions } from '@/features/plex/hooks'
 import { tierColor } from '@/shared/components/ui/TierBadge'
-import type { Channel } from '@/shared/types'
+import { ChannelSkeleton } from '@/shared/components/ui'
+import { tierNumberColor } from '@/features/channels/utils'
 
 const TIER_FILTERS: { label: string; value: TierFilter }[] = [
   { label: 'All', value: 'All' },
@@ -13,17 +14,6 @@ const TIER_FILTERS: { label: string; value: TierFilter }[] = [
   { label: 'Classics', value: 'Classics' },
   { label: 'Premium', value: 'Galaxy Premium' },
 ]
-
-function tierNumberColor(tier: Channel['tier']): string {
-  switch (tier) {
-    case 'Galaxy Main':
-      return 'bg-blue-700 text-blue-100'
-    case 'Classics':
-      return 'bg-purple-700 text-purple-100'
-    case 'Galaxy Premium':
-      return 'bg-amber-700 text-amber-100'
-  }
-}
 
 /** A sidebar navigation button that adapts between full and collapsed (icon-rail) modes. */
 function NavButton({
@@ -78,7 +68,7 @@ export function ChannelSidebar() {
     sidebarCollapsed,
   } = useUIStore()
 
-  const { data: channels = [] } = useChannels()
+  const { data: channels = [], isLoading: channelsLoading } = useChannels()
   const { data: assignmentsMap = {} } = useAssignments()
   const { data: tunarrLinks = [] } = useTunarrLinks()
   const { data: plexSessions = [] } = usePlexSessions()
@@ -285,12 +275,13 @@ export function ChannelSidebar() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search channels..."
               aria-label="Search channels"
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
             {search && (
               <button
                 onClick={() => setSearch('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded text-slate-500 hover:text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -308,8 +299,11 @@ export function ChannelSidebar() {
 
       {/* Channel list */}
       <div className={`flex-1 overflow-y-auto py-1 ${collapsed ? 'px-1.5' : ''}`}>
-        {visibleChannels.length === 0 && !collapsed && (
-          <p className="text-center text-xs text-slate-600 py-8">No channels</p>
+        {channelsLoading &&
+          !collapsed &&
+          Array.from({ length: 6 }, (_, i) => <ChannelSkeleton key={i} />)}
+        {!channelsLoading && visibleChannels.length === 0 && !collapsed && (
+          <p className="text-center text-xs text-slate-500 py-8">No channels</p>
         )}
         {visibleChannels.map((ch) => {
           const assignments = assignmentsMap[ch.number] ?? []

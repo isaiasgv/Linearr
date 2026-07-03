@@ -7,6 +7,7 @@ import { usePlexServerInfo, usePlexSessions } from '@/features/plex/hooks'
 import { useTunarrVersionCheck } from '@/features/tunarr/hooks'
 import { useSettings } from '@/features/settings/hooks'
 import { Logo } from '@/shared/components/ui/Logo'
+import { StatusDot } from '@/shared/components/ui'
 
 function StatusBadge({
   label,
@@ -19,14 +20,16 @@ function StatusBadge({
   connected: boolean | null
   detail?: string
 }) {
-  const dotColor = connected === null ? 'bg-slate-500' : connected ? 'bg-green-400' : 'bg-red-400'
   return (
     <div
       className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-full px-3 py-1 text-sm"
       title={detail || label}
     >
       {icon && <img src={icon} alt="" className="w-4 h-4 rounded-sm" />}
-      <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+      <StatusDot
+        state={connected === null ? 'unknown' : connected ? 'ok' : 'error'}
+        pulse={false}
+      />
       <span className="hidden lg:inline text-slate-300">{label}</span>
     </div>
   )
@@ -60,8 +63,15 @@ export function TopBar() {
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
     }
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', keyHandler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', keyHandler)
+    }
   }, [])
 
   return (
@@ -113,7 +123,7 @@ export function TopBar() {
           <Logo size={28} />
           <div className="flex items-baseline gap-1.5">
             <span className="text-base md:text-lg font-semibold tracking-wide">Linearr</span>
-            <span className="text-xs text-slate-600">v{__APP_VERSION__}</span>
+            <span className="text-xs text-slate-500">v{__APP_VERSION__}</span>
           </div>
         </button>
 
