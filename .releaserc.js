@@ -19,10 +19,13 @@ module.exports = {
   tagFormat: 'v${version}',
   branches: [
     'main',
-    // Pin the release branch to its version range. A bare `release/*` glob makes a
-    // release branch inherit main's version (e.g. publish 1.0.1-rc instead of 0.0.x-rc);
-    // the explicit `range` keeps prereleases on the intended line.
-    { name: 'release/0.0.1', range: '0.0.x', prerelease: 'rc' },
+    // release/0.0.1 is the active pre-1.0 prerelease line: it publishes NNN-rc.N.
+    // NOTE: do NOT add a `range` here — a `range` turns this into a semantic-release
+    // *maintenance* branch (for patching an OLD line after main has moved past it),
+    // which fails with "release X out of range" given the 1.x release commits in
+    // history. Staying on 0.0.x is instead enforced by the v0.0.0 anchor tag +
+    // patch-only bumps (level below), not by a range.
+    { name: 'release/0.0.1', prerelease: 'rc' },
     { name: 'dev', prerelease: 'dev' },
   ],
   plugins: [
