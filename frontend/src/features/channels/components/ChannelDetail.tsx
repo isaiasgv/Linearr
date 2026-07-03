@@ -128,8 +128,10 @@ export function ChannelDetail() {
             ))}
           </div>
 
-          {/* Actions overflow menu */}
-          <div className="relative shrink-0" ref={menuRef}>
+          {/* Actions overflow menu — ml-auto keeps it (and the right-anchored
+              dropdown) at the pane's right edge when the header wraps, so the
+              menu isn't clipped by the content pane's overflow-hidden */}
+          <div className="relative shrink-0 ml-auto" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
