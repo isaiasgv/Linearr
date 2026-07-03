@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { Button, IconButton, ModalWrapper, Spinner } from '@/shared/components/ui'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useTunarrSmartCollections, useLinkTunarrCollection } from '@/features/tunarr/hooks'
 
@@ -35,21 +34,24 @@ export function TunarrCollectionPickerModal() {
       open={open}
       onClose={() => closeModal('tunarrCollectionPicker')}
       maxWidth="max-w-lg"
+      titleId="tunarr-collection-picker-title"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
         <div>
-          <h2 className="text-base font-semibold text-slate-100">Link Tunarr Smart Collection</h2>
+          <h2
+            id="tunarr-collection-picker-title"
+            className="text-base font-semibold text-slate-100"
+          >
+            Link Tunarr Smart Collection
+          </h2>
           {collectionPickerType && (
             <p className="text-xs text-slate-500 mt-0.5">
               Linking {collectionPickerType === 'movie' ? 'movie' : 'show'} collection
             </p>
           )}
         </div>
-        <button
-          onClick={() => closeModal('tunarrCollectionPicker')}
-          className="text-slate-500 hover:text-slate-300 transition"
-        >
+        <IconButton label="Close" onClick={() => closeModal('tunarrCollectionPicker')}>
           <svg
             className="w-5 h-5"
             viewBox="0 0 24 24"
@@ -59,7 +61,7 @@ export function TunarrCollectionPickerModal() {
           >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
-        </button>
+        </IconButton>
       </div>
 
       {/* Search */}
@@ -82,7 +84,7 @@ export function TunarrCollectionPickerModal() {
             placeholder="Filter smart collections..."
             aria-label="Filter smart collections"
             autoFocus
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500"
           />
         </div>
       </div>
@@ -113,13 +115,14 @@ export function TunarrCollectionPickerModal() {
                   <p className="text-sm font-medium text-slate-200 truncate">{sc.name}</p>
                   <p className="text-xs text-slate-500 font-mono truncate mt-0.5">{sc.uuid}</p>
                 </div>
-                <button
+                <Button
+                  size="sm"
+                  className="shrink-0 ml-3"
                   onClick={() => handleLink(sc)}
                   disabled={linkCollection.isPending}
-                  className="shrink-0 ml-3 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs rounded-lg font-medium transition"
                 >
                   Link
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

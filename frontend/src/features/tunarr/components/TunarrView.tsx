@@ -1,5 +1,15 @@
 import { useState, useId, lazy, Suspense } from 'react'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import Swal from 'sweetalert2'
+import {
+  Button,
+  EmptyState,
+  IconButton,
+  Input,
+  ModalWrapper,
+  Select,
+  Spinner,
+  confirmDialog,
+} from '@/shared/components/ui'
 
 const TunarrGuide = lazy(() => import('./TunarrGuide').then((m) => ({ default: m.TunarrGuide })))
 import {
@@ -61,6 +71,15 @@ function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
     )
   }
 
+  const handleDelete = async () => {
+    const ok = await confirmDialog({
+      title: `Delete "${collection.name}"?`,
+      text: 'This smart collection will be removed from Tunarr.',
+      danger: true,
+    })
+    if (ok) deleteSmartCollection.mutate(collection.uuid)
+  }
+
   if (editing) {
     return (
       <div className="bg-slate-800 border border-indigo-700/50 rounded-xl p-4 space-y-3">
@@ -68,58 +87,48 @@ function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
           <label htmlFor={ids.name} className="block text-xs text-slate-400 mb-1">
             Name
           </label>
-          <input
-            id={ids.name}
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
-          />
+          <Input id={ids.name} type="text" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
           <label htmlFor={ids.filter} className="block text-xs text-slate-400 mb-1">
             Filter String
           </label>
-          <input
+          <Input
             id={ids.filter}
             type="text"
             value={filterString}
             onChange={(e) => setFilterString(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-mono focus:outline-none focus:border-indigo-500"
+            className="font-mono"
           />
         </div>
         <div>
           <label htmlFor={ids.keywords} className="block text-xs text-slate-400 mb-1">
             Keywords
           </label>
-          <input
+          <Input
             id={ids.keywords}
             type="text"
             value={keywords}
             onChange={(e) => setKeywords(e.target.value)}
             placeholder="comma-separated keywords"
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
           />
         </div>
         <div className="flex gap-2 justify-end">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => {
               setName(collection.name)
               setFilterString(collection.filterString)
               setKeywords(collection.keywords)
               setEditing(false)
             }}
-            className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-100 transition-colors"
           >
             Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={updateSmartCollection.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-lg text-xs font-medium transition-colors"
-          >
-            {updateSmartCollection.isPending && <Spinner size="sm" />}Save
-          </button>
+          </Button>
+          <Button size="sm" onClick={handleSave} loading={updateSmartCollection.isPending}>
+            Save
+          </Button>
         </div>
       </div>
     )
@@ -140,19 +149,17 @@ function SmartCollectionRow({ collection }: SmartCollectionRowProps) {
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-slate-400 hover:text-slate-100 transition-colors"
-          >
+          <Button variant="ghost" size="xs" onClick={() => setEditing(true)}>
             Edit
-          </button>
-          <button
-            onClick={() => deleteSmartCollection.mutate(collection.uuid)}
-            disabled={deleteSmartCollection.isPending}
-            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-60 transition-colors"
+          </Button>
+          <Button
+            variant="dangerSoft"
+            size="xs"
+            onClick={handleDelete}
+            loading={deleteSmartCollection.isPending}
           >
             Delete
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -245,7 +252,7 @@ function TunarrChannelCard({ channel, linkedGalaxyName }: TunarrChannelCardProps
               ))}
             </div>
           ) : (
-            <p className="text-xs text-slate-600">No schedule data</p>
+            <p className="text-xs text-slate-500">No schedule data</p>
           )}
         </div>
       )}
@@ -286,14 +293,13 @@ function ChannelBuilder247() {
             Channels based on your Plex library content
           </p>
         </div>
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={() => suggest247.mutate()}
-          disabled={suggest247.isPending}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 border border-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-colors"
+          loading={suggest247.isPending}
         >
-          {suggest247.isPending ? (
-            <Spinner size="sm" />
-          ) : (
+          {!suggest247.isPending && (
             <svg
               className="w-3 h-3"
               viewBox="0 0 24 24"
@@ -305,7 +311,7 @@ function ChannelBuilder247() {
             </svg>
           )}
           Scan Plex Library
-        </button>
+        </Button>
       </div>
 
       {suggest247.isPending && (
@@ -316,19 +322,19 @@ function ChannelBuilder247() {
       )}
 
       {!suggest247.isPending && suggestions.length === 0 && !suggest247.data && (
-        <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
-          <p className="text-slate-500 text-sm">
-            Click "Scan Plex Library" to find 24/7 channel candidates
-          </p>
-        </div>
+        <EmptyState
+          className="bg-slate-900 border border-slate-700 rounded-xl"
+          title="No suggestions yet"
+          description='Click "Scan Plex Library" to find 24/7 channel candidates'
+        />
       )}
 
       {!suggest247.isPending && suggestions.length === 0 && suggest247.data && (
-        <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
-          <p className="text-slate-500 text-sm">
-            No new 24/7 channel candidates found — all eligible content already has channels
-          </p>
-        </div>
+        <EmptyState
+          className="bg-slate-900 border border-slate-700 rounded-xl"
+          title="No new 24/7 channel candidates found"
+          description="All eligible content already has channels"
+        />
       )}
 
       {suggestions.length > 0 && (
@@ -375,7 +381,7 @@ function ChannelBuilder247() {
                   </div>
                 </div>
                 <div className="px-3 pb-3 flex items-center justify-between">
-                  <span className="text-xs text-slate-600">CH {s.suggested_number}</span>
+                  <span className="text-xs text-slate-500">CH {s.suggested_number}</span>
                   <button
                     onClick={() => handleCreate(s)}
                     disabled={createChannel.isPending || done}
@@ -438,14 +444,13 @@ function AiChannelSuggestions() {
             AI-powered lineup recommendations based on your library
           </p>
         </div>
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={() => aiSuggest.mutate()}
-          disabled={aiSuggest.isPending}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/30 hover:bg-emerald-900/50 disabled:opacity-60 border border-emerald-700/50 text-emerald-300 rounded-lg text-xs font-medium transition-colors"
+          loading={aiSuggest.isPending}
         >
-          {aiSuggest.isPending ? (
-            <Spinner size="sm" />
-          ) : (
+          {!aiSuggest.isPending && (
             <svg
               className="w-3 h-3"
               viewBox="0 0 24 24"
@@ -457,7 +462,7 @@ function AiChannelSuggestions() {
             </svg>
           )}
           Generate Suggestions
-        </button>
+        </Button>
       </div>
 
       {aiSuggest.isPending && (
@@ -468,12 +473,11 @@ function AiChannelSuggestions() {
       )}
 
       {!aiSuggest.isPending && !aiSuggest.data && (
-        <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
-          <p className="text-slate-500 text-sm">
-            Click "Generate Suggestions" to get AI channel recommendations
-          </p>
-          <p className="text-xs text-slate-600 mt-1">Requires AI API key in Settings</p>
-        </div>
+        <EmptyState
+          className="bg-slate-900 border border-slate-700 rounded-xl"
+          title="No AI suggestions yet"
+          description='Click "Generate Suggestions" to get AI channel recommendations. Requires an AI API key in Settings.'
+        />
       )}
 
       {channels.length > 0 && (
@@ -574,6 +578,12 @@ export function TunarrView() {
   const [showGuide, setShowGuide] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
+  // Import modal: tunarr_id → chosen action (defaults derived from the preview match)
+  const [importSelections, setImportSelections] = useState<
+    Record<string, 'link' | 'create' | 'skip'>
+  >({})
+  // Export modal: channel number → checked (unlinked channels default to checked)
+  const [exportSelections, setExportSelections] = useState<Record<number, boolean>>({})
   const { data: tunarrChannels = [], isLoading: loadingChannels } = useTunarrChannels()
   const { data: links = [] } = useTunarrLinks()
   const { data: smartCollections = [], isLoading: loadingCollections } = useTunarrSmartCollections()
@@ -611,11 +621,55 @@ export function TunarrView() {
     links.map((l) => [l.tunarr_id, `CH ${l.channel_number}${l.tunarr_name ? '' : ''}`]),
   )
 
+  // Import modal derived state (selection defaults come from the preview match)
+  const importableChannels = (importPreview.data?.channels ?? []).filter(
+    (ch) => ch.match !== 'already_linked',
+  )
+  const importActions = importableChannels.map((ch) => ({
+    tunarr_id: ch.tunarr_id,
+    action: importSelections[ch.tunarr_id] ?? (ch.match ? ('link' as const) : ('create' as const)),
+    cable_plex_number: ch.cable_plex_channel?.number,
+  }))
+  const importSelectedCount = importActions.filter((a) => a.action !== 'skip').length
+
+  // Export modal derived state (unlinked channels are checked by default)
+  const exportableNumbers = cablePlexChannels
+    .filter(
+      (ch) =>
+        !links.some((l) => l.channel_number === ch.number) && (exportSelections[ch.number] ?? true),
+    )
+    .map((ch) => ch.number)
+
+  const handleCreateFillerList = async () => {
+    const { value: name } = await Swal.fire<string>({
+      title: 'New Filler List',
+      input: 'text',
+      inputPlaceholder: 'Filler list name',
+      showCancelButton: true,
+      confirmButtonText: 'Create',
+      cancelButtonText: 'Cancel',
+      background: '#1e293b',
+      color: '#e2e8f0',
+      confirmButtonColor: '#4f46e5',
+      inputValidator: (value) => (value && value.trim() ? null : 'Please enter a name'),
+    })
+    if (name?.trim()) createFillerList.mutate({ name: name.trim() })
+  }
+
+  const handleDeleteFillerList = async (id: string, name: string) => {
+    const ok = await confirmDialog({
+      title: `Delete "${name}"?`,
+      text: 'This filler list will be removed from Tunarr.',
+      danger: true,
+    })
+    if (ok) deleteFillerList.mutate(id)
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="px-6 py-4 border-b border-slate-800 shrink-0">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
               <img src="/tunarr.svg" alt="Tunarr" className="w-5 h-5 rounded-sm" />
@@ -632,65 +686,71 @@ export function TunarrView() {
               )}
             </div>
           </div>
-          <button
-            onClick={() => setShowGuide(true)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 border border-emerald-700 text-emerald-100 rounded-lg text-xs font-medium transition-colors"
-          >
-            <svg
-              className="w-3.5 h-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" size="sm" onClick={() => setShowGuide(true)}>
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M3 9h18M9 3v18" />
+              </svg>
+              Program Guide
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => testTunarr.mutate(settings?.tunarr_url ?? '')}
+              disabled={!settings?.tunarr_url}
+              loading={testTunarr.isPending}
             >
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <path d="M3 9h18M9 3v18" />
-            </svg>
-            Program Guide
-          </button>
-          <button
-            onClick={() => testTunarr.mutate(settings?.tunarr_url ?? '')}
-            disabled={testTunarr.isPending || !settings?.tunarr_url}
-            className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 border border-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-colors"
-          >
-            {testTunarr.isPending && <Spinner size="sm" />}
-            Test Connection
-          </button>
-          <button
-            onClick={() => {
-              importPreview.mutate(undefined)
-              setShowImportModal(true)
-            }}
-            disabled={!settings?.tunarr_url}
-            className="flex items-center gap-2 px-3 py-1.5 bg-blue-800 hover:bg-blue-700 disabled:opacity-60 border border-blue-700 text-blue-100 rounded-lg text-xs font-medium transition-colors"
-          >
-            <svg
-              className="w-3.5 h-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
+              Test Connection
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setImportSelections({})
+                importPreview.mutate(undefined)
+                setShowImportModal(true)
+              }}
+              disabled={!settings?.tunarr_url}
             >
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
-            </svg>
-            Import
-          </button>
-          <button
-            onClick={() => setShowExportModal(true)}
-            disabled={!settings?.tunarr_url}
-            className="flex items-center gap-2 px-3 py-1.5 bg-violet-800 hover:bg-violet-700 disabled:opacity-60 border border-violet-700 text-violet-100 rounded-lg text-xs font-medium transition-colors"
-          >
-            <svg
-              className="w-3.5 h-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Import
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setExportSelections({})
+                setShowExportModal(true)
+              }}
+              disabled={!settings?.tunarr_url}
             >
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-            </svg>
-            Export
-          </button>
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+              </svg>
+              Export
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -731,14 +791,13 @@ export function TunarrView() {
               )}
             </h2>
             <div className="flex gap-2">
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => scanLibraries.mutate()}
-                disabled={scanLibraries.isPending}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 border border-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-colors"
+                loading={scanLibraries.isPending}
               >
-                {scanLibraries.isPending ? (
-                  <Spinner size="sm" />
-                ) : (
+                {!scanLibraries.isPending && (
                   <svg
                     className="w-3 h-3"
                     viewBox="0 0 24 24"
@@ -751,15 +810,14 @@ export function TunarrView() {
                   </svg>
                 )}
                 Scan Libraries
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => refreshGuide.mutate()}
-                disabled={refreshGuide.isPending}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 border border-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-colors"
+                loading={refreshGuide.isPending}
               >
-                {refreshGuide.isPending ? (
-                  <Spinner size="sm" />
-                ) : (
+                {!refreshGuide.isPending && (
                   <svg
                     className="w-3 h-3"
                     viewBox="0 0 24 24"
@@ -772,7 +830,7 @@ export function TunarrView() {
                   </svg>
                 )}
                 Refresh Guide
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -782,12 +840,11 @@ export function TunarrView() {
               Loading channels…
             </div>
           ) : tunarrChannels.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
-              <p className="text-slate-500 text-sm">No Tunarr channels found</p>
-              <p className="text-xs text-slate-600 mt-1">
-                Check your Tunarr connection in Settings
-              </p>
-            </div>
+            <EmptyState
+              className="bg-slate-900 border border-slate-700 rounded-xl"
+              title="No Tunarr channels found"
+              description="Check your Tunarr connection in Settings"
+            />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {tunarrChannels.map((tc) => (
@@ -824,9 +881,10 @@ export function TunarrView() {
               Loading…
             </div>
           ) : smartCollections.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
-              <p className="text-slate-500 text-sm">No smart collections configured</p>
-            </div>
+            <EmptyState
+              className="bg-slate-900 border border-slate-700 rounded-xl"
+              title="No smart collections configured"
+            />
           ) : (
             <div className="space-y-2">
               {smartCollections.map((sc) => (
@@ -872,16 +930,16 @@ export function TunarrView() {
               </svg>
               Download M3U
             </a>
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => refreshXmltv.mutate()}
-              disabled={refreshXmltv.isPending}
-              className="flex items-center gap-2 px-3 py-2 bg-emerald-800 hover:bg-emerald-700 border border-emerald-700 text-emerald-100 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+              loading={refreshXmltv.isPending}
             >
-              {refreshXmltv.isPending && <Spinner size="sm" />}
               Refresh Guide
-            </button>
+            </Button>
           </div>
-          <p className="text-xs text-slate-600 mt-2">
+          <p className="text-xs text-slate-500 mt-2">
             Use these URLs in Plex or Jellyfin as a DVR tuner source.
           </p>
         </section>
@@ -903,13 +961,14 @@ export function TunarrView() {
                       {Array.isArray(sessions) && sessions.length !== 1 ? 's' : ''}
                     </p>
                   </div>
-                  <button
+                  <Button
+                    variant="dangerSoft"
+                    size="xs"
                     onClick={() => killSessions.mutate(channelId)}
                     disabled={killSessions.isPending}
-                    className="px-2 py-1 text-xs bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-400 rounded transition-colors disabled:opacity-50"
                   >
                     Kill
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -925,22 +984,21 @@ export function TunarrView() {
                 <span className="ml-2 text-xs text-slate-500">({fillerLists.length})</span>
               )}
             </h2>
-            <button
-              onClick={() => {
-                const name = prompt('Filler list name:')
-                if (name?.trim()) createFillerList.mutate({ name: name.trim() })
-              }}
-              className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCreateFillerList}
+              loading={createFillerList.isPending}
             >
               + New Filler List
-            </button>
+            </Button>
           </div>
           {fillerLists.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 text-center">
-              <p className="text-slate-500 text-sm">
-                No filler lists. Create one to add bumpers and interstitials.
-              </p>
-            </div>
+            <EmptyState
+              className="bg-slate-900 border border-slate-700 rounded-xl"
+              title="No filler lists"
+              description="Create one to add bumpers and interstitials."
+            />
           ) : (
             <div className="space-y-2">
               {fillerLists.map((fl) => (
@@ -956,11 +1014,11 @@ export function TunarrView() {
                       </p>
                     )}
                   </div>
-                  <button
-                    onClick={() => deleteFillerList.mutate(fl.id)}
+                  <IconButton
+                    label={`Delete filler list "${fl.name}"`}
+                    variant="danger"
+                    onClick={() => handleDeleteFillerList(fl.id, fl.name)}
                     disabled={deleteFillerList.isPending}
-                    className="p-1 text-slate-500 hover:text-red-400 transition-colors"
-                    title="Delete filler list"
                   >
                     <svg
                       className="w-4 h-4"
@@ -971,7 +1029,7 @@ export function TunarrView() {
                     >
                       <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
                     </svg>
-                  </button>
+                  </IconButton>
                 </div>
               ))}
             </div>
@@ -980,215 +1038,199 @@ export function TunarrView() {
       </div>
 
       {/* Import Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col mx-4">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-              <h2 className="text-lg font-bold text-slate-100">Import Channels from Tunarr</h2>
-              <button
-                onClick={() => setShowImportModal(false)}
-                className="text-slate-400 hover:text-slate-200"
+      <ModalWrapper
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        maxWidth="max-w-lg"
+        titleId="tunarr-import-title"
+      >
+        <div className="flex flex-col max-h-[80vh]">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700 shrink-0">
+            <h2 id="tunarr-import-title" className="text-lg font-bold text-slate-100">
+              Import Channels from Tunarr
+            </h2>
+            <IconButton label="Close" onClick={() => setShowImportModal(false)}>
+              <svg
+                className="w-5 h-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
               >
-                <svg
-                  className="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5">
-              {importPreview.isPending ? (
-                <div className="flex justify-center py-8">
-                  <Spinner />
-                </div>
-              ) : importPreview.data?.channels.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-8">No Tunarr channels found</p>
-              ) : (
-                <div className="space-y-2">
-                  {(importPreview.data?.channels ?? []).map((ch) => (
-                    <div
-                      key={ch.tunarr_id}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800 border border-slate-700"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-slate-200">
-                          CH {ch.tunarr_number} — {ch.tunarr_name}
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </IconButton>
+          </div>
+          <div className="flex-1 overflow-y-auto p-5">
+            {importPreview.isPending ? (
+              <div className="flex justify-center py-8">
+                <Spinner />
+              </div>
+            ) : importPreview.data?.channels.length === 0 ? (
+              <EmptyState title="No Tunarr channels found" />
+            ) : (
+              <div className="space-y-2">
+                {(importPreview.data?.channels ?? []).map((ch) => (
+                  <div
+                    key={ch.tunarr_id}
+                    className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-200">
+                        CH {ch.tunarr_number} — {ch.tunarr_name}
+                      </p>
+                      {ch.match === 'already_linked' && (
+                        <p className="text-xs text-emerald-400">Already linked</p>
+                      )}
+                      {ch.match === 'number' && ch.cable_plex_channel && (
+                        <p className="text-xs text-blue-400">
+                          Matches Cable Plex CH {ch.cable_plex_channel.number} by number
                         </p>
-                        {ch.match === 'already_linked' && (
-                          <p className="text-xs text-emerald-400">Already linked</p>
-                        )}
-                        {ch.match === 'number' && ch.cable_plex_channel && (
-                          <p className="text-xs text-blue-400">
-                            Matches Cable Plex CH {ch.cable_plex_channel.number} by number
-                          </p>
-                        )}
-                        {ch.match === 'name' && ch.cable_plex_channel && (
-                          <p className="text-xs text-blue-400">
-                            Matches &quot;{ch.cable_plex_channel.name}&quot; by name
-                          </p>
-                        )}
-                        {ch.match === null && (
-                          <p className="text-xs text-amber-400">
-                            No match — will create new channel
-                          </p>
-                        )}
-                      </div>
-                      {ch.match === 'already_linked' ? (
-                        <span className="text-xs text-slate-500">Linked</span>
-                      ) : (
-                        <select
-                          defaultValue={ch.match ? 'link' : 'create'}
-                          data-tunarr-id={ch.tunarr_id}
-                          data-cp-number={ch.cable_plex_channel?.number}
-                          className="text-xs bg-slate-700 border border-slate-600 text-slate-200 rounded px-2 py-1"
+                      )}
+                      {ch.match === 'name' && ch.cable_plex_channel && (
+                        <p className="text-xs text-blue-400">
+                          Matches &quot;{ch.cable_plex_channel.name}&quot; by name
+                        </p>
+                      )}
+                      {ch.match === null && (
+                        <p className="text-xs text-amber-400">No match — will create new channel</p>
+                      )}
+                    </div>
+                    {ch.match === 'already_linked' ? (
+                      <span className="text-xs text-slate-500 shrink-0">Linked</span>
+                    ) : (
+                      <div className="w-40 shrink-0">
+                        <Select
+                          aria-label={`Import action for ${ch.tunarr_name}`}
+                          value={importSelections[ch.tunarr_id] ?? (ch.match ? 'link' : 'create')}
+                          onChange={(e) =>
+                            setImportSelections((prev) => ({
+                              ...prev,
+                              [ch.tunarr_id]: e.target.value as 'link' | 'create' | 'skip',
+                            }))
+                          }
                         >
                           {ch.cable_plex_channel && (
                             <option value="link">Link to CH {ch.cable_plex_channel.number}</option>
                           )}
                           <option value="create">Create new</option>
                           <option value="skip">Skip</option>
-                        </select>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-slate-800">
-              <button
-                onClick={() => setShowImportModal(false)}
-                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={importChannels.isPending || !importPreview.data?.channels.length}
-                onClick={() => {
-                  const selects = document.querySelectorAll<HTMLSelectElement>('[data-tunarr-id]')
-                  const actions: Array<{
-                    tunarr_id: string
-                    action: 'link' | 'create' | 'skip'
-                    cable_plex_number?: number
-                  }> = []
-                  selects.forEach((sel) => {
-                    const tid = sel.getAttribute('data-tunarr-id')!
-                    const cpNum = sel.getAttribute('data-cp-number')
-                    actions.push({
-                      tunarr_id: tid,
-                      action: sel.value as 'link' | 'create' | 'skip',
-                      cable_plex_number: cpNum ? parseInt(cpNum) : undefined,
-                    })
-                  })
-                  // Also include already-linked as skip
-                  for (const ch of importPreview.data?.channels ?? []) {
-                    if (ch.match === 'already_linked') continue
-                    if (!actions.find((a) => a.tunarr_id === ch.tunarr_id)) {
-                      actions.push({ tunarr_id: ch.tunarr_id, action: 'skip' })
-                    }
-                  }
-                  importChannels.mutate(actions, {
-                    onSuccess: () => setShowImportModal(false),
-                  })
-                }}
-                className="px-4 py-2 text-sm bg-blue-700 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50"
-              >
-                {importChannels.isPending ? 'Importing…' : 'Import Selected'}
-              </button>
-            </div>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3 px-5 py-4 border-t border-slate-700 shrink-0">
+            <span className="text-xs text-slate-500 mr-auto" aria-live="polite">
+              {importSelectedCount} channel{importSelectedCount !== 1 ? 's' : ''} selected
+            </span>
+            <Button variant="ghost" onClick={() => setShowImportModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              loading={importChannels.isPending}
+              disabled={importSelectedCount === 0}
+              onClick={() =>
+                importChannels.mutate(importActions, {
+                  onSuccess: () => setShowImportModal(false),
+                })
+              }
+            >
+              {importChannels.isPending ? 'Importing…' : 'Import Selected'}
+            </Button>
           </div>
         </div>
-      )}
+      </ModalWrapper>
 
       {/* Export Modal */}
-      {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col mx-4">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-              <h2 className="text-lg font-bold text-slate-100">Export Channels to Tunarr</h2>
-              <button
-                onClick={() => setShowExportModal(false)}
-                className="text-slate-400 hover:text-slate-200"
+      <ModalWrapper
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        maxWidth="max-w-lg"
+        titleId="tunarr-export-title"
+      >
+        <div className="flex flex-col max-h-[80vh]">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700 shrink-0">
+            <h2 id="tunarr-export-title" className="text-lg font-bold text-slate-100">
+              Export Channels to Tunarr
+            </h2>
+            <IconButton label="Close" onClick={() => setShowExportModal(false)}>
+              <svg
+                className="w-5 h-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
               >
-                <svg
-                  className="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5">
-              {cablePlexChannels.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-8">No Cable Plex channels</p>
-              ) : (
-                <div className="space-y-2">
-                  {cablePlexChannels.map((ch) => {
-                    const isLinked = links.some((l) => l.channel_number === ch.number)
-                    return (
-                      <label
-                        key={ch.number}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${isLinked ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-800 border-slate-700'}`}
-                      >
-                        <input
-                          type="checkbox"
-                          defaultChecked={!isLinked}
-                          disabled={isLinked}
-                          data-channel-number={ch.number}
-                          className="rounded border-slate-600 bg-slate-700 text-violet-500 focus:ring-violet-500"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p
-                            className={`text-sm font-medium ${isLinked ? 'text-slate-500' : 'text-slate-200'}`}
-                          >
-                            CH {ch.number} — {ch.name}
-                          </p>
-                          {isLinked && (
-                            <p className="text-xs text-emerald-500">Already linked to Tunarr</p>
-                          )}
-                        </div>
-                      </label>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-slate-800">
-              <button
-                onClick={() => setShowExportModal(false)}
-                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={exportChannels.isPending}
-                onClick={() => {
-                  const checks = document.querySelectorAll<HTMLInputElement>(
-                    '[data-channel-number]:checked',
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </IconButton>
+          </div>
+          <div className="flex-1 overflow-y-auto p-5">
+            {cablePlexChannels.length === 0 ? (
+              <EmptyState title="No Cable Plex channels" />
+            ) : (
+              <div className="space-y-2">
+                {cablePlexChannels.map((ch) => {
+                  const isLinked = links.some((l) => l.channel_number === ch.number)
+                  return (
+                    <label
+                      key={ch.number}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${isLinked ? 'bg-slate-900/50 border-slate-700/50' : 'bg-slate-900 border-slate-700'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isLinked ? false : (exportSelections[ch.number] ?? true)}
+                        disabled={isLinked}
+                        onChange={(e) =>
+                          setExportSelections((prev) => ({
+                            ...prev,
+                            [ch.number]: e.target.checked,
+                          }))
+                        }
+                        className="rounded border-slate-600 bg-slate-700 text-indigo-500 focus:ring-indigo-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className={`text-sm font-medium ${isLinked ? 'text-slate-500' : 'text-slate-200'}`}
+                        >
+                          CH {ch.number} — {ch.name}
+                        </p>
+                        {isLinked && (
+                          <p className="text-xs text-emerald-500">Already linked to Tunarr</p>
+                        )}
+                      </div>
+                    </label>
                   )
-                  const nums = Array.from(checks).map((c) =>
-                    parseInt(c.getAttribute('data-channel-number')!),
-                  )
-                  if (nums.length === 0) return
-                  exportChannels.mutate(
-                    { channelNumbers: nums },
-                    { onSuccess: () => setShowExportModal(false) },
-                  )
-                }}
-                className="px-4 py-2 text-sm bg-violet-700 hover:bg-violet-600 text-white rounded-lg font-medium disabled:opacity-50"
-              >
-                {exportChannels.isPending ? 'Exporting…' : 'Export Selected'}
-              </button>
-            </div>
+                })}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3 px-5 py-4 border-t border-slate-700 shrink-0">
+            <span className="text-xs text-slate-500 mr-auto" aria-live="polite">
+              {exportableNumbers.length} channel{exportableNumbers.length !== 1 ? 's' : ''} selected
+            </span>
+            <Button variant="ghost" onClick={() => setShowExportModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              loading={exportChannels.isPending}
+              disabled={exportableNumbers.length === 0}
+              onClick={() =>
+                exportChannels.mutate(
+                  { channelNumbers: exportableNumbers },
+                  { onSuccess: () => setShowExportModal(false) },
+                )
+              }
+            >
+              {exportChannels.isPending ? 'Exporting…' : 'Export Selected'}
+            </Button>
           </div>
         </div>
-      )}
+      </ModalWrapper>
     </div>
   )
 }

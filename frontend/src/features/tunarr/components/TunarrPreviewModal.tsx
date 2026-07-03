@@ -1,5 +1,4 @@
-import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { Button, IconButton, ModalWrapper } from '@/shared/components/ui'
 import { useUIStore } from '@/shared/store/ui.store'
 import { usePushSchedule } from '@/features/tunarr/hooks'
 import type { TunarrScheduleItem } from '@/shared/types'
@@ -60,20 +59,24 @@ export function TunarrPreviewModal() {
   }
 
   return (
-    <ModalWrapper open={open} onClose={() => closeModal('tunarrPreview')} maxWidth="max-w-2xl">
+    <ModalWrapper
+      open={open}
+      onClose={() => closeModal('tunarrPreview')}
+      maxWidth="max-w-2xl"
+      titleId="tunarr-preview-title"
+    >
       <div className="flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 shrink-0">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">Schedule Preview</h2>
+            <h2 id="tunarr-preview-title" className="text-lg font-semibold text-slate-100">
+              Schedule Preview
+            </h2>
             <p className="text-xs text-slate-400 mt-0.5">
               {slots} slot{slots !== 1 ? 's' : ''} will be pushed
             </p>
           </div>
-          <button
-            onClick={() => closeModal('tunarrPreview')}
-            className="text-slate-400 hover:text-slate-100 transition-colors"
-          >
+          <IconButton label="Close" onClick={() => closeModal('tunarrPreview')}>
             <svg
               className="w-5 h-5"
               viewBox="0 0 24 24"
@@ -83,7 +86,7 @@ export function TunarrPreviewModal() {
             >
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
-          </button>
+          </IconButton>
         </div>
 
         {/* Body */}
@@ -117,20 +120,12 @@ export function TunarrPreviewModal() {
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-700 shrink-0">
-          <button
-            onClick={() => closeModal('tunarrPreview')}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-slate-100 transition-colors"
-          >
+          <Button variant="ghost" onClick={() => closeModal('tunarrPreview')}>
             Cancel
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={pushSchedule.isPending}
-            className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            {pushSchedule.isPending && <Spinner size="sm" />}
+          </Button>
+          <Button onClick={handleConfirm} loading={pushSchedule.isPending}>
             Confirm Push
-          </button>
+          </Button>
         </div>
       </div>
     </ModalWrapper>

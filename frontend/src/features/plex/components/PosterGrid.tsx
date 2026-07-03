@@ -1,4 +1,4 @@
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { Button, EmptyState, PosterGridSkeleton } from '@/shared/components/ui'
 import { PlexThumb } from './PlexThumb'
 import type { Assignment, PlexItem } from '@/shared/types'
 
@@ -51,18 +51,15 @@ export function PosterGrid({
   posterSize = 'medium',
 }: PosterGridProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Spinner size="lg" />
-      </div>
-    )
+    return <PosterGridSkeleton count={12} />
   }
 
   if (items.length === 0) {
     return (
-      <div className="flex items-center justify-center py-16 text-slate-500 text-sm">
-        No items to display
-      </div>
+      <EmptyState
+        title="No items to display"
+        description="Try a different search, filter, or source."
+      />
     )
   }
 
@@ -133,19 +130,18 @@ export function PosterGrid({
 
               {/* Action */}
               {isAssigned && assignment ? (
-                <button
+                <Button
+                  variant="danger"
+                  size="xs"
+                  className="shrink-0"
                   onClick={() => onUnassign(assignment.id)}
-                  className="shrink-0 px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg font-medium transition-colors"
                 >
                   Unassign
-                </button>
+                </Button>
               ) : (
-                <button
-                  onClick={() => onAssign(item)}
-                  className="shrink-0 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg font-medium transition-colors"
-                >
+                <Button size="xs" className="shrink-0" onClick={() => onAssign(item)}>
                   Assign
-                </button>
+                </Button>
               )}
             </div>
           )
@@ -169,8 +165,17 @@ export function PosterGrid({
               }`}
             >
               <div
-                className="absolute inset-0 bg-slate-900 cursor-pointer"
+                role="button"
+                tabIndex={0}
+                aria-label={item.title}
+                className="absolute inset-0 bg-slate-900 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
                 onClick={() => onDetail?.(item.rating_key)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onDetail?.(item.rating_key)
+                  }
+                }}
               >
                 {item.thumb ? (
                   <PlexThumb
@@ -179,7 +184,7 @@ export function PosterGrid({
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-700 text-[10px] px-1 text-center">
+                  <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px] px-1 text-center">
                     {item.title}
                   </div>
                 )}
@@ -197,14 +202,14 @@ export function PosterGrid({
                   </svg>
                 </span>
               )}
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-2">
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-end justify-center pb-2 pointer-events-none">
                 {isAssigned && assignment ? (
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       onUnassign(assignment.id)
                     }}
-                    className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-[10px] rounded font-medium"
+                    className="pointer-events-auto px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-[10px] rounded font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     Remove
                   </button>
@@ -214,7 +219,7 @@ export function PosterGrid({
                       e.stopPropagation()
                       onAssign(item)
                     }}
-                    className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] rounded font-medium"
+                    className="pointer-events-auto px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] rounded font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     Add
                   </button>
@@ -244,8 +249,19 @@ export function PosterGrid({
           >
             {/* Poster image */}
             <div
-              className="relative aspect-[2/3] bg-slate-900 overflow-hidden cursor-pointer"
+              role="button"
+              tabIndex={0}
+              aria-label={item.title}
+              className="relative aspect-[2/3] bg-slate-900 overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
               onClick={() => onDetail?.(item.rating_key)}
+              onKeyDown={(e) => {
+                // Ignore key events bubbling from the overlay action button
+                if (e.target !== e.currentTarget) return
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onDetail?.(item.rating_key)
+                }
+              }}
             >
               {item.thumb ? (
                 <PlexThumb
@@ -286,27 +302,28 @@ export function PosterGrid({
               )}
 
               {/* Hover action overlay */}
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-3">
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-end justify-center pb-3">
                 {isAssigned && assignment ? (
-                  <button
+                  <Button
+                    variant="danger"
+                    size="xs"
                     onClick={(e) => {
                       e.stopPropagation()
                       onUnassign(assignment.id)
                     }}
-                    className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg font-medium transition-colors"
                   >
                     Unassign
-                  </button>
+                  </Button>
                 ) : (
-                  <button
+                  <Button
+                    size="xs"
                     onClick={(e) => {
                       e.stopPropagation()
                       onAssign(item)
                     }}
-                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg font-medium transition-colors"
                   >
                     Assign
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
