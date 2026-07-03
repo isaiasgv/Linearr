@@ -1,3 +1,9 @@
+## [0.0.1-rc.3](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.2...v0.0.1-rc.3) (2026-07-03)
+
+### Bug Fixes
+
+* **ci:** use v-prefixed trivy-action tag so the docker job can resolve it ([b9ef87e](https://github.com/isaiasgv/Linearr/commit/b9ef87e209062e16a2dbded30886f68cc53b84ec))
+
 ## [0.0.1-rc.2](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.1...v0.0.1-rc.2) (2026-07-03)
 
 ### Features
