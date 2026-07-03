@@ -100,6 +100,9 @@ def get_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # Per-connection pragma: FK enforcement (and the block_slots ON DELETE
+    # CASCADE) is off by default in SQLite and must be enabled on every connect.
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 def init_db():
@@ -634,7 +637,10 @@ async def update_channel(channel_number: int, body: ChannelIn):
         )
         # If channel number changed, update all related tables
         if body.number != channel_number:
-            conn.execute("UPDATE channels SET number=? WHERE number=?", (body.number, channel_number))
+            try:
+                conn.execute("UPDATE channels SET number=? WHERE number=?", (body.number, channel_number))
+            except sqlite3.IntegrityError:
+                raise HTTPException(409, f"Channel number {body.number} is already in use")
             for table in ("assignments", "blocks", "channel_collections", "tunarr_channel_links", "tunarr_collection_links"):
                 try:
                     conn.execute(f"UPDATE {table} SET channel_number=? WHERE channel_number=?", (body.number, channel_number))
@@ -659,8 +665,20 @@ async def sync_channel_to_tunarr(channel_number: int):
 def delete_channel(channel_number: int):
     with get_db() as conn:
         cur = conn.execute("DELETE FROM channels WHERE number=?", (channel_number,))
-    if cur.rowcount == 0:
-        raise HTTPException(404, "Channel not found")
+        if cur.rowcount == 0:
+            raise HTTPException(404, "Channel not found")
+        # No FK constraints tie these tables to channels(number) — clean up
+        # explicitly so a reused channel number doesn't inherit ghost data.
+        conn.execute(
+            "DELETE FROM block_slots WHERE block_id IN (SELECT id FROM blocks WHERE channel_number=?)",
+            (channel_number,),
+        )
+        for table in ("assignments", "blocks", "channel_collections",
+                      "tunarr_channel_links", "tunarr_collection_links"):
+            try:
+                conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
+            except sqlite3.OperationalError:
+                pass
     return {"ok": True}
 
 # ── Channel Icons ─────────────────────────────────────────────────────────────
@@ -3577,85 +3595,6 @@ Reply with ONLY this JSON (no markdown):
     except Exception as e:
         raise HTTPException(502, f"AI error: {str(e)[:200]}")
 
-# ── Channel block templates ────────────────────────────────────────────────────
-
-_DAYPART_TIMES = {
-    "Early Morning": ("06:00", "09:00"),
-    "Morning":       ("09:00", "12:00"),
-    "Afternoon":     ("12:00", "17:00"),
-    "Prime Time":    ("17:00", "22:00"),
-    "Late Night":    ("22:00", "02:00"),
-    "Overnight":     ("02:00", "06:00"),
-    "All Day":       ("06:00", "23:00"),
-}
-
-_ALL_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-
-def _infer_content_type(desc: str) -> str:
-    d = desc.lower()
-    is_movie = any(w in d for w in ["movie", "film", "feature", "cinema"])
-    is_show  = any(w in d for w in ["series", "episode", "sitcom", "cartoon",
-                                     "anime", "animation", "documentary",
-                                     "reality", "competition", "reruns", "block"])
-    if is_movie and not is_show: return "movies"
-    if is_show and not is_movie: return "shows"
-    return "both"
-
-def _daypart_to_template(daypart_name: str, desc: str) -> dict | None:
-    for key, (start, end) in _DAYPART_TIMES.items():
-        if daypart_name.startswith(key):
-            label = daypart_name.split("(")[0].strip()
-            return {
-                "name": label,
-                "start_time": start,
-                "end_time": end,
-                "content_type": _infer_content_type(desc),
-                "days": _ALL_DAYS,
-                "notes": desc,
-            }
-    return None
-
-@app.get("/api/channels/{channel_number}/block-templates")
-def channel_block_templates(channel_number: int):
-    ch = _get_channel(channel_number)
-    if not ch:
-        raise HTTPException(404, "Channel not found")
-    templates = []
-    for name, desc in ch.get("dayparts", {}).items():
-        t = _daypart_to_template(name, desc)
-        if t:
-            templates.append(t)
-    return templates
-
-@app.post("/api/channels/{channel_number}/block-templates/apply", status_code=201)
-def apply_channel_block_templates(channel_number: int):
-    ch = _get_channel(channel_number)
-    if not ch:
-        raise HTTPException(404, "Channel not found")
-    created = []
-    skipped = []
-    with get_db() as conn:
-        existing_names = {r["name"] for r in conn.execute(
-            "SELECT name FROM blocks WHERE channel_number=?", (channel_number,)
-        ).fetchall()}
-        for name, desc in ch.get("dayparts", {}).items():
-            t = _daypart_to_template(name, desc)
-            if not t:
-                continue
-            if t["name"] in existing_names:
-                skipped.append(t["name"])
-                continue
-            cur = conn.execute(
-                """INSERT INTO blocks
-                   (name, channel_number, days, start_time, end_time, content_type, notes, order_index)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (t["name"], channel_number, _json.dumps(t["days"]),
-                 t["start_time"], t["end_time"], t["content_type"], t["notes"], 0),
-            )
-            row = conn.execute("SELECT * FROM blocks WHERE id=?", (cur.lastrowid,)).fetchone()
-            created.append(_row_to_block(row))
-    return {"created": created, "skipped": skipped}
-
 _SCHEDULE_TEMPLATES_PATH = Path("/app/schedule_templates.json")
 
 @app.get("/api/schedule-templates")
@@ -4769,7 +4708,8 @@ async def tunarr_export_channels(body: TunarrExportRequest):
     tunarr_by_number = {c.get("number"): c for c in tunarr_channels}
 
     # Get ffmpeg settings for channel creation
-    ffmpeg_r = await httpx.AsyncClient(timeout=5).get(f"{url}/api/ffmpeg-settings")
+    async with httpx.AsyncClient(timeout=5) as client:
+        ffmpeg_r = await client.get(f"{url}/api/ffmpeg-settings")
     transcode_id = None
     if ffmpeg_r.status_code == 200:
         transcode_id = ffmpeg_r.json().get("defaultTranscodeConfigId") or ffmpeg_r.json().get("configId")
@@ -5745,12 +5685,15 @@ async def import_channel(request: Request):
         block_id_map = {}
         for blk in blocks:
             old_id = blk.get("id")
-            cur = conn.execute(
-                "INSERT INTO blocks (name, channel_number, days, start_time, end_time, content_type, notes, order_index) VALUES (?,?,?,?,?,?,?,?)",
-                (blk["name"], ch["number"], blk.get("days", "[]"),
-                 blk.get("start_time", "00:00"), blk.get("end_time", "23:59"),
-                 blk.get("content_type", "both"), blk.get("notes", ""), blk.get("order_index", 0)),
-            )
+            try:
+                cur = conn.execute(
+                    "INSERT INTO blocks (name, channel_number, days, start_time, end_time, content_type, notes, order_index) VALUES (?,?,?,?,?,?,?,?)",
+                    (blk["name"], ch["number"], blk.get("days", "[]"),
+                     blk.get("start_time", "00:00"), blk.get("end_time", "23:59"),
+                     blk.get("content_type", "both"), blk.get("notes", ""), blk.get("order_index", 0)),
+                )
+            except Exception:
+                continue
             if old_id is not None:
                 block_id_map[old_id] = cur.lastrowid
         for s in block_slots:
@@ -5806,6 +5749,9 @@ async def restore_db(request: Request):
     restore_path.write_bytes(body)
     # Swap in the restored database
     shutil.move(str(restore_path), str(DB_PATH))
+    # Re-run schema migrations so a backup from an older version gets any
+    # columns/tables added since — otherwise the app 500s until a restart.
+    init_db()
     log.info("Database restored from upload (%d bytes)", len(body))
     _log_app("backup", f"Database restored from upload ({len(body)} bytes)", "warn")
     return {"ok": True, "size": len(body)}
