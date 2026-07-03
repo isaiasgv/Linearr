@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { useUIStore, type ActiveChannelTab } from '@/shared/store/ui.store'
-import { useDeleteChannel } from '@/features/channels/hooks'
+import { useChannels, useDeleteChannel } from '@/features/channels/hooks'
 import { useChannelAssignments } from '@/features/assignments/hooks'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
 import { TierBadge, tierColor } from '@/shared/components/ui/TierBadge'
+import { confirmDialog } from '@/shared/components/ui'
+import { tierNumberColor } from '@/features/channels/utils'
 import { ContentTab } from '@/features/content/components/ContentTab'
 import { BlocksTab } from '@/features/blocks/components/BlocksTab'
 import { TunarrTab } from '@/features/tunarr/components/TunarrTab'
-import type { Channel } from '@/shared/types'
 
 const TABS: { label: string; value: ActiveChannelTab }[] = [
   { label: 'Content', value: 'content' },
@@ -15,21 +16,11 @@ const TABS: { label: string; value: ActiveChannelTab }[] = [
   { label: 'Tunarr', value: 'tunarr' },
 ]
 
-function tierNumberBg(tier: Channel['tier']): string {
-  switch (tier) {
-    case 'Galaxy Main':
-      return 'bg-blue-700 text-blue-100'
-    case 'Classics':
-      return 'bg-purple-700 text-purple-100'
-    case 'Galaxy Premium':
-      return 'bg-amber-700 text-amber-100'
-  }
-}
-
 export function ChannelDetail() {
   const { selectedChannel, activeChannelTab, setActiveChannelTab, openModal, selectChannel } =
     useUIStore()
   const deleteChannel = useDeleteChannel()
+  const { data: channels } = useChannels()
   const { data: assignments = [] } = useChannelAssignments(selectedChannel?.number ?? 0)
   const { data: tunarrLinks = [] } = useTunarrLinks()
 
@@ -39,18 +30,32 @@ export function ChannelDetail() {
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
     }
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', keyHandler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', keyHandler)
+    }
   }, [])
 
   if (!selectedChannel) return null
 
-  const ch = selectedChannel
+  // Resolve the live channel from the query cache — the store snapshot goes
+  // stale after edits via ChannelFormModal.
+  const ch = channels?.find((c) => c.number === selectedChannel.number) ?? selectedChannel
   const tunarrLink = tunarrLinks.find((l) => l.channel_number === ch.number)
 
-  function handleDelete() {
+  async function handleDelete() {
     setMenuOpen(false)
-    if (!confirm(`Delete channel ${ch.number} – ${ch.name}? This cannot be undone.`)) return
+    const confirmed = await confirmDialog({
+      title: `Delete channel ${ch.number} – ${ch.name}?`,
+      text: 'This cannot be undone.',
+      danger: true,
+    })
+    if (!confirmed) return
     deleteChannel.mutate(ch.number, {
       onSuccess: () => selectChannel(null),
     })
@@ -71,14 +76,14 @@ export function ChannelDetail() {
                   className="w-9 h-9 rounded-lg object-cover border border-slate-700"
                 />
                 <span
-                  className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded px-1 leading-tight shadow ${tierNumberBg(ch.tier)}`}
+                  className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded px-1 leading-tight shadow ${tierNumberColor(ch.tier)}`}
                 >
                   {ch.number}
                 </span>
               </div>
             ) : (
               <span
-                className={`shrink-0 w-9 h-9 rounded-lg text-sm font-bold flex items-center justify-center ${tierNumberBg(ch.tier)}`}
+                className={`shrink-0 w-9 h-9 rounded-lg text-sm font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}
               >
                 {ch.number}
               </span>
@@ -123,13 +128,17 @@ export function ChannelDetail() {
             ))}
           </div>
 
-          {/* Actions overflow menu */}
-          <div className="relative shrink-0" ref={menuRef}>
+          {/* Actions overflow menu — ml-auto keeps it (and the right-anchored
+              dropdown) at the pane's right edge when the header wraps, so the
+              menu isn't clipped by the content pane's overflow-hidden */}
+          <div className="relative shrink-0 ml-auto" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               aria-label="Channel actions"
               title="Channel actions"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="12" cy="5" r="1.6" />

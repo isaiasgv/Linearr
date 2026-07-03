@@ -2,7 +2,7 @@ import { useUIStore } from '@/shared/store/ui.store'
 import { useChannelBlocks, useCreateBlock } from '@/features/blocks/hooks'
 import { useAiGenerateDay } from '@/features/ai/hooks'
 import { BLOCK_PRESETS } from '@/features/blocks/types'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { BlockSkeleton, Button, Spinner } from '@/shared/components/ui'
 import { BlockCard } from './BlockCard'
 import { NetworkSuggestionsPanel } from './NetworkSuggestionsPanel'
 
@@ -42,10 +42,7 @@ export function BlocksTab({ channelNumber }: BlocksTabProps) {
     <div className="flex flex-col gap-4 p-4">
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => openModal('blockForm')}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-indigo-700 hover:bg-indigo-600 text-indigo-100 rounded-lg transition-colors"
-        >
+        <Button onClick={() => openModal('blockForm')} className="gap-2">
           <svg
             className="w-4 h-4"
             viewBox="0 0 24 24"
@@ -56,7 +53,7 @@ export function BlocksTab({ channelNumber }: BlocksTabProps) {
             <path d="M12 5v14M5 12h14" />
           </svg>
           New Block
-        </button>
+        </Button>
 
         <button
           onClick={() => openModal('templatesLibrary')}
@@ -74,14 +71,14 @@ export function BlocksTab({ channelNumber }: BlocksTabProps) {
           Load Templates
         </button>
 
-        <button
+        <Button
+          variant="success"
           onClick={handleAiGenerateDay}
-          disabled={aiGenerateDay.isPending || !selectedChannel}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-800 hover:bg-emerald-700 text-emerald-100 rounded-lg border border-emerald-700 transition-colors disabled:opacity-50"
+          loading={aiGenerateDay.isPending}
+          disabled={!selectedChannel}
+          className="gap-2"
         >
-          {aiGenerateDay.isPending ? (
-            <Spinner size="sm" />
-          ) : (
+          {!aiGenerateDay.isPending && (
             <svg
               className="w-4 h-4"
               viewBox="0 0 24 24"
@@ -93,13 +90,15 @@ export function BlocksTab({ channelNumber }: BlocksTabProps) {
             </svg>
           )}
           AI Generate Day
-        </button>
+        </Button>
       </div>
 
       {/* Loading state */}
       {isLoading && (
-        <div className="flex items-center justify-center py-12">
-          <Spinner size="lg" />
+        <div className="space-y-2">
+          {Array.from({ length: 3 }, (_, i) => (
+            <BlockSkeleton key={i} />
+          ))}
         </div>
       )}
 

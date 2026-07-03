@@ -1,5 +1,7 @@
 # Linearr UI Patterns — Reference
 
+> **Canonical design reference:** see [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) for tokens (colors, surfaces, radii, focus/disabled states) and the shared UI primitives (`Button`, `Input`, `Field`, `Card`, `confirmDialog`, …). This file covers larger composition patterns.
+
 Shared UI patterns used across the app. Use these as starting points when building similar features.
 
 ---

@@ -32,14 +32,22 @@ export function IconPickerModal() {
   }
 
   return (
-    <ModalWrapper open={open} onClose={() => closeModal('iconPicker')} maxWidth="max-w-4xl">
+    <ModalWrapper
+      open={open}
+      onClose={() => closeModal('iconPicker')}
+      maxWidth="max-w-4xl"
+      titleId="icon-picker-title"
+    >
       <div className="flex flex-col max-h-[80vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
-          <h2 className="text-lg font-semibold text-slate-100">Pick an Icon</h2>
+          <h2 id="icon-picker-title" className="text-lg font-semibold text-slate-100">
+            Pick an Icon
+          </h2>
           <button
             onClick={() => closeModal('iconPicker')}
-            className="text-slate-400 hover:text-slate-200"
+            aria-label="Close"
+            className="rounded text-slate-400 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
             <svg
               className="w-5 h-5"

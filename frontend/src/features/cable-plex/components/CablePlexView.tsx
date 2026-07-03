@@ -3,6 +3,7 @@ import Swal from 'sweetalert2'
 import { useChannels } from '@/features/channels/hooks'
 import { useAssignments } from '@/features/assignments/hooks'
 import { useUIStore } from '@/shared/store/ui.store'
+import { useToastStore } from '@/shared/store/toast.store'
 import { tierColor } from '@/shared/components/ui/TierBadge'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import type { Channel } from '@/shared/types'
@@ -298,8 +299,10 @@ export function CablePlexView() {
   const { data: assignments = {} } = useAssignments()
   const selectChannel = useUIStore((s) => s.selectChannel)
   const setActiveView = useUIStore((s) => s.setActiveView)
+  const addToast = useToastStore((s) => s.addToast)
 
   const [search, setSearch] = useState('')
+  const [exporting, setExporting] = useState(false)
   const [tierFilter, setTierFilter] = useState<TierFilter>('All')
   const [viewMode, setViewMode] = useState<ViewMode>('compact')
   const [posterSize, setPosterSize] = useState<PosterSize>('medium')
@@ -448,27 +451,45 @@ export function CablePlexView() {
         <div className="flex gap-2 mt-3">
           <button
             onClick={async () => {
-              const res = await fetch('/api/export/lineup')
-              const data = await res.json()
-              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = url
-              a.download = `linearr-lineup-${new Date().toISOString().slice(0, 10)}.json`
-              a.click()
-              URL.revokeObjectURL(url)
+              setExporting(true)
+              try {
+                const res = await fetch('/api/export/lineup')
+                if (!res.ok) {
+                  addToast(`Export failed (${res.status})`, true)
+                  return
+                }
+                const data = await res.json()
+                const blob = new Blob([JSON.stringify(data, null, 2)], {
+                  type: 'application/json',
+                })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `linearr-lineup-${new Date().toISOString().slice(0, 10)}.json`
+                a.click()
+                URL.revokeObjectURL(url)
+              } catch {
+                addToast('Export failed — could not reach the server', true)
+              } finally {
+                setExporting(false)
+              }
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition-colors"
+            disabled={exporting}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition-colors disabled:opacity-60 disabled:pointer-events-none"
           >
-            <svg
-              className="w-3.5 h-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
-            </svg>
+            {exporting ? (
+              <Spinner size="sm" />
+            ) : (
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+            )}
             Export Lineup
           </button>
           <label className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition-colors cursor-pointer">
@@ -487,47 +508,54 @@ export function CablePlexView() {
               accept=".json"
               className="hidden"
               onChange={async (e) => {
-                const file = e.target.files?.[0]
+                const input = e.target
+                const file = input.files?.[0]
                 if (!file) return
-                const text = await file.text()
-                const data = JSON.parse(text)
-                const { isConfirmed } = await Swal.fire({
-                  title: 'Import Mode',
-                  text: 'Replace entire lineup or merge with existing?',
-                  icon: 'question',
-                  showCancelButton: true,
-                  confirmButtonText: 'Replace',
-                  cancelButtonText: 'Merge',
-                  background: '#1e293b',
-                  color: '#e2e8f0',
-                  confirmButtonColor: '#4f46e5',
-                })
-                const mode = isConfirmed ? 'replace' : 'merge'
-                const res = await fetch('/api/import/lineup', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ mode, data }),
-                })
-                if (res.ok) {
-                  const result = await res.json()
-                  await Swal.fire({
-                    icon: 'success',
-                    title: 'Import Complete',
-                    html: `<b>${mode}</b>: ${result.stats.channels_added} channels, ${result.stats.assignments_added} assignments, ${result.stats.blocks_added} blocks`,
+                try {
+                  const text = await file.text()
+                  let data: unknown
+                  try {
+                    data = JSON.parse(text)
+                  } catch {
+                    addToast('Import failed — file is not valid JSON', true)
+                    return
+                  }
+                  const { isConfirmed } = await Swal.fire({
+                    title: 'Import Mode',
+                    text: 'Replace entire lineup or merge with existing?',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Replace',
+                    cancelButtonText: 'Merge',
                     background: '#1e293b',
                     color: '#e2e8f0',
                     confirmButtonColor: '#4f46e5',
                   })
-                  window.location.reload()
-                } else {
-                  await Swal.fire({
-                    icon: 'error',
-                    title: 'Import Failed',
-                    background: '#1e293b',
-                    color: '#e2e8f0',
+                  const mode = isConfirmed ? 'replace' : 'merge'
+                  const res = await fetch('/api/import/lineup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode, data }),
                   })
+                  if (res.ok) {
+                    const result = await res.json()
+                    await Swal.fire({
+                      icon: 'success',
+                      title: 'Import Complete',
+                      html: `<b>${mode}</b>: ${result.stats.channels_added} channels, ${result.stats.assignments_added} assignments, ${result.stats.blocks_added} blocks`,
+                      background: '#1e293b',
+                      color: '#e2e8f0',
+                      confirmButtonColor: '#4f46e5',
+                    })
+                    window.location.reload()
+                  } else {
+                    addToast(`Import failed (${res.status})`, true)
+                  }
+                } catch {
+                  addToast('Import failed — could not reach the server', true)
+                } finally {
+                  input.value = ''
                 }
-                e.target.value = ''
               }}
             />
           </label>

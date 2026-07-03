@@ -142,7 +142,7 @@ features/ersatztv/
 
 **Modified files:**
 - `shared/types/index.ts` — add ErsatzTV types
-- `settings/components/SettingsModal.tsx` — add ErsatzTV URL + test connection
+- `settings/components/SettingsView.tsx` — add ErsatzTV URL + test connection
 - `channels/components/ChannelSidebar.tsx` — add ErsatzTV nav button
 - `App.tsx` — add ErsatzTV view route
 - `shared/store/ui.store.ts` — add 'ersatztv' to ActiveView

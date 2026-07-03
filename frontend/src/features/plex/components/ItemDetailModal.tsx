@@ -33,7 +33,7 @@ function EpisodeList({ seasonKey }: { seasonKey: string }) {
           <div className="flex-1 min-w-0">
             <p className="text-xs text-slate-200 truncate">{ep.title}</p>
             {ep.duration_minutes != null && ep.duration_minutes > 0 && (
-              <p className="text-xs text-slate-600">{ep.duration_minutes}m</p>
+              <p className="text-xs text-slate-500">{ep.duration_minutes}m</p>
             )}
           </div>
         </li>
@@ -96,7 +96,13 @@ export function ItemDetailModal() {
   }
 
   return (
-    <ModalWrapper open={open} onClose={() => closeModal('itemDetail')} maxWidth="max-w-2xl">
+    <ModalWrapper
+      open={open}
+      onClose={() => closeModal('itemDetail')}
+      maxWidth="max-w-2xl"
+      titleId={item ? 'item-detail-title' : undefined}
+      ariaLabel="Item details"
+    >
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
           <Spinner size="lg" />
@@ -119,7 +125,10 @@ export function ItemDetailModal() {
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-100 leading-tight">
+                  <h2
+                    id="item-detail-title"
+                    className="text-lg font-semibold text-slate-100 leading-tight"
+                  >
                     {item.title}
                   </h2>
                   <div className="flex items-center gap-2 mt-1">
@@ -142,7 +151,8 @@ export function ItemDetailModal() {
                 </div>
                 <button
                   onClick={() => closeModal('itemDetail')}
-                  className="shrink-0 text-slate-500 hover:text-slate-300 transition-colors"
+                  aria-label="Close"
+                  className="shrink-0 text-slate-500 hover:text-slate-300 transition-colors rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
                   <svg
                     className="w-5 h-5"

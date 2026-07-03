@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useUIStore, type AssignedTypeFilter } from '@/shared/store/ui.store'
 import { useChannelAssignments, useUnassign } from '@/features/assignments/hooks'
 import { PlexThumb } from '@/features/plex/components/PlexThumb'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { Button, EmptyState, Spinner } from '@/shared/components/ui'
 
 interface AssignmentGridProps {
   channelNumber: number
@@ -81,9 +81,11 @@ export function AssignmentGrid({ channelNumber }: AssignmentGridProps) {
               key={value}
               onClick={() => setGridSize(value)}
               title={value.charAt(0).toUpperCase() + value.slice(1)}
-              className={`p-1 rounded transition-colors ${
+              aria-label={`${value.charAt(0).toUpperCase() + value.slice(1)} grid size`}
+              aria-pressed={gridSize === value}
+              className={`p-1 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                 gridSize === value
-                  ? 'bg-slate-600 text-white'
+                  ? 'bg-slate-700 text-white'
                   : 'text-slate-500 hover:text-slate-300'
               }`}
             >
@@ -102,34 +104,36 @@ export function AssignmentGrid({ channelNumber }: AssignmentGridProps) {
             <Spinner size="lg" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-2">
-            <svg
-              className="w-8 h-8"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <rect x="2" y="7" width="20" height="15" rx="2" />
-              <circle cx="12" cy="14" r="2" />
-            </svg>
-            {hiddenByFilter ? (
-              <>
-                <p className="text-sm">
-                  No {activeFilterLabel.toLowerCase()} here — {assignments.length} assigned item
-                  {assignments.length !== 1 ? 's' : ''} hidden by the “{activeFilterLabel}” filter.
-                </p>
-                <button
-                  onClick={() => setAssignedTypeFilter('all')}
-                  className="text-xs px-2.5 py-1 rounded-md bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
-                >
+          <EmptyState
+            className="py-16"
+            icon={
+              <svg
+                className="w-8 h-8"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <rect x="2" y="7" width="20" height="15" rx="2" />
+                <circle cx="12" cy="14" r="2" />
+              </svg>
+            }
+            title={
+              hiddenByFilter ? `No ${activeFilterLabel.toLowerCase()} here` : 'No content assigned'
+            }
+            description={
+              hiddenByFilter
+                ? `${assignments.length} assigned item${assignments.length !== 1 ? 's' : ''} hidden by the “${activeFilterLabel}” filter.`
+                : undefined
+            }
+            action={
+              hiddenByFilter ? (
+                <Button size="sm" onClick={() => setAssignedTypeFilter('all')}>
                   Show all
-                </button>
-              </>
-            ) : (
-              <p className="text-sm">No content assigned</p>
-            )}
-          </div>
+                </Button>
+              ) : undefined
+            }
+          />
         ) : (
           <div className={`grid ${GRID_CLASSES[gridSize]} gap-3 p-4`}>
             {filtered.map((a) => (

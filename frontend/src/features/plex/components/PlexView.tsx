@@ -18,7 +18,7 @@ import {
   usePlexCollectionItems,
 } from '@/features/plex/hooks'
 import { useUIStore } from '@/shared/store/ui.store'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { Spinner, SegmentedControl, confirmDialog } from '@/shared/components/ui'
 import { PlexThumb } from '@/features/plex/components/PlexThumb'
 
 /** Clickable poster card used throughout the view */
@@ -181,19 +181,16 @@ function LibraryBrowser({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
-            {(['all', 'movie', 'show'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                  filter === f ? 'bg-slate-600 text-white' : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                {f === 'all' ? 'All' : f === 'movie' ? 'Movies' : 'Shows'}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'movie', label: 'Movies' },
+              { value: 'show', label: 'Shows' },
+            ]}
+            value={filter}
+            onChange={setFilter}
+            tone="neutral"
+          />
           <div className="relative">
             <svg
               className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500"
@@ -211,7 +208,7 @@ function LibraryBrowser({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter..."
               aria-label="Filter library items"
-              className="w-40 bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2 py-1 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-40 bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500"
             />
           </div>
         </div>
@@ -397,10 +394,19 @@ export function PlexView() {
               {sessions.map((s, i) => (
                 <div
                   key={i}
+                  role={s.rating_key ? 'button' : undefined}
+                  tabIndex={s.rating_key ? 0 : undefined}
                   onClick={() => {
                     if (s.rating_key) openModal('itemDetail', { itemDetailRatingKey: s.rating_key })
                   }}
-                  className="bg-gradient-to-r from-slate-800 to-slate-900 border border-slate-700 rounded-xl overflow-hidden cursor-pointer hover:border-slate-500 transition-colors"
+                  onKeyDown={(e) => {
+                    if (!s.rating_key) return
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      openModal('itemDetail', { itemDetailRatingKey: s.rating_key })
+                    }
+                  }}
+                  className="bg-gradient-to-r from-slate-800 to-slate-900 border border-slate-700 rounded-xl overflow-hidden cursor-pointer hover:border-slate-500 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
                   <div className="flex gap-3 p-3">
                     {/* Poster */}
@@ -517,10 +523,20 @@ export function PlexView() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                   {libraryStats.map((lib) => (
-                    <button
+                    <div
                       key={lib.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setBrowsingLibrary({ id: lib.id, title: lib.title })}
-                      className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-indigo-500 hover:bg-slate-800/80 transition-all text-left group"
+                      onKeyDown={(e) => {
+                        // Ignore key events bubbling from the inner scan button
+                        if (e.target !== e.currentTarget) return
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setBrowsingLibrary({ id: lib.id, title: lib.title })
+                        }
+                      }}
+                      className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-indigo-500 hover:bg-slate-800/80 transition-all text-left cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <div
@@ -577,8 +593,9 @@ export function PlexView() {
                             e.stopPropagation()
                             scanLibrary.mutate(lib.id)
                           }}
-                          className="text-xs text-slate-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-all"
+                          className="text-xs text-slate-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-all rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                           title="Scan library"
+                          aria-label={`Scan ${lib.title}`}
                         >
                           <svg
                             className="w-3.5 h-3.5"
@@ -591,7 +608,7 @@ export function PlexView() {
                           </svg>
                         </button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -706,10 +723,20 @@ export function PlexView() {
                   {allCollections.map((coll) => (
                     <div
                       key={coll.rating_key}
+                      role="button"
+                      tabIndex={0}
                       onClick={() =>
                         setBrowsingCollection({ ratingKey: coll.rating_key, title: coll.title })
                       }
-                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 hover:border-slate-600 transition-colors group relative cursor-pointer"
+                      onKeyDown={(e) => {
+                        // Ignore key events bubbling from the inner delete button
+                        if (e.target !== e.currentTarget) return
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setBrowsingCollection({ ratingKey: coll.rating_key, title: coll.title })
+                        }
+                      }}
+                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 hover:border-slate-600 transition-colors group relative cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                     >
                       <div className="flex items-center gap-2 mb-2">
                         {coll.thumb ? (
@@ -745,9 +772,22 @@ export function PlexView() {
                         {coll.child_count} item{coll.child_count !== 1 ? 's' : ''}
                       </p>
                       <button
-                        onClick={() => deleteCollection.mutate(coll.rating_key)}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-red-900/60 hover:bg-red-900 rounded text-red-400"
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          if (
+                            await confirmDialog({
+                              title: `Delete "${coll.title}"?`,
+                              text: 'This permanently deletes the collection from your Plex server.',
+                              danger: true,
+                            })
+                          ) {
+                            deleteCollection.mutate(coll.rating_key)
+                          }
+                        }}
+                        disabled={deleteCollection.isPending}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity p-1 bg-red-900/60 hover:bg-red-900 rounded text-red-400 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                         title="Delete collection"
+                        aria-label={`Delete collection ${coll.title}`}
                       >
                         <svg
                           className="w-3 h-3"
@@ -802,7 +842,7 @@ export function PlexView() {
                           </span>
                           {ev.title && <> — {ev.title}</>}
                         </p>
-                        <p className="text-[10px] text-slate-600">
+                        <p className="text-[10px] text-slate-500">
                           {ev.user_name && <>{ev.user_name} • </>}
                           {new Date(ev.created_at).toLocaleString(undefined, {
                             month: 'short',

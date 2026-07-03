@@ -107,7 +107,6 @@ function writeLS(key: string, value: string): void {
 }
 
 const defaultModals: Record<ModalName, boolean> = {
-  settings: false,
   channelForm: false,
   blockForm: false,
   itemDetail: false,

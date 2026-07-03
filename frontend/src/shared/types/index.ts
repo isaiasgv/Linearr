@@ -290,7 +290,6 @@ export interface Toast {
 // ── Modal names ───────────────────────────────────────────────────────────────
 
 export type ModalName =
-  | 'settings'
   | 'channelForm'
   | 'blockForm'
   | 'itemDetail'
