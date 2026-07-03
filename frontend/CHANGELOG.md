@@ -1,3 +1,17 @@
+## [0.0.1-rc.2](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.1...v0.0.1-rc.2) (2026-07-03)
+
+### Features
+
+* **ui:** apply design system + a11y polish to Channels, Blocks, Content, TopBar ([d2a74d2](https://github.com/isaiasgv/Linearr/commit/d2a74d2510ac0ed5d5a94a1e45af8e3979c626a6))
+* **ui:** apply design system + a11y polish to Icons and Settings ([1dda81e](https://github.com/isaiasgv/Linearr/commit/1dda81ee4959b6822fdea667acaf947c2b84820b))
+* **ui:** apply design system + a11y polish to Tunarr and Plex views ([6df5a52](https://github.com/isaiasgv/Linearr/commit/6df5a520a2e34a6cd1c1b95ab05b711c89541660))
+* **ui:** design-system foundation + verified frontend bug fixes ([9d49339](https://github.com/isaiasgv/Linearr/commit/9d493392510fa62f244e2b207790da358eef2722))
+
+### Bug Fixes
+
+* **backend:** data-integrity and resource fixes from full review ([40a4454](https://github.com/isaiasgv/Linearr/commit/40a44549682a58930ce7c11f82669d580b4b84ca))
+* **ui:** keep channel actions menu inside the pane when header wraps ([5189d19](https://github.com/isaiasgv/Linearr/commit/5189d19f6a465ef3d1207c9c443d9da5cd4da753))
+
 ## [0.0.1-rc.1](https://github.com/isaiasgv/Linearr/compare/v0.0.0...v0.0.1-rc.1) (2026-07-03)
 
 ### Features
