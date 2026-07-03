@@ -39,6 +39,7 @@ Build, manage, and push programming schedules for your personal TV network — c
 | **Content** | Plex Content Browser | Browse libraries, search, and assign movies/shows via a poster grid |
 | **Schedule** | Schedule Blocks | Drag-and-drop time blocks — morning, primetime, late night |
 | **AI** | AI Advisor | Content recommendations, network analysis, auto-generated schedules |
+| **MCP** | MCP Server | Manage your lineup from Claude or any MCP client via `/mcp` — see [docs/MCP.md](docs/MCP.md) |
 | **Tunarr** | Tunarr Integration | Link channels, sync collections, push schedules in one click |
 | **24/7** | 24/7 Channel Builder | Analyze your library and generate standalone loop channels |
 | **Backup** | Backup & Restore | One-click database download/upload from the Settings UI |

@@ -185,6 +185,8 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 - `GET /api/plex/season/{rating_key}/episodes`
 - `GET /api/plex/collections`
 - `GET /api/plex/collections/{rating_key}/items`
+- `POST /api/plex/smart-collections` — create rule-based (smart) Plex collection; filters: genres (names), year_min/year_max (inclusive), decade, unwatched, content_rating, title_contains; sort: `title_asc|title_desc|year_asc|year_desc|added_desc|random`; limit
+- `PUT /api/plex/smart-collections/{rating_key}` — update title and/or replace filter rules
 - `GET /api/plex/thumb?path=` — proxies Plex thumbnail with auth token (**always `?path=`, never `?url=`**)
 
 ### Plex OAuth
@@ -261,6 +263,18 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 - `DELETE /api/ai-logs`
 - `GET /api/channels/{n}/ai-content-suggestions`
 - `GET /api/network/ai-advisor`
+
+### MCP Server
+Model Context Protocol endpoint at `/mcp` (streamable HTTP, stateless, JSON responses) —
+lets AI assistants manage channels, browse Plex, assign content, and build collections.
+24 tools. Auth: `Authorization: Bearer <token>`; token auto-generated, stored as settings
+key `mcp_token`, enforced in `auth_middleware` (constant-time compare, before the cookie
+check). Shown in Settings → System → MCP Server. Code lives in the "── MCP server" section
+at the bottom of `main.py`; tools call the internal route handlers directly — no
+HTTP-to-self loop. Requires the `mcp` package (in `requirements.txt`).
+User docs: `docs/MCP.md`.
+- `GET /api/mcp/info` — `{endpoint, token, tool_count}` (session-cookie auth, for Settings UI)
+- `POST /api/mcp/regenerate-token` — rotate the bearer token (invalidates old immediately)
 
 ---
 

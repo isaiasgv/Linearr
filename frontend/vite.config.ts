@@ -16,6 +16,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': { target: 'http://localhost:8888', changeOrigin: true },
+      '/mcp': { target: 'http://localhost:8888', changeOrigin: true },
     },
   },
   build: {
