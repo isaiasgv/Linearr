@@ -1,3 +1,9 @@
+## [0.0.1-rc.5](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.4...v0.0.1-rc.5) (2026-07-03)
+
+### Bug Fixes
+
+* **security:** upgrade fastapi/starlette/cryptography past 5 HIGH CVEs ([c98874c](https://github.com/isaiasgv/Linearr/commit/c98874cf3faa36da0f0157179b8749286b4d9935))
+
 ## [0.0.1-rc.4](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.3...v0.0.1-rc.4) (2026-07-03)
 
 ### Bug Fixes
