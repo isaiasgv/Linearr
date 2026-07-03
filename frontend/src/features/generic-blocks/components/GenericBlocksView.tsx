@@ -3,7 +3,7 @@ import { useGenericBlocks } from '@/features/blocks/hooks'
 import { useBlockStore } from '@/features/blocks/store'
 import { BlockCard } from '@/features/blocks/components/BlockCard'
 import { NetworkSuggestionsPanel } from '@/features/blocks/components/NetworkSuggestionsPanel'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { Button, EmptyState, Spinner } from '@/shared/components/ui'
 
 export function GenericBlocksView() {
   const openModal = useUIStore((s) => s.openModal)
@@ -43,10 +43,7 @@ export function GenericBlocksView() {
               </svg>
               Network Suggestions
             </button>
-            <button
-              onClick={() => openModal('blockForm', { editingBlock: null })}
-              className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition-colors"
-            >
+            <Button size="sm" onClick={() => openModal('blockForm', { editingBlock: null })}>
               <svg
                 className="w-3.5 h-3.5"
                 viewBox="0 0 24 24"
@@ -57,7 +54,7 @@ export function GenericBlocksView() {
                 <path d="M12 5v14M5 12h14" />
               </svg>
               New Block
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -79,10 +76,11 @@ export function GenericBlocksView() {
           )}
 
           {!isLoading && !isError && blocks.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center mb-4">
+            <EmptyState
+              className="py-16"
+              icon={
                 <svg
-                  className="w-8 h-8 text-slate-500"
+                  className="w-8 h-8"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -93,27 +91,24 @@ export function GenericBlocksView() {
                   <rect x="3" y="14" width="7" height="7" rx="1" />
                   <rect x="14" y="14" width="7" height="7" rx="1" />
                 </svg>
-              </div>
-              <p className="text-slate-400 text-sm mb-2">No generic blocks yet</p>
-              <p className="text-xs text-slate-500 mb-6">
-                Create reusable programming blocks that can be applied to any channel
-              </p>
-              <button
-                onClick={() => openModal('blockForm', { editingBlock: null })}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                Create First Block
-              </button>
-            </div>
+              }
+              title="No generic blocks yet"
+              description="Create reusable programming blocks that can be applied to any channel"
+              action={
+                <Button onClick={() => openModal('blockForm', { editingBlock: null })}>
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  Create First Block
+                </Button>
+              }
+            />
           )}
 
           {!isLoading && blocks.length > 0 && (

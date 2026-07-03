@@ -10,18 +10,13 @@ import { useTunarrCollectionLinks } from '@/features/tunarr/hooks'
 import { PlexBrowser } from '@/features/plex/components/PlexBrowser'
 import { AssignmentGrid } from '@/features/assignments/components/AssignmentGrid'
 import { Spinner } from '@/shared/components/ui/Spinner'
+import { StatusDot } from '@/shared/components/ui'
 import type { CollectionStatusEntry } from '@/shared/types'
 
 type ContentSubTab = 'browse' | 'assigned'
 
 interface ContentTabProps {
   channelNumber: number
-}
-
-function StatusDot({ ok }: { ok: boolean }) {
-  return (
-    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ok ? 'bg-green-400' : 'bg-slate-600'}`} />
-  )
 }
 
 /** One per-type (movie/show) collection status line: Plex existence + Tunarr linkage + link/unlink. */
@@ -64,7 +59,7 @@ function CollectionTypeStatus({
         }
       >
         <img src="/plex.svg" alt="Plex" className="w-3 h-3 rounded-sm" />
-        <StatusDot ok={plexExists} />
+        <StatusDot state={plexExists ? 'ok' : 'unknown'} pulse={false} />
         <span className={plexExists ? 'text-slate-300' : 'text-slate-500'}>
           {plexExists ? plexCount : 'none'}
         </span>
@@ -76,7 +71,7 @@ function CollectionTypeStatus({
         title={tunarrLinked ? 'Collection synced to Tunarr' : 'Not on Tunarr'}
       >
         <img src="/tunarr.svg" alt="Tunarr" className="w-3 h-3 rounded-sm" />
-        <StatusDot ok={tunarrLinked} />
+        <StatusDot state={tunarrLinked ? 'ok' : 'unknown'} pulse={false} />
         <span className={tunarrLinked ? 'text-slate-300' : 'text-slate-500'}>
           {tunarrLinked ? 'synced' : '—'}
         </span>

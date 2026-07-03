@@ -9,7 +9,7 @@ import {
 } from '@/features/blocks/hooks'
 import { blockTimeColor, to12h, blockFillHours } from '@/features/blocks/utils'
 import type { Block } from '@/shared/types'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { Button, IconButton, Spinner, confirmDialog } from '@/shared/components/ui'
 import { HourGrid } from './HourGrid'
 
 interface BlockCardProps {
@@ -49,13 +49,20 @@ export function BlockCard({ block }: BlockCardProps) {
     openModal('blockForm', { editingBlock: block })
   }
 
-  function handleDelete() {
-    if (!confirm(`Delete block "${block.name}"?`)) return
+  async function handleDelete() {
+    if (!(await confirmDialog({ title: `Delete block "${block.name}"?`, danger: true }))) return
     deleteBlock.mutate({ id: block.id, channelNumber: block.channel_number })
   }
 
-  function handleClear() {
-    if (!confirm(`Clear all slots in "${block.name}"?`)) return
+  async function handleClear() {
+    if (
+      !(await confirmDialog({
+        title: `Clear all slots in "${block.name}"?`,
+        confirmText: 'Clear',
+        danger: true,
+      }))
+    )
+      return
     clearSlots.mutate(block.id)
   }
 
@@ -72,8 +79,18 @@ export function BlockCard({ block }: BlockCardProps) {
     <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
       {/* Header row — click to toggle expand */}
       <div
-        className={`border-l-4 ${borderColor} px-4 py-3 flex items-center gap-3 cursor-pointer select-none`}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        aria-label={`${block.name} — ${isExpanded ? 'collapse' : 'expand'} block`}
+        className={`border-l-4 ${borderColor} px-4 py-3 flex items-center gap-3 cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset`}
         onClick={() => expandBlock(block.id)}
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault()
+            expandBlock(block.id)
+          }
+        }}
       >
         {/* Block info */}
         <div className="flex-1 min-w-0">
@@ -100,28 +117,28 @@ export function BlockCard({ block }: BlockCardProps) {
               {fill.covered}/{fill.total}h
             </span>
           ) : (
-            <span className="text-slate-600">–/–h</span>
+            <span className="text-slate-500">–/–h</span>
           )}
         </div>
 
         {/* Action buttons */}
         <div className="flex-shrink-0 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {isGeneric && selectedChannel && (
-            <button
+            <Button
+              size="xs"
               onClick={handleApply}
-              disabled={applyBlock.isPending}
+              loading={applyBlock.isPending}
               title="Apply to channel"
-              className="px-2 py-1 text-xs bg-indigo-700 hover:bg-indigo-600 text-indigo-100 rounded transition-colors disabled:opacity-50"
             >
-              {applyBlock.isPending ? <Spinner size="sm" /> : 'Apply'}
-            </button>
+              Apply
+            </Button>
           )}
 
-          <button
+          <IconButton
+            label="AI Autofill"
             onClick={handleAiAutofill}
             disabled={aiAutofill.isPending}
-            title="AI Autofill"
-            className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-700 rounded transition-colors disabled:opacity-50"
+            className="hover:text-emerald-400"
           >
             {aiAutofill.isPending ? (
               <Spinner size="sm" />
@@ -136,13 +153,9 @@ export function BlockCard({ block }: BlockCardProps) {
                 <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
               </svg>
             )}
-          </button>
+          </IconButton>
 
-          <button
-            onClick={handleEdit}
-            title="Edit block"
-            className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded transition-colors"
-          >
+          <IconButton label="Edit block" onClick={handleEdit} className="hover:text-blue-400">
             <svg
               className="w-4 h-4"
               viewBox="0 0 24 24"
@@ -153,13 +166,13 @@ export function BlockCard({ block }: BlockCardProps) {
               <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
               <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
-          </button>
+          </IconButton>
 
-          <button
+          <IconButton
+            label="Clear slots"
             onClick={handleClear}
             disabled={clearSlots.isPending}
-            title="Clear slots"
-            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-700 rounded transition-colors disabled:opacity-50"
+            className="hover:text-amber-400"
           >
             {clearSlots.isPending ? (
               <Spinner size="sm" />
@@ -175,13 +188,13 @@ export function BlockCard({ block }: BlockCardProps) {
                 <path d="M10 11v6M14 11v6" />
               </svg>
             )}
-          </button>
+          </IconButton>
 
-          <button
+          <IconButton
+            label="Delete block"
+            variant="danger"
             onClick={handleDelete}
             disabled={deleteBlock.isPending}
-            title="Delete block"
-            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition-colors disabled:opacity-50"
           >
             {deleteBlock.isPending ? (
               <Spinner size="sm" />
@@ -198,12 +211,12 @@ export function BlockCard({ block }: BlockCardProps) {
                 <path d="M10 11v6M14 11v6M9 6V4h6v2" />
               </svg>
             )}
-          </button>
+          </IconButton>
 
-          <button
+          <IconButton
+            label={isExpanded ? 'Collapse' : 'Expand'}
+            aria-expanded={isExpanded}
             onClick={() => expandBlock(block.id)}
-            title={isExpanded ? 'Collapse' : 'Expand'}
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-700 rounded transition-colors"
           >
             <svg
               className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -214,7 +227,7 @@ export function BlockCard({ block }: BlockCardProps) {
             >
               <polyline points="6 9 12 15 18 9" />
             </svg>
-          </button>
+          </IconButton>
         </div>
       </div>
 
@@ -242,7 +255,7 @@ export function BlockCard({ block }: BlockCardProps) {
               </div>
             ))}
           {slots.length > 10 && (
-            <span className="flex items-center text-xs text-slate-600 shrink-0 pl-1">
+            <span className="flex items-center text-xs text-slate-500 shrink-0 pl-1">
               +{slots.length - 10}
             </span>
           )}

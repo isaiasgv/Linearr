@@ -10,6 +10,7 @@ import {
   usePlexCollections,
   usePlexCollectionItems,
 } from '@/features/plex/hooks'
+import { SegmentedControl } from '@/shared/components/ui'
 import { PosterGrid } from './PosterGrid'
 import type { PosterViewMode, PosterSize } from './PosterGrid'
 import type { PlexItem } from '@/shared/types'
@@ -252,7 +253,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search…"
             aria-label="Search Plex"
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           />
         </div>
 
@@ -290,20 +291,16 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
         </div>
 
         {/* Size */}
-        <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
-          {(['small', 'medium', 'large'] as PosterSize[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setPosterSize(s)}
-              title={s}
-              className={`px-1.5 py-1 text-xs rounded-md transition-colors ${
-                posterSize === s ? 'bg-slate-600 text-white' : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              {s.charAt(0).toUpperCase()}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl<PosterSize>
+          options={[
+            { value: 'small', label: 'S' },
+            { value: 'medium', label: 'M' },
+            { value: 'large', label: 'L' },
+          ]}
+          value={posterSize}
+          onChange={setPosterSize}
+          tone="neutral"
+        />
 
         {/* Filters popover (library only) */}
         {source === 'library' && selectedLibrary && filterOptions && (
@@ -324,7 +321,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
                       setLoadLibrary(true)
                     }}
                     aria-label="Genre"
-                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
+                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <option value="">All Genres</option>
                     {filterOptions.genres.map((g) => (
@@ -342,7 +339,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
                       setLoadLibrary(true)
                     }}
                     aria-label="Year"
-                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
+                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <option value="">All Years</option>
                     {filterOptions.years.map((y) => (
@@ -360,7 +357,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
                       setLoadLibrary(true)
                     }}
                     aria-label="Content rating"
-                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
+                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <option value="">All Ratings</option>
                     {filterOptions.content_ratings.map((r) => (

@@ -129,7 +129,7 @@ export function HourGrid({ blockId, block }: HourGridProps) {
                   </span>
                   <button
                     onClick={() => startAddingSlot(blockId, hour)}
-                    className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-300 transition-colors"
+                    className="flex items-center gap-1 rounded text-xs text-slate-500 hover:text-slate-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <svg
                       className="w-3.5 h-3.5"
@@ -199,7 +199,8 @@ export function HourGrid({ blockId, block }: HourGridProps) {
                     onClick={() => removeSlot.mutate({ blockId, slotId: state.slot.id })}
                     disabled={removeSlot.isPending}
                     title="Remove slot"
-                    className="flex-shrink-0 p-1 text-slate-600 hover:text-red-400 transition-colors disabled:opacity-50"
+                    aria-label="Remove slot"
+                    className="flex-shrink-0 p-1 rounded text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     {removeSlot.isPending ? (
                       <Spinner size="sm" />
@@ -220,11 +221,11 @@ export function HourGrid({ blockId, block }: HourGridProps) {
 
               {state.type === 'continuation' && (
                 <div className="flex items-center gap-2 rounded px-2 py-1.5 min-h-[36px] bg-slate-900/40 border border-slate-800/50 opacity-60">
-                  <span className="text-xs text-slate-600 w-16 flex-shrink-0 tabular-nums">
+                  <span className="text-xs text-slate-500 w-16 flex-shrink-0 tabular-nums">
                     {to12h(hour)}
                   </span>
-                  <span className="text-slate-600 text-sm">↓</span>
-                  <span className="text-xs text-slate-600 truncate italic">
+                  <span className="text-slate-500 text-sm">↓</span>
+                  <span className="text-xs text-slate-500 truncate italic">
                     {state.slot.plex_title}
                   </span>
                 </div>
