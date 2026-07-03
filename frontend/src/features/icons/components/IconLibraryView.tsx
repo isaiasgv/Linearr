@@ -1,6 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import {
+  Button,
+  IconButton,
+  ModalWrapper,
+  Select,
+  Spinner,
+  confirmDialog,
+} from '@/shared/components/ui'
 import {
   useSavedIcons,
   useSaveIcon,
@@ -101,8 +108,15 @@ export function IconLibraryView() {
       if (exportDropRef.current && !exportDropRef.current.contains(e.target as Node))
         setExportDropdownOpen(false)
     }
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExportDropdownOpen(false)
+    }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', keyHandler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', keyHandler)
+    }
   }, [])
 
   const categories = ['all', ...new Set(icons.map((i) => i.category))]
@@ -222,6 +236,17 @@ export function IconLibraryView() {
     setIconName(icon.name)
   }
 
+  /** Confirm + delete. Returns true when the user confirmed. */
+  async function handleDeleteIcon(icon: SavedIcon): Promise<boolean> {
+    const confirmed = await confirmDialog({
+      title: `Delete "${icon.name}"?`,
+      text: 'The icon is removed from the library. This cannot be undone.',
+      danger: true,
+    })
+    if (confirmed) deleteIcon.mutate(icon.id)
+    return confirmed
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
@@ -232,7 +257,7 @@ export function IconLibraryView() {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                 tab === t ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-200'
               }`}
             >
@@ -257,7 +282,7 @@ export function IconLibraryView() {
                   <button
                     key={c}
                     onClick={() => setCategoryFilter(c)}
-                    className={`px-2.5 py-1 text-xs rounded-lg transition ${
+                    className={`px-2.5 py-1 text-xs rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                       categoryFilter === c
                         ? 'bg-indigo-600 text-white'
                         : 'bg-slate-800 text-slate-400 hover:text-slate-200'
@@ -283,13 +308,22 @@ export function IconLibraryView() {
                   {filteredIcons.map((icon) => (
                     <div
                       key={icon.id}
-                      className={`group relative cursor-pointer rounded-xl border transition overflow-hidden bg-slate-900 ${
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${icon.name} — press Enter to preview`}
+                      className={`group relative cursor-pointer rounded-xl border transition overflow-hidden bg-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                         selectedIcon?.id === icon.id
                           ? 'border-indigo-500 ring-1 ring-indigo-500/50'
                           : 'border-slate-700 hover:border-slate-500'
                       }`}
                       onClick={() => loadIconForEdit(icon)}
                       onDoubleClick={() => setPreviewIcon(icon)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && e.target === e.currentTarget) {
+                          e.preventDefault()
+                          setPreviewIcon(icon)
+                        }
+                      }}
                     >
                       <img
                         src={icon.data}
@@ -304,8 +338,8 @@ export function IconLibraryView() {
                           Project
                         </span>
                       )}
-                      {/* Hover overlay with actions */}
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pt-6 pb-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* Hover/focus overlay with actions */}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pt-6 pb-1 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                         <p className="text-[10px] text-slate-300 text-center truncate mb-1">
                           {icon.name}
                         </p>
@@ -315,8 +349,9 @@ export function IconLibraryView() {
                               e.stopPropagation()
                               setPreviewIcon(icon)
                             }}
-                            className="w-6 h-6 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 flex items-center justify-center transition"
+                            className="w-6 h-6 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 flex items-center justify-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                             title="Preview"
+                            aria-label={`Preview ${icon.name}`}
                           >
                             <svg
                               className="w-3 h-3"
@@ -346,8 +381,9 @@ export function IconLibraryView() {
                                   iconEditorName: icon.name,
                                 })
                               }}
-                              className="w-6 h-6 bg-indigo-600 hover:bg-indigo-500 rounded text-white flex items-center justify-center transition"
+                              className="w-6 h-6 bg-indigo-600 hover:bg-indigo-500 rounded text-white flex items-center justify-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                               title="Edit"
+                              aria-label={`Edit ${icon.name}`}
                             >
                               <svg
                                 className="w-3 h-3"
@@ -364,10 +400,12 @@ export function IconLibraryView() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              deleteIcon.mutate(icon.id)
+                              void handleDeleteIcon(icon)
                             }}
-                            className="w-6 h-6 bg-red-600 hover:bg-red-500 rounded text-white flex items-center justify-center transition"
+                            disabled={deleteIcon.isPending}
+                            className="w-6 h-6 bg-red-600 hover:bg-red-500 rounded text-white flex items-center justify-center transition disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                             title="Delete"
+                            aria-label={`Delete ${icon.name}`}
                           >
                             <svg
                               className="w-3 h-3"
@@ -399,29 +437,29 @@ export function IconLibraryView() {
                   <p className="text-sm font-medium text-slate-200 truncate">{selectedIcon.name}</p>
                   <p className="text-[10px] text-slate-500">Assign to a channel</p>
                 </div>
-                <select
-                  value={assignChannel}
-                  onChange={(e) => setAssignChannel(e.target.value)}
-                  className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-xs text-slate-200"
-                >
-                  <option value="">Select channel...</option>
-                  {channels.map((ch) => (
-                    <option key={ch.number} value={ch.number}>
-                      {ch.number} — {ch.name}
-                    </option>
-                  ))}
-                </select>
-                <button
+                <div className="w-56 shrink-0">
+                  <Select
+                    aria-label="Assign to channel"
+                    value={assignChannel}
+                    onChange={(e) => setAssignChannel(e.target.value)}
+                  >
+                    <option value="">Select channel...</option>
+                    {channels.map((ch) => (
+                      <option key={ch.number} value={ch.number}>
+                        {ch.number} — {ch.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <Button
+                  size="sm"
                   onClick={handleAssignToChannel}
-                  disabled={!assignChannel || assignIcon.isPending}
-                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs rounded-lg font-medium transition"
+                  disabled={!assignChannel}
+                  loading={assignIcon.isPending}
                 >
                   Assign
-                </button>
-                <button
-                  onClick={() => setSelectedIcon(null)}
-                  className="text-slate-500 hover:text-slate-300 transition"
-                >
+                </Button>
+                <IconButton label="Clear selection" onClick={() => setSelectedIcon(null)}>
                   <svg
                     className="w-4 h-4"
                     viewBox="0 0 24 24"
@@ -431,7 +469,7 @@ export function IconLibraryView() {
                   >
                     <path d="M18 6L6 18M6 6l12 12" />
                   </svg>
-                </button>
+                </IconButton>
               </div>
             )}
           </div>
@@ -442,20 +480,21 @@ export function IconLibraryView() {
           <div className="flex flex-col h-full">
             {/* Save bar — matches IconEditorModal */}
             <div className="flex items-center justify-end gap-2 px-4 py-2 border-b border-slate-800 shrink-0">
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={handleSaveProjectOnly}
-                disabled={editorBusy || composition.layers.length === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded disabled:opacity-50"
+                loading={editorBusy}
+                disabled={composition.layers.length === 0}
               >
-                {editorBusy && <Spinner size="sm" />}
                 Save Project
-              </button>
+              </Button>
               <div className="relative" ref={exportDropRef}>
                 <div className="flex">
                   <button
                     onClick={() => handleEditorExport('png')}
                     disabled={editorBusy || composition.layers.length === 0}
-                    className="flex items-center gap-1.5 pl-3 pr-2 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-l disabled:opacity-50"
+                    className="flex items-center gap-1.5 pl-3 pr-2 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-l disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                   >
                     {editorBusy && <Spinner size="sm" />}
                     Export to Galaxy
@@ -463,7 +502,10 @@ export function IconLibraryView() {
                   <button
                     onClick={() => setExportDropdownOpen((v) => !v)}
                     disabled={editorBusy || composition.layers.length === 0}
-                    className="flex items-center px-1.5 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded-r border-l border-indigo-500 disabled:opacity-50"
+                    aria-label="More export options"
+                    aria-haspopup="menu"
+                    aria-expanded={exportDropdownOpen}
+                    className="flex items-center px-1.5 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded-r border-l border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                   >
                     <svg
                       className={`w-3 h-3 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`}
@@ -480,7 +522,7 @@ export function IconLibraryView() {
                   <div className="absolute right-0 top-full mt-1 w-56 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-50 py-1">
                     <button
                       onClick={() => handleEditorExport('png')}
-                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2 focus:outline-none focus-visible:bg-slate-700"
                     >
                       <span className="w-5 text-center text-indigo-400 font-bold">P</span>
                       Save PNG to Library
@@ -488,7 +530,7 @@ export function IconLibraryView() {
                     </button>
                     <button
                       onClick={() => handleEditorExport('svg')}
-                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2 focus:outline-none focus-visible:bg-slate-700"
                     >
                       <span className="w-5 text-center text-emerald-400 font-bold">S</span>
                       Save SVG to Library
@@ -496,7 +538,7 @@ export function IconLibraryView() {
                     <div className="border-t border-slate-700 my-1" />
                     <button
                       onClick={() => handleEditorExport('all')}
-                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2 focus:outline-none focus-visible:bg-slate-700"
                     >
                       <span className="w-5 text-center text-amber-400 font-bold">A</span>
                       Save All Variants
@@ -529,14 +571,12 @@ export function IconLibraryView() {
                   Auto-assigns to matching channels.
                 </p>
               </div>
-              <button
+              <Button
                 onClick={handleImportClassicsPack}
-                disabled={loadingPack || seedPack.isPending}
-                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm rounded-lg font-medium transition"
+                loading={loadingPack || seedPack.isPending}
+                className="shrink-0"
               >
-                {loadingPack || seedPack.isPending ? (
-                  <Spinner size="sm" />
-                ) : (
+                {!(loadingPack || seedPack.isPending) && (
                   <svg
                     className="w-4 h-4"
                     viewBox="0 0 24 24"
@@ -552,7 +592,7 @@ export function IconLibraryView() {
                   : seedPack.isPending
                     ? 'Installing...'
                     : 'Install Pack'}
-              </button>
+              </Button>
             </div>
 
             {/* Import from Tunarr */}
@@ -564,14 +604,13 @@ export function IconLibraryView() {
                   Auto-assigns to matching Linearr channels.
                 </p>
               </div>
-              <button
+              <Button
+                variant="success"
                 onClick={() => importTunarr.mutate()}
-                disabled={importTunarr.isPending}
-                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm rounded-lg font-medium transition"
+                loading={importTunarr.isPending}
+                className="shrink-0"
               >
-                {importTunarr.isPending ? (
-                  <Spinner size="sm" />
-                ) : (
+                {!importTunarr.isPending && (
                   <svg
                     className="w-4 h-4"
                     viewBox="0 0 24 24"
@@ -583,7 +622,7 @@ export function IconLibraryView() {
                   </svg>
                 )}
                 Import Icons
-              </button>
+              </Button>
             </div>
 
             <div>
@@ -593,7 +632,7 @@ export function IconLibraryView() {
                   <button
                     key={p.name}
                     onClick={() => loadPreset(p.name, p.colors[0], p.colors[1])}
-                    className="group text-center p-2 rounded-xl border border-slate-700 hover:border-indigo-500 transition bg-slate-900 hover:bg-slate-800"
+                    className="group text-center p-2 rounded-xl border border-slate-700 hover:border-indigo-500 transition bg-slate-900 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <div
                       className="w-full aspect-square rounded-lg flex items-center justify-center text-white text-xs font-bold"
@@ -621,7 +660,8 @@ export function IconLibraryView() {
                     key={name}
                     onClick={() => loadPreset(name, c1, c2)}
                     title={name}
-                    className="aspect-square rounded-lg border border-slate-700 hover:border-indigo-500 transition"
+                    aria-label={`${name} gradient template`}
+                    className="aspect-square rounded-lg border border-slate-700 hover:border-indigo-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                     style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}
                   />
                 ))}
@@ -631,25 +671,30 @@ export function IconLibraryView() {
         )}
       </div>
 
-      {/* Full-size preview overlay */}
+      {/* Full-size preview dialog */}
       {previewIcon && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-          onClick={() => setPreviewIcon(null)}
+        <ModalWrapper
+          open
+          onClose={() => setPreviewIcon(null)}
+          maxWidth="max-w-lg"
+          titleId="icon-preview-title"
         >
-          <div className="relative max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
+          <div className="relative p-4">
             <img
               src={previewIcon.data}
               alt={previewIcon.name}
               className="w-full rounded-2xl border border-slate-700 shadow-2xl bg-slate-900 object-contain"
             />
-            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent rounded-b-2xl p-4">
-              <p className="text-sm font-semibold text-white">{previewIcon.name}</p>
+            <div className="absolute bottom-4 inset-x-4 bg-gradient-to-t from-black/80 to-transparent rounded-b-2xl p-4 pointer-events-none">
+              <p id="icon-preview-title" className="text-sm font-semibold text-white">
+                {previewIcon.name}
+              </p>
               <p className="text-xs text-slate-400">{previewIcon.category}</p>
             </div>
-            <button
+            <IconButton
+              label="Close preview"
               onClick={() => setPreviewIcon(null)}
-              className="absolute -top-3 -right-3 w-8 h-8 bg-slate-800 border border-slate-600 rounded-full text-slate-300 hover:text-white flex items-center justify-center transition"
+              className="absolute top-1 right-1 bg-slate-800/80 border border-slate-600 rounded-full text-slate-300 hover:text-white"
             >
               <svg
                 className="w-4 h-4"
@@ -660,36 +705,38 @@ export function IconLibraryView() {
               >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
-            </button>
+            </IconButton>
             <div className="flex gap-2 mt-3 justify-center">
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   loadIconForEdit(previewIcon)
                   setPreviewIcon(null)
                 }}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded-lg transition"
               >
                 Select
-              </button>
+              </Button>
               <a
                 href={previewIcon.data}
                 download={`${previewIcon.name}.png`}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded-lg transition"
+                className="inline-flex items-center px-3 py-1.5 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-100 text-xs font-medium rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 Download
               </a>
-              <button
-                onClick={() => {
-                  deleteIcon.mutate(previewIcon.id)
-                  setPreviewIcon(null)
+              <Button
+                variant="dangerSoft"
+                size="sm"
+                disabled={deleteIcon.isPending}
+                onClick={async () => {
+                  if (await handleDeleteIcon(previewIcon)) setPreviewIcon(null)
                 }}
-                className="px-4 py-2 bg-red-900/50 hover:bg-red-900/70 border border-red-800/50 text-red-400 text-xs rounded-lg transition"
               >
                 Delete
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </ModalWrapper>
       )}
     </div>
   )

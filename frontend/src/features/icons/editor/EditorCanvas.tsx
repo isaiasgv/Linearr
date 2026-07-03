@@ -164,7 +164,7 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
         <button
           onClick={() => onChange(autoFitLayers(composition))}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded-lg transition"
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           title="Auto-fit all layers to fill canvas"
         >
           <svg

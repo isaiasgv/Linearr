@@ -125,11 +125,14 @@ export function ExportPanel({ composition, onChange, baseName = 'icon' }: Props)
       <div className="space-y-2">
         <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Export</h3>
         <div>
-          <label className={labelClass}>Color Mode</label>
+          <label htmlFor="icon-export-color-mode" className={labelClass}>
+            Color Mode
+          </label>
           <select
+            id="icon-export-color-mode"
             value={exportMode}
             onChange={(e) => setExportMode(e.target.value as ColorMode)}
-            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100"
+            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
           >
             {COLOR_MODES.map((m) => (
               <option key={m.id} value={m.id}>

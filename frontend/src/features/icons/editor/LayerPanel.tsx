@@ -101,8 +101,9 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
                 e.stopPropagation()
                 toggleVisible(layer.id)
               }}
-              className="text-slate-500 hover:text-slate-300"
-              title={layer.visible === false ? 'Show' : 'Hide'}
+              className="text-slate-500 hover:text-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              title={layer.visible === false ? 'Show layer' : 'Hide layer'}
+              aria-label={layer.visible === false ? 'Show layer' : 'Hide layer'}
             >
               <svg
                 className="w-3.5 h-3.5"
@@ -131,8 +132,9 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
                 e.stopPropagation()
                 moveLayer(layer.id, 1)
               }}
-              className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-300"
-              title="Move up"
+              className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-slate-500 hover:text-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              title="Move layer up"
+              aria-label="Move layer up"
             >
               <svg
                 className="w-3 h-3"
@@ -149,8 +151,9 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
                 e.stopPropagation()
                 moveLayer(layer.id, -1)
               }}
-              className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-300"
-              title="Move down"
+              className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-slate-500 hover:text-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              title="Move layer down"
+              aria-label="Move layer down"
             >
               <svg
                 className="w-3 h-3"
@@ -167,8 +170,9 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
                 e.stopPropagation()
                 removeLayer(layer.id)
               }}
-              className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300"
-              title="Delete"
+              className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-red-400 hover:text-red-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              title="Delete layer"
+              aria-label="Delete layer"
             >
               <svg
                 className="w-3 h-3"

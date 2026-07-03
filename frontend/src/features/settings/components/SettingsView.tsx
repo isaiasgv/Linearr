@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import Swal from 'sweetalert2'
-import { Spinner } from '@/shared/components/ui/Spinner'
+import { SegmentedControl, Spinner, StatusDot } from '@/shared/components/ui'
+import type { StatusDotState } from '@/shared/components/ui'
 import {
   useSettings,
   useSaveSettings,
@@ -41,13 +42,10 @@ function levelBadge(level: string) {
   }
 }
 
-function StatusDot({ ok }: { ok: boolean | null }) {
-  if (ok === null) return <span className="w-2 h-2 rounded-full bg-slate-600" />
-  return ok ? (
-    <span className="w-2 h-2 rounded-full bg-emerald-400" />
-  ) : (
-    <span className="w-2 h-2 rounded-full bg-red-400" />
-  )
+/** Map a nullable connection result onto the shared StatusDot states. */
+function connectionState(ok: boolean | null): StatusDotState {
+  if (ok === null) return 'unknown'
+  return ok ? 'ok' : 'error'
 }
 
 function InfoRow({
@@ -335,7 +333,10 @@ export function SettingsView() {
                 <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <StatusDot ok={plexInfo ? plexInfo.ok : null} />
+                      <StatusDot
+                        state={connectionState(plexInfo ? plexInfo.ok : null)}
+                        pulse={false}
+                      />
                       <h3 className="text-sm font-medium text-slate-200">Connection</h3>
                     </div>
                     <button
@@ -475,7 +476,7 @@ export function SettingsView() {
                 <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <StatusDot ok={aiInfo ? aiInfo.ok : null} />
+                      <StatusDot state={connectionState(aiInfo ? aiInfo.ok : null)} pulse={false} />
                       <h3 className="text-sm font-medium text-slate-200">Connection</h3>
                     </div>
                     <button
@@ -578,7 +579,7 @@ export function SettingsView() {
                       />
                     )}
                   </div>
-                  <p className="text-xs text-slate-600">
+                  <p className="text-xs text-slate-400">
                     Works with any OpenAI-compatible API (OpenAI, Anthropic via proxy, Ollama, LM
                     Studio, etc.)
                   </p>
@@ -669,7 +670,10 @@ export function SettingsView() {
                 <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <StatusDot ok={tunarrInfo ? tunarrInfo.ok : null} />
+                      <StatusDot
+                        state={connectionState(tunarrInfo ? tunarrInfo.ok : null)}
+                        pulse={false}
+                      />
                       <h3 className="text-sm font-medium text-slate-200">Connection</h3>
                     </div>
                     <button
@@ -714,7 +718,7 @@ export function SettingsView() {
                     placeholder="http://tunarr:8000"
                     className={inputClass}
                   />
-                  <p className="text-xs text-slate-600 mt-1.5">
+                  <p className="text-xs text-slate-400 mt-1.5">
                     Use Docker hostname if on the same network (e.g. http://tunarr:8000)
                   </p>
                 </div>
@@ -875,26 +879,21 @@ function LogsPanelContainer() {
     <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
-            {(['app', 'ai'] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setLogTab(t)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                  logTab === t
-                    ? 'bg-slate-700 text-slate-100'
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                {t === 'app' ? `App (${appLogs.length})` : `AI (${aiLogs.length})`}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            tone="neutral"
+            options={[
+              { value: 'app', label: `App (${appLogs.length})` },
+              { value: 'ai', label: `AI (${aiLogs.length})` },
+            ]}
+            value={logTab}
+            onChange={setLogTab}
+          />
           {logTab === 'app' && appCategories.length > 2 && (
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300"
+              aria-label="Filter logs by category"
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             >
               {appCategories.map((c) => (
                 <option key={c} value={c}>
@@ -977,8 +976,16 @@ function AppLogsTable({ logs }: { logs: AppLog[] }) {
           {logs.map((l) => (
             <Fragment key={l.id}>
               <tr
-                className="hover:bg-slate-800/50 cursor-pointer"
+                tabIndex={0}
+                aria-expanded={expandedId === l.id}
+                className="hover:bg-slate-800/50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
                 onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setExpandedId(expandedId === l.id ? null : l.id)
+                  }
+                }}
               >
                 <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
                   {formatDate(l.created_at)}
@@ -1029,7 +1036,7 @@ function AppLogsTable({ logs }: { logs: AppLog[] }) {
                         </div>
                       )}
                       {!l.detail && !l.request_path && !l.metadata && (
-                        <p className="text-xs text-slate-600 italic">No additional details</p>
+                        <p className="text-xs text-slate-400 italic">No additional details</p>
                       )}
                     </div>
                   </td>
@@ -1062,8 +1069,16 @@ function AiLogsTable({ logs }: { logs: AiLog[] }) {
           {logs.map((l) => (
             <Fragment key={l.id}>
               <tr
-                className="hover:bg-slate-800/50 cursor-pointer"
+                tabIndex={0}
+                aria-expanded={expandedId === l.id}
+                className="hover:bg-slate-800/50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
                 onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setExpandedId(expandedId === l.id ? null : l.id)
+                  }
+                }}
               >
                 <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
                   {formatDate(l.created_at)}
