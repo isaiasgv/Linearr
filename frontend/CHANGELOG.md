@@ -1,3 +1,10 @@
+## [0.0.1-rc.6](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.5...v0.0.1-rc.6) (2026-07-03)
+
+### Features
+
+* **mcp:** built-in MCP server at /mcp with 24 Cable Plex tools ([83561e7](https://github.com/isaiasgv/Linearr/commit/83561e740588f938fe6eaa6c00066fe43f5db834))
+* **mcp:** Settings card, docs, and dev proxy for the MCP server ([b2bb113](https://github.com/isaiasgv/Linearr/commit/b2bb113bd51af7b4424f785f91474e8f24c8262e))
+
 ## [0.0.1-rc.5](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.4...v0.0.1-rc.5) (2026-07-03)
 
 ### Bug Fixes
