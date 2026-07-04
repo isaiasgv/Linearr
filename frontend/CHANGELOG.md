@@ -1,3 +1,9 @@
+## [0.0.1-rc.9](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.8...v0.0.1-rc.9) (2026-07-04)
+
+### Performance
+
+* **images:** transcoded thumbs, layered caching, render containment ([f138475](https://github.com/isaiasgv/Linearr/commit/f1384754f5744b912989d5cf04997bb7fb9247ac))
+
 ## [0.0.1-rc.8](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.7...v0.0.1-rc.8) (2026-07-04)
 
 ### Features
