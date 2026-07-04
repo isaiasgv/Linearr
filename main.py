@@ -2056,6 +2056,10 @@ async def generate_collections(channel_number: int):
 
             async with httpx.AsyncClient(timeout=15.0) as tc:
                 version = await _fetch_tunarr_version(tc, tunarr_url)
+                # Scan Tunarr's libraries FIRST (and wait) so the Plex collections
+                # just created/updated exist as tags before the smart collections
+                # that query those tags are written.
+                scan_ok = await _tunarr_scan_libraries(tc, tunarr_url, wait=True)
                 sc_path = "/api/smart_collections"
                 # Fetch existing Tunarr smart collections (underscore, hyphen fallback)
                 sr = await tc.get(f"{tunarr_url}{sc_path}")
@@ -2093,14 +2097,11 @@ async def generate_collections(channel_number: int):
                                 )
                             created_sc.append(sc_name)
 
-                # Trigger Tunarr library scan so it picks up the updated collection tags
-                await tc.post(f"{tunarr_url}/api/tasks/ScanLibrariesTask/run")
-
             tunarr_result = {
                 "synced": True,
                 "smart_collections_created": created_sc,
                 "smart_collections_updated": updated_sc,
-                "library_scan_triggered": True,
+                "library_scan_completed": scan_ok,
             }
     except Exception as e:
         tunarr_result = {"synced": False, "error": str(e)[:200]}
@@ -5287,6 +5288,9 @@ async def tunarr_sync_collections(channel_number: int):
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             version = await _fetch_tunarr_version(client, url)
+            # Scan first (and wait) so the Plex collection tags exist in Tunarr's
+            # index before the tag-based smart collections are written.
+            await _tunarr_scan_libraries(client, url, wait=True)
             for col in plex_cols:
                 col = dict(col)
                 name = col["collection_title"]
@@ -5331,22 +5335,27 @@ def _tunarr_tags_filter(collection_name: str) -> dict:
 
     Tunarr's DAO ignores filterString on writes — it only uses the structured
     search object (converted back to a string via searchFilterToString).
+    Shape matches what Tunarr's own UI produces (fieldSpec carries both key and name).
     """
     return {
         "type": "value",
         "fieldSpec": {
             "type": "faceted_string",
             "key": "tags",
+            "name": "tags",
             "op": "=",
             "value": [collection_name],
         },
     }
 
-# Tunarr 1.3.0 renamed the smart-collection search body field from "filter" to
-# "query" (the DB column is `query`). We pick the field by version but fall back
-# to the other key if the server rejects the body, so we work on 1.2.x and 1.3.x.
-_SC_FIELDS_MODERN = ("query", "filter")
-_SC_FIELDS_LEGACY = ("filter", "query")
+# Tunarr's API schema names the smart-collection search field `filter`
+# (types/src/schemas/collectionsSchema.ts: SmartCollection.filter — the `query`
+# name is only the DB column). Crucially, `filter` is OPTIONAL in the schema, so
+# a write using the wrong key is silently accepted (zod strips it) and the
+# collection is created with NO rules — no error, no retry. That is why
+# _tunarr_write_smart_collection must verify the response actually carries the
+# search object back, not just trust a 2xx.
+_SC_FIELDS = ("filter", "query")
 
 async def _fetch_tunarr_version(client: "httpx.AsyncClient", url: str) -> str | None:
     try:
@@ -5358,10 +5367,20 @@ async def _fetch_tunarr_version(client: "httpx.AsyncClient", url: str) -> str | 
         pass
     return None
 
-def _sc_field_order(version: str | None) -> tuple[str, ...]:
-    if version and _parse_version(version) >= _parse_version(TUNARR_V13):
-        return _SC_FIELDS_MODERN
-    return _SC_FIELDS_LEGACY
+def _sc_response_has_search(resp: "httpx.Response") -> bool:
+    """True if a smart-collection write response carries the search object back.
+
+    Tunarr's schema marks the search field optional, so a body using the wrong
+    key gets a 2xx while the collection is saved with NO rules. The write only
+    counts if the returned object (or a 204) proves the search stuck.
+    """
+    if resp.status_code == 204:
+        return True  # no body to inspect — trust the status
+    try:
+        data = resp.json()
+    except Exception:
+        return False
+    return bool(data.get("filter") or data.get("query") or data.get("filterString"))
 
 async def _tunarr_write_smart_collection(
     client: "httpx.AsyncClient", url: str, sc_path: str, *,
@@ -5369,25 +5388,61 @@ async def _tunarr_write_smart_collection(
 ):
     """Create (uuid=None) or update a Tunarr smart collection.
 
-    Tolerates the 1.2.x (`filter`) vs 1.3.x (`query`) body-field rename: tries the
-    field appropriate for `version` first, and retries with the other on a schema
-    rejection (400/422). Returns the final httpx.Response (or None on hard failure).
+    Sends the search object as `filter` (Tunarr's actual API field), retrying
+    with `query` for hypothetical other builds. Because `filter` is optional in
+    Tunarr's schema, a 2xx alone doesn't prove the rules were saved — the
+    response must echo the search object back, otherwise we retry with the
+    other field name. Returns the final httpx.Response (or None on hard failure).
     """
     last = None
-    for field in _sc_field_order(version):
+    for field in _SC_FIELDS:
         body = {field: structured}
         if uuid is None:
             body = {"name": name, field: structured, "keywords": ""}
             resp = await client.post(f"{url}{sc_path}", json=body)
         else:
             resp = await client.put(f"{url}{sc_path}/{uuid}", json=body)
-        if resp.status_code in (200, 201, 204):
-            return resp
         last = resp
-        # Only a schema mismatch is worth retrying with the other field name.
-        if resp.status_code not in (400, 422):
+        if resp.status_code in (200, 201, 204):
+            if _sc_response_has_search(resp):
+                return resp
+            # 2xx but the rules didn't stick (wrong field name, zod stripped it).
+            # If we just POSTed, the empty collection now exists — switch to
+            # updating it by uuid so the retry doesn't create a duplicate.
+            if uuid is None and resp.status_code in (200, 201):
+                try:
+                    uuid = resp.json().get("uuid") or uuid
+                except Exception:
+                    pass
+            log.warning("Tunarr accepted smart collection '%s' but dropped the %s rules — retrying with the other field", name, field)
+            continue
+        # A schema/server rejection is worth retrying with the other field name.
+        if resp.status_code not in (400, 422, 500):
             break
     return last
+
+async def _tunarr_scan_libraries(client: "httpx.AsyncClient", url: str, wait: bool = True) -> bool:
+    """Trigger Tunarr's library scan so new/updated Plex collections exist as
+    tags in Tunarr's index BEFORE tag-based smart collections are written.
+
+    wait=True runs the task in the foreground (Tunarr returns when the scan is
+    done) with a generous timeout; falls back to a fire-and-forget background
+    run if that fails. Returns True if a scan was triggered.
+    """
+    try:
+        if wait:
+            r = await client.post(
+                f"{url}/api/tasks/ScanLibrariesTask/run",
+                params={"background": "false"},
+                timeout=httpx.Timeout(120.0, connect=10.0),
+            )
+            if r.status_code in (200, 202):
+                return True
+        r = await client.post(f"{url}/api/tasks/ScanLibrariesTask/run")
+        return r.status_code in (200, 202)
+    except Exception as e:
+        log.warning("Tunarr library scan trigger failed: %s", e)
+        return False
 
 def _hhmm_to_ms(hhmm: str) -> int:
     """Convert HH:MM to milliseconds from midnight."""
