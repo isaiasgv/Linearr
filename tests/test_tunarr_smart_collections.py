@@ -135,3 +135,42 @@ async def test_scan_libraries_foreground():
     assert ok is True
     assert seen[0][0] == "/api/tasks/ScanLibrariesTask/run"
     assert seen[0][1].get("background") == "false", "must wait for the scan (foreground run)"
+
+
+@pytest.mark.anyio
+async def test_task_run_sends_no_body_for_argless_tasks():
+    """Tunarr validates the body against each task's schema; argless tasks 400
+    on a spurious {} but accept an empty body (observed live on 1.3.x)."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        has_body = bool(request.content)
+        seen.append(has_body)
+        if has_body:
+            return httpx.Response(400)  # strict: {} fails the task schema
+        return httpx.Response(200, json={"ok": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler),
+                                 base_url="http://t.test") as client:
+        r = await main._tunarr_run_task_request(client, "http://t.test", "ScanLibrariesTask")
+    assert r.status_code == 200
+    assert seen == [False], "argless task must be posted with no body, no retry needed"
+
+
+@pytest.mark.anyio
+async def test_task_run_falls_back_to_empty_object():
+    """Hypothetical Tunarr build that wants a JSON body: no-body 400s, {} works."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        has_body = bool(request.content)
+        seen.append(has_body)
+        if not has_body:
+            return httpx.Response(400)
+        return httpx.Response(200, json={"ok": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler),
+                                 base_url="http://t.test") as client:
+        r = await main._tunarr_run_task_request(client, "http://t.test", "ScanLibrariesTask")
+    assert r.status_code == 200
+    assert seen == [False, True], "must retry once with {} after a bare-400"

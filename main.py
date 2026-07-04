@@ -5190,14 +5190,15 @@ async def tunarr_delete_smart_collection(sc_id: str):
 
 @app.post("/api/tunarr/tasks/{task_name}")
 async def tunarr_run_task(task_name: str, body: dict | None = None):
-    """Trigger a Tunarr task (UpdateXmlTvTask, ScanLibrariesTask, etc.)."""
+    """Trigger a Tunarr task (UpdateXmlTvTask, ScanLibrariesTask, etc.).
+
+    Sends no body for argless tasks — Tunarr validates the body against the
+    task's own schema and 400s on a spurious `{}` (_tunarr_run_task_request
+    handles the fallback both ways).
+    """
     url = get_tunarr_url()
     async with httpx.AsyncClient(timeout=15.0) as client:
-        r = await client.post(
-            f"{url}/api/tasks/{task_name}/run",
-            params={"background": "true"},
-            json=body or {},
-        )
+        r = await _tunarr_run_task_request(client, url, task_name, body=body)
     if r.status_code not in (200, 202, 204):
         raise HTTPException(r.status_code, f"Tunarr task failed: {r.text[:200]}")
     return {"ok": True, "task": task_name}
@@ -5421,6 +5422,31 @@ async def _tunarr_write_smart_collection(
             break
     return last
 
+async def _tunarr_run_task_request(
+    client: "httpx.AsyncClient", url: str, task_name: str, *,
+    background: bool = True, body: dict | None = None,
+    timeout: "httpx.Timeout | None" = None,
+) -> "httpx.Response":
+    """POST a Tunarr task run, tolerating Tunarr's per-task body validation.
+
+    Tunarr validates the request body against each task's own schema; argless
+    tasks (ScanLibrariesTask, UpdateXmlTvTask) reject a `{}` body with a bare
+    400 but accept an empty body — so send no body first and fall back to `{}`
+    (and vice versa when an explicit body is given).
+    """
+    kwargs: dict = {"params": {"background": "true" if background else "false"}}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    if body:
+        r = await client.post(f"{url}/api/tasks/{task_name}/run", json=body, **kwargs)
+        if r.status_code == 400:
+            r = await client.post(f"{url}/api/tasks/{task_name}/run", **kwargs)
+    else:
+        r = await client.post(f"{url}/api/tasks/{task_name}/run", **kwargs)
+        if r.status_code == 400:
+            r = await client.post(f"{url}/api/tasks/{task_name}/run", json={}, **kwargs)
+    return r
+
 async def _tunarr_scan_libraries(client: "httpx.AsyncClient", url: str, wait: bool = True) -> bool:
     """Trigger Tunarr's library scan so new/updated Plex collections exist as
     tags in Tunarr's index BEFORE tag-based smart collections are written.
@@ -5431,14 +5457,12 @@ async def _tunarr_scan_libraries(client: "httpx.AsyncClient", url: str, wait: bo
     """
     try:
         if wait:
-            r = await client.post(
-                f"{url}/api/tasks/ScanLibrariesTask/run",
-                params={"background": "false"},
-                timeout=httpx.Timeout(120.0, connect=10.0),
-            )
+            r = await _tunarr_run_task_request(
+                client, url, "ScanLibrariesTask", background=False,
+                timeout=httpx.Timeout(120.0, connect=10.0))
             if r.status_code in (200, 202):
                 return True
-        r = await client.post(f"{url}/api/tasks/ScanLibrariesTask/run")
+        r = await _tunarr_run_task_request(client, url, "ScanLibrariesTask")
         return r.status_code in (200, 202)
     except Exception as e:
         log.warning("Tunarr library scan trigger failed: %s", e)
