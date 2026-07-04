@@ -1,3 +1,9 @@
+## [0.0.1-rc.8](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.7...v0.0.1-rc.8) (2026-07-04)
+
+### Features
+
+* **observability:** full review hardening — MCP/Plex/CablePlex fixes + audit logging everywhere ([167cb28](https://github.com/isaiasgv/Linearr/commit/167cb28445ffa1191a990bf34c2766fb75845acd))
+
 ## [0.0.1-rc.7](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.6...v0.0.1-rc.7) (2026-07-04)
 
 ### Bug Fixes
