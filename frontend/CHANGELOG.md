@@ -1,3 +1,10 @@
+## [0.0.1-rc.7](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.6...v0.0.1-rc.7) (2026-07-04)
+
+### Bug Fixes
+
+* **tunarr:** smart collections were saved with no rules — wrong field name, no verification, scan ordering ([072c530](https://github.com/isaiasgv/Linearr/commit/072c5308db0a6b222946de9011733e60b219b007))
+* **tunarr:** task runs 400 when a spurious {} body is sent to argless tasks ([9970d0b](https://github.com/isaiasgv/Linearr/commit/9970d0b39b3fe80bb9ae57487a5a665d8619a4b2))
+
 ## [0.0.1-rc.6](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.5...v0.0.1-rc.6) (2026-07-03)
 
 ### Features
