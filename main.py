@@ -679,6 +679,7 @@ async def update_channel(channel_number: int, body: ChannelIn):
                     pass
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
     result = dict(row)
+    _log_app("channel", f"Updated channel {channel_number}", metadata={"old_number": channel_number, "new_number": body.number, "name": body.name})
     # Auto-sync metadata to Tunarr (creates channel if not linked)
     sync = await _sync_channel_to_tunarr(body.number)
     result["tunarr_sync"] = sync
@@ -710,6 +711,7 @@ def delete_channel(channel_number: int):
                 conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
             except sqlite3.OperationalError:
                 pass
+    _log_app("channel", f"Deleted channel {channel_number}", level="warn", metadata={"number": channel_number})
     return {"ok": True}
 
 # ── Channel Icons ─────────────────────────────────────────────────────────────
@@ -723,6 +725,7 @@ async def set_channel_icon(channel_number: int, request: Request):
         cur = conn.execute("UPDATE channels SET icon=? WHERE number=?", (icon_data, channel_number))
     if cur.rowcount == 0:
         raise HTTPException(404, "Channel not found")
+    _log_app("channel", f"Set icon for channel {channel_number}", metadata={"number": channel_number})
     sync = await _sync_channel_to_tunarr(channel_number)
     return {"ok": True, "tunarr_sync": sync}
 
@@ -731,6 +734,7 @@ async def delete_channel_icon(channel_number: int):
     """Remove channel icon."""
     with get_db() as conn:
         conn.execute("UPDATE channels SET icon=NULL WHERE number=?", (channel_number,))
+    _log_app("channel", f"Removed icon for channel {channel_number}", metadata={"number": channel_number})
     await _sync_channel_to_tunarr(channel_number)
     return {"ok": True}
 
@@ -878,6 +882,8 @@ def create_assignment(body: AssignmentIn):
                 "SELECT * FROM assignments WHERE channel_number=? AND plex_rating_key=?",
                 (body.channel_number, body.plex_rating_key),
             ).fetchone()
+        _log_app("assignment", f"Assigned '{body.plex_title}' to ch {body.channel_number}",
+                 metadata={"channel": body.channel_number, "rating_key": body.plex_rating_key, "title": body.plex_title})
         return dict(row)
     except sqlite3.IntegrityError:
         raise HTTPException(409, "Already assigned")
@@ -893,9 +899,14 @@ def create_assignment(body: AssignmentIn):
 def delete_assignment(assignment_id: int):
     try:
         with get_db() as conn:
+            row = conn.execute("SELECT plex_title, channel_number FROM assignments WHERE id=?", (assignment_id,)).fetchone()
             cur = conn.execute("DELETE FROM assignments WHERE id=?", (assignment_id,))
         if cur.rowcount == 0:
             raise HTTPException(404, "Not found")
+        _log_app("assignment", f"Removed assignment {assignment_id}",
+                 metadata={"id": assignment_id,
+                           "title": row["plex_title"] if row else None,
+                           "channel": row["channel_number"] if row else None})
         return {"ok": True}
     except HTTPException:
         raise
@@ -922,6 +933,8 @@ def bulk_assignments(body: BulkAssignmentIn):
                 added += 1
             except sqlite3.IntegrityError:
                 skipped += 1
+            except sqlite3.Error as e:
+                raise HTTPException(500, f"Database error during bulk assign: {e}")
         rows = conn.execute(
             "SELECT * FROM assignments WHERE channel_number=? ORDER BY plex_title",
             (body.channel_number,)
@@ -1772,6 +1785,8 @@ def unlink_channel_collection(channel_number: int, plex_type: str):
         )
     if cur.rowcount == 0:
         raise HTTPException(404, "Not found")
+    _log_app("assignment", f"Unlinked {plex_type} collection from ch {channel_number}",
+             metadata={"channel": channel_number, "plex_type": plex_type})
     return {"ok": True}
 
 
@@ -2037,6 +2052,13 @@ async def generate_collections(channel_number: int):
                 "additive_only": not already_managed,
             }
 
+    _log_app("collection", f"Built Plex collections for ch {channel_number}",
+             metadata={"channel": channel_number,
+                       "results": {pt: {"name": r.get("name"), "created": r.get("created"),
+                                        "added": r.get("added"), "removed": r.get("removed"),
+                                        "total": r.get("total")}
+                                   for pt, r in result.items()}})
+
     # ── Auto-sync to Tunarr if a channel link exists ──────────────────────────
     tunarr_result: dict = {}
     try:
@@ -2103,6 +2125,9 @@ async def generate_collections(channel_number: int):
                 "smart_collections_updated": updated_sc,
                 "library_scan_completed": scan_ok,
             }
+            _log_app("tunarr", f"Tunarr auto-sync for ch {channel_number}: {len(created_sc)} created, {len(updated_sc)} updated",
+                     metadata={"channel": channel_number, "created": created_sc, "updated": updated_sc,
+                               "library_scan_completed": scan_ok})
     except Exception as e:
         tunarr_result = {"synced": False, "error": str(e)[:200]}
 
@@ -2233,6 +2258,7 @@ async def plex_scan_library(section_id: str):
         resp = await client.get(f"{url}/library/sections/{section_id}/refresh", headers=hdrs)
     if resp.status_code not in (200, 202):
         raise HTTPException(resp.status_code, "Failed to trigger library scan")
+    _log_app("plex", f"Triggered Plex library scan for section {section_id}", metadata={"section_id": section_id})
     return {"ok": True, "message": f"Library scan triggered for section {section_id}"}
 
 class PlexRateIn(BaseModel):
@@ -2254,6 +2280,7 @@ async def plex_rate_item(rating_key: str, body: PlexRateIn):
         resp = await client.put(f"{url}/:/rate", headers=hdrs, params=params)
     if resp.status_code not in (200, 204):
         raise HTTPException(resp.status_code, "Failed to set rating")
+    _log_app("plex", f"Rated item {rating_key}: {body.rating}", metadata={"rating_key": rating_key, "rating": body.rating})
     return {"ok": True}
 
 @app.get("/api/plex/hubs")
@@ -2422,6 +2449,8 @@ async def plex_create_collection(request: Request):
     if resp.status_code not in (200, 201):
         raise HTTPException(resp.status_code, f"Plex error: {resp.text[:200]}")
     coll = (resp.json().get("MediaContainer", {}).get("Metadata", [{}]) or [{}])[0]
+    _log_app("collection", f"Created Plex collection '{title}'",
+             metadata={"rating_key": coll.get("ratingKey"), "title": title, "type": collection_type, "section_id": section_id})
     return {
         "rating_key": coll.get("ratingKey"),
         "title": coll.get("title", title),
@@ -2443,6 +2472,7 @@ async def plex_delete_collection(rating_key: str):
     # Clean up any channel_collections references
     with get_db() as conn:
         conn.execute("DELETE FROM channel_collections WHERE collection_rating_key=?", (rating_key,))
+    _log_app("collection", f"Deleted Plex collection {rating_key}", level="warn", metadata={"rating_key": rating_key})
     return {"ok": True}
 
 @app.put("/api/plex/collections/{rating_key}/items")
@@ -2459,6 +2489,10 @@ async def plex_add_collection_items(rating_key: str, request: Request):
     async with httpx.AsyncClient(timeout=10) as client:
         identity_r = await client.get(f"{url}/identity", headers=hdrs)
         machine_id = identity_r.json().get("MediaContainer", {}).get("machineIdentifier", "") if identity_r.status_code == 200 else ""
+        if not machine_id:
+            # Without the machine id every generated URI is malformed and every
+            # PUT silently fails — report the real problem instead of ok/added:0.
+            raise HTTPException(502, "Could not reach Plex to resolve the server identity")
         added = 0
         for rk in item_keys:
             uri = f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"
@@ -2469,6 +2503,8 @@ async def plex_add_collection_items(rating_key: str, request: Request):
             )
             if resp.status_code in (200, 201):
                 added += 1
+    _log_app("collection", f"Added {added}/{len(item_keys)} items to Plex collection {rating_key}",
+             metadata={"collection": rating_key, "added": added, "requested": len(item_keys)})
     return {"ok": True, "added": added}
 
 @app.delete("/api/plex/collections/{rating_key}/items/{item_key}")
@@ -2485,6 +2521,8 @@ async def plex_remove_collection_item(rating_key: str, item_key: str):
         )
     if resp.status_code not in (200, 204):
         raise HTTPException(resp.status_code, "Failed to remove item")
+    _log_app("collection", f"Removed item {item_key} from collection {rating_key}",
+             metadata={"collection": rating_key, "item_key": item_key})
     return {"ok": True}
 
 @app.put("/api/plex/collections/{rating_key}")
@@ -2506,6 +2544,8 @@ async def plex_update_collection(rating_key: str, request: Request):
         resp = await client.put(f"{url}/library/metadata/{rating_key}", headers=hdrs, params=params)
     if resp.status_code not in (200, 204):
         raise HTTPException(resp.status_code, "Failed to update collection")
+    _log_app("collection", f"Updated Plex collection {rating_key}",
+             metadata={"rating_key": rating_key, "fields": [k.split(".")[0] for k in params]})
     return {"ok": True}
 
 # ── Plex smart collections ────────────────────────────────────────────────────
@@ -2663,6 +2703,8 @@ async def plex_update_smart_collection(rating_key: str, body: SmartCollectionUpd
             updated.append("title")
     if not updated:
         raise HTTPException(400, "Nothing to update — provide filters and/or title")
+    _log_app("collection", f"Updated smart collection {rating_key}",
+             metadata={"rating_key": rating_key, "updated": updated, "unresolved_genres": missing})
     return {"ok": True, "updated": updated, "unresolved_genres": missing}
 
 # ── Blocks ────────────────────────────────────────────────────────────────────
@@ -2822,6 +2864,8 @@ def create_block(body: BlockIn):
              body.start_time, body.end_time, body.content_type, body.notes, body.order_index)
         )
         row = conn.execute("SELECT * FROM blocks WHERE id=?", (cur.lastrowid,)).fetchone()
+    _log_app("block", f"Created block '{body.name}'",
+             metadata={"block_id": row["id"], "channel_number": body.channel_number, "days": body.days})
     return _row_to_block(row)
 
 @app.put("/api/blocks/{block_id}")
@@ -2836,6 +2880,8 @@ def update_block(block_id: int, body: BlockIn):
         if cur.rowcount == 0:
             raise HTTPException(404, "Block not found")
         row = conn.execute("SELECT * FROM blocks WHERE id=?", (block_id,)).fetchone()
+    _log_app("block", f"Updated block {block_id}",
+             metadata={"block_id": block_id, "name": body.name, "channel_number": body.channel_number})
     return _row_to_block(row)
 
 @app.delete("/api/blocks/{block_id}")
@@ -2844,6 +2890,7 @@ def delete_block(block_id: int):
         cur = conn.execute("DELETE FROM blocks WHERE id=?", (block_id,))
     if cur.rowcount == 0:
         raise HTTPException(404, "Block not found")
+    _log_app("block", f"Deleted block {block_id}", level="warn", metadata={"block_id": block_id})
     return {"ok": True}
 
 @app.get("/api/blocks/{block_id}/slots")
@@ -2866,6 +2913,8 @@ def add_block_slot(block_id: int, body: SlotIn):
              body.plex_type, body.plex_thumb, body.plex_year, body.duration_minutes)
         )
         row = conn.execute("SELECT * FROM block_slots WHERE id=?", (cur.lastrowid,)).fetchone()
+    _log_app("block", f"Added slot {body.slot_time} '{body.plex_title}' to block {block_id}",
+             metadata={"block_id": block_id, "slot_id": row["id"], "slot_time": body.slot_time, "title": body.plex_title})
     return dict(row)
 
 @app.put("/api/block-slots/{slot_id}")
@@ -2878,6 +2927,8 @@ def update_block_slot(slot_id: int, body: dict):
         new_time = body.get("slot_time", slot["slot_time"])
         conn.execute("UPDATE block_slots SET slot_time=? WHERE id=?", (new_time, slot_id))
         row = conn.execute("SELECT * FROM block_slots WHERE id=?", (slot_id,)).fetchone()
+    _log_app("block", f"Moved slot {slot_id} to {new_time}",
+             metadata={"slot_id": slot_id, "slot_time": new_time})
     return dict(row)
 
 @app.post("/api/blocks/{block_id}/swap-slots")
@@ -2894,6 +2945,8 @@ def swap_block_slots(block_id: int, body: dict):
             raise HTTPException(404, "Slot not found in this block")
         conn.execute("UPDATE block_slots SET slot_time=? WHERE id=?", (b["slot_time"], id_a))
         conn.execute("UPDATE block_slots SET slot_time=? WHERE id=?", (a["slot_time"], id_b))
+    _log_app("block", f"Swapped slots {id_a} and {id_b} in block {block_id}",
+             metadata={"block_id": block_id, "slot_a": id_a, "slot_b": id_b})
     return {"ok": True}
 
 @app.delete("/api/block-slots/{slot_id}")
@@ -2902,6 +2955,7 @@ def delete_block_slot(slot_id: int):
         cur = conn.execute("DELETE FROM block_slots WHERE id=?", (slot_id,))
     if cur.rowcount == 0:
         raise HTTPException(404, "Slot not found")
+    _log_app("block", f"Deleted slot {slot_id}", metadata={"slot_id": slot_id})
     return {"ok": True}
 
 @app.delete("/api/blocks/{block_id}/slots")
@@ -2912,6 +2966,8 @@ def clear_block_slots(block_id: int):
         if not block:
             raise HTTPException(404, "Block not found")
         cur = conn.execute("DELETE FROM block_slots WHERE block_id=?", (block_id,))
+    _log_app("block", f"Cleared slots for block {block_id}", level="warn",
+             metadata={"block_id": block_id, "count": cur.rowcount})
     return {"ok": True, "deleted": cur.rowcount}
 
 @app.get("/api/blocks/{block_id}/suggestions")
@@ -3002,6 +3058,9 @@ def apply_block(block_id: int, channel_number: int):
     result = _row_to_block(row)
     result["slots_copied"] = slots_copied
     result["shows_added"] = shows_added
+    _log_app("block", f"Applied block {block_id} to ch {channel_number}",
+             metadata={"block_id": block_id, "new_block_id": new_block_id, "channel": channel_number,
+                       "slots_copied": slots_copied, "shows_added": shows_added})
     return result
 
 # ── AI helpers ────────────────────────────────────────────────────────────────
@@ -5134,43 +5193,86 @@ async def tunarr_list_custom_shows():
     except Exception as e:
         raise HTTPException(502, f"Cannot reach Tunarr: {e}")
 
-def _swap_sc_field(body: dict) -> dict | None:
-    """Return a copy of `body` with the smart-collection search field renamed
-    (filter<->query), or None if neither key is present. Used to retry against a
-    Tunarr whose version expects the other field name."""
-    if "query" in body:
-        b = dict(body); b["filter"] = b.pop("query"); return b
-    if "filter" in body:
-        b = dict(body); b["query"] = b.pop("filter"); return b
-    return None
+_FILTER_STRING_RE = _re.compile(r'^\s*([A-Za-z_][\w.]*)\s*=\s*"([^"]+)"\s*$')
+
+def _parse_filter_string(s: str | None) -> dict | None:
+    """Translate a simple `field = "value"` filterString into the structured
+    search object Tunarr's write path actually honors (it IGNORES filterString
+    on writes — the string is only a derived display column). Returns None for
+    anything more complex than a single faceted equality."""
+    if not s:
+        return None
+    m = _FILTER_STRING_RE.match(s)
+    if not m:
+        return None
+    field, value = m.group(1), m.group(2)
+    return {
+        "type": "value",
+        "fieldSpec": {
+            "type": "faceted_string",
+            "key": field,
+            "name": field,
+            "op": "=",
+            "value": [value],
+        },
+    }
 
 @app.post("/api/tunarr/smart-collections", status_code=201)
 async def tunarr_create_smart_collection(body: dict):
+    """Create a Tunarr smart collection. Accepts a structured `filter` (or
+    `query`) object, or a simple `filterString` like `tags = "Name"` which is
+    translated — Tunarr ignores filterString on writes, so passing it through
+    verbatim would create a collection with NO rules."""
     url = get_tunarr_url()
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    structured = body.get("filter") or body.get("query") or _parse_filter_string(body.get("filterString"))
+    if structured is None:
+        raise HTTPException(400, 'Provide a structured "filter" object or a simple filterString like: tags = "My Collection"')
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.post(f"{url}/api/smart_collections", json=body)
-        if r.status_code in (400, 422):
-            alt = _swap_sc_field(body)
-            if alt is not None:
-                r = await client.post(f"{url}/api/smart_collections", json=alt)
-    if r.status_code not in (200, 201):
-        raise HTTPException(r.status_code, r.text[:300])
+        r = await _tunarr_write_smart_collection(
+            client, url, "/api/smart_collections", name=name, structured=structured)
+    if r is None or r.status_code not in (200, 201):
+        raise HTTPException(r.status_code if r is not None else 502,
+                            r.text[:300] if r is not None else "No response from Tunarr")
+    if not _sc_response_has_search(r):
+        raise HTTPException(502, "Tunarr accepted the smart collection but dropped its rules — not created correctly")
+    _log_app("tunarr", f"Created Tunarr smart collection '{name}'", metadata={"name": name})
     return r.json()
 
 @app.put("/api/tunarr/smart-collections/{sc_id}")
 async def tunarr_update_smart_collection(sc_id: str, body: dict):
+    """Update a Tunarr smart collection. Structured `filter`/`query` (or a
+    translatable `filterString`) rewrites the rules through the verified
+    writer; a name/keywords-only body is passed through as a plain rename."""
     url = get_tunarr_url()
+    structured = body.get("filter") or body.get("query") or _parse_filter_string(body.get("filterString"))
+    passthrough = {k: v for k, v in body.items() if k in ("name", "keywords")}
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.put(f"{url}/api/smart_collections/{sc_id}", json=body)
-        if r.status_code in (400, 422):
-            alt = _swap_sc_field(body)
-            if alt is not None:
-                r = await client.put(f"{url}/api/smart_collections/{sc_id}", json=alt)
+        if structured is not None:
+            r = await _tunarr_write_smart_collection(
+                client, url, "/api/smart_collections",
+                name=passthrough.get("name") or "", structured=structured,
+                uuid=sc_id, extra=passthrough)
+            if r is not None and r.status_code not in (404,) and r.status_code in (200, 201, 204) \
+                    and not _sc_response_has_search(r):
+                raise HTTPException(502, "Tunarr accepted the update but dropped the rules — not saved correctly")
+        else:
+            if body.get("filterString"):
+                raise HTTPException(400, 'This filter expression is too complex to translate — use a structured "filter" object, or a simple one like: tags = "My Collection"')
+            if not passthrough:
+                raise HTTPException(400, "Nothing to update")
+            r = await client.put(f"{url}/api/smart_collections/{sc_id}", json=passthrough)
+    if r is None:
+        raise HTTPException(502, "No response from Tunarr")
     if r.status_code == 404:
         raise HTTPException(404, "Smart collection not found in Tunarr")
-    if r.status_code not in (200, 201):
+    if r.status_code not in (200, 201, 204):
         raise HTTPException(r.status_code, r.text[:300])
-    return r.json()
+    _log_app("tunarr", f"Updated Tunarr smart collection {sc_id}",
+             metadata={"uuid": sc_id, "rules_rewritten": structured is not None})
+    return r.json() if r.status_code != 204 else {"ok": True}
 
 @app.delete("/api/tunarr/smart-collections/{sc_id}")
 async def tunarr_delete_smart_collection(sc_id: str):
@@ -5184,6 +5286,7 @@ async def tunarr_delete_smart_collection(sc_id: str):
     # Also remove any local collection links referencing this UUID
     with get_db() as conn:
         conn.execute("DELETE FROM tunarr_collection_links WHERE tunarr_collection_id=?", (sc_id,))
+    _log_app("tunarr", f"Deleted Tunarr smart collection {sc_id}", level="warn", metadata={"uuid": sc_id})
     return {"ok": True}
 
 # ── Tunarr tasks (guide refresh, library scan) ───────────────────────────────
@@ -5201,6 +5304,7 @@ async def tunarr_run_task(task_name: str, body: dict | None = None):
         r = await _tunarr_run_task_request(client, url, task_name, body=body)
     if r.status_code not in (200, 202, 204):
         raise HTTPException(r.status_code, f"Tunarr task failed: {r.text[:200]}")
+    _log_app("tunarr", f"Ran Tunarr task {task_name}", metadata={"task": task_name})
     return {"ok": True, "task": task_name}
 
 # ── Tunarr link management ────────────────────────────────────────────────────
@@ -5218,12 +5322,15 @@ def tunarr_save_channel_link(body: TunarrChannelLinkIn):
             "INSERT OR REPLACE INTO tunarr_channel_links (channel_number, tunarr_id, tunarr_name, tunarr_number) VALUES (?,?,?,?)",
             (body.channel_number, body.tunarr_id, body.tunarr_name, body.tunarr_number)
         )
+    _log_app("tunarr", f"Linked ch {body.channel_number} to Tunarr channel {body.tunarr_id}",
+             metadata={"channel": body.channel_number, "tunarr_id": body.tunarr_id, "tunarr_name": body.tunarr_name})
     return {"ok": True}
 
 @app.delete("/api/tunarr/channel-links/{channel_number}")
 def tunarr_delete_channel_link(channel_number: int):
     with get_db() as conn:
         conn.execute("DELETE FROM tunarr_channel_links WHERE channel_number=?", (channel_number,))
+    _log_app("tunarr", f"Unlinked ch {channel_number} from Tunarr", metadata={"channel": channel_number})
     return {"ok": True}
 
 @app.get("/api/tunarr/collection-links")
@@ -5245,6 +5352,9 @@ def tunarr_save_collection_link(body: TunarrCollectionLinkIn):
             "INSERT OR REPLACE INTO tunarr_collection_links VALUES (?,?,?,?)",
             (body.channel_number, body.plex_type, body.tunarr_collection_id, body.tunarr_collection_name)
         )
+    _log_app("tunarr", f"Linked collection to ch {body.channel_number}",
+             metadata={"channel": body.channel_number, "plex_type": body.plex_type,
+                       "collection_id": body.tunarr_collection_id, "collection_name": body.tunarr_collection_name})
     return {"ok": True}
 
 @app.delete("/api/tunarr/collection-links/{channel_number}/{plex_type}")
@@ -5254,6 +5364,8 @@ def tunarr_delete_collection_link(channel_number: int, plex_type: str):
             "DELETE FROM tunarr_collection_links WHERE channel_number=? AND plex_type=?",
             (channel_number, plex_type)
         )
+    _log_app("tunarr", f"Removed Tunarr collection link for ch {channel_number}",
+             metadata={"channel": channel_number, "plex_type": plex_type})
     return {"ok": True}
 
 # ── Tunarr smart collection sync ──────────────────────────────────────────────
@@ -5327,6 +5439,8 @@ async def tunarr_sync_collections(channel_number: int):
         log.warning("Error during Tunarr collection sync: %s", e)
         raise HTTPException(502, f"Tunarr sync error: {e}")
 
+    _log_app("tunarr", f"Tunarr collection sync for ch {channel_number}: {len(created)} created, {len(updated)} updated",
+             metadata={"channel": channel_number, "created": created, "updated": updated})
     return {"created": created, "updated": updated}
 
 # ── Tunarr time slot push ─────────────────────────────────────────────────────
@@ -5386,6 +5500,7 @@ def _sc_response_has_search(resp: "httpx.Response") -> bool:
 async def _tunarr_write_smart_collection(
     client: "httpx.AsyncClient", url: str, sc_path: str, *,
     name: str, structured: dict, uuid: str | None = None, version: str | None = None,
+    extra: dict | None = None,
 ):
     """Create (uuid=None) or update a Tunarr smart collection.
 
@@ -5393,13 +5508,15 @@ async def _tunarr_write_smart_collection(
     with `query` for hypothetical other builds. Because `filter` is optional in
     Tunarr's schema, a 2xx alone doesn't prove the rules were saved — the
     response must echo the search object back, otherwise we retry with the
-    other field name. Returns the final httpx.Response (or None on hard failure).
+    other field name. `extra` fields (e.g. a rename riding along with a rules
+    rewrite) are merged into the body. Returns the final httpx.Response (or
+    None on hard failure).
     """
     last = None
     for field in _SC_FIELDS:
-        body = {field: structured}
+        body = {**(extra or {}), field: structured}
         if uuid is None:
-            body = {"name": name, field: structured, "keywords": ""}
+            body = {"name": name, "keywords": "", **(extra or {}), field: structured}
             resp = await client.post(f"{url}{sc_path}", json=body)
         else:
             resp = await client.put(f"{url}{sc_path}/{uuid}", json=body)
@@ -5667,6 +5784,8 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
         )
     if r.status_code not in (200, 201):
         raise HTTPException(502, f"Tunarr rejected programming update: {r.text[:300]}")
+    _log_app("tunarr", f"Pushed schedule to Tunarr for ch {channel_number}",
+             metadata={"channel": channel_number, "tunarr_id": tunarr_id, "slots": len(slots)})
     return {"ok": True, "slots_pushed": len(slots)}
 
 # ── Health check ─────────────────────────────────────────────────────────────
@@ -6068,7 +6187,8 @@ def _tool_error(exc: HTTPException) -> RuntimeError:
 @mcp_server.tool(name="list_channels")
 async def mcp_list_channels() -> list[dict]:
     """List all channels in the lineup (number, name, tier, vibe, mode, style, color)."""
-    return list_channels()
+    # Strip icon blobs (base64 PNGs) — pure noise for an LLM consumer.
+    return [{k: v for k, v in ch.items() if k != "icon"} for ch in list_channels()]
 
 @mcp_server.tool(name="get_channel")
 async def mcp_get_channel(number: int) -> dict:
@@ -6090,7 +6210,8 @@ async def mcp_create_channel(number: int, name: str, tier: str = "Galaxy Main",
                              vibe: str = "", mode: str = "Shuffle", style: str = "",
                              color: str = "blue") -> dict:
     """Create a channel. tier: 'Galaxy Main' | 'Classics' | 'Galaxy Premium'.
-    mode: 'Shuffle' | 'Flex' | 'Sequential'. Auto-syncs to Tunarr if linked."""
+    mode: 'Shuffle' | 'Flex' | 'Sequential'. If Tunarr is configured, this also
+    CREATES a matching Tunarr channel and links it (not just a sync)."""
     try:
         result = await create_channel(ChannelIn(number=number, name=name, tier=tier,
                                                 vibe=vibe, mode=mode, style=style, color=color))
@@ -6105,7 +6226,8 @@ async def mcp_update_channel(number: int, new_number: int | None = None,
                              vibe: str | None = None, mode: str | None = None,
                              style: str | None = None, color: str | None = None) -> dict:
     """Update a channel. Only the fields you pass change; pass new_number to renumber
-    (assignments, blocks and links follow the channel)."""
+    (assignments, blocks and links follow the channel). If Tunarr is configured
+    and no link exists yet, a matching Tunarr channel may be created."""
     existing = _get_channel(number)
     if not existing:
         raise RuntimeError(f"Channel {number} not found")
@@ -6231,7 +6353,10 @@ async def mcp_assign_items(channel_number: int, rating_keys: list[str]) -> dict:
             failed.append({"rating_key": rk, "error": str(e.detail)})
     if not items and failed:
         raise RuntimeError(f"No items could be fetched from Plex: {failed}")
-    result = bulk_assignments(BulkAssignmentIn(channel_number=channel_number, items=items))
+    try:
+        result = bulk_assignments(BulkAssignmentIn(channel_number=channel_number, items=items))
+    except HTTPException as e:
+        raise _tool_error(e)
     return {"added": result["added"], "skipped_duplicates": result["skipped"], "failed": failed}
 
 @mcp_server.tool(name="unassign_item")
@@ -6265,20 +6390,25 @@ async def mcp_build_collections(channel_number: int) -> dict:
         raise _tool_error(e)
 
 @mcp_server.tool(name="list_plex_collections")
-async def mcp_list_plex_collections() -> list[dict]:
-    """List every collection on the Plex server (title, type, item count, smart flag)."""
+async def mcp_list_plex_collections(offset: int = 0, limit: int = 100) -> dict:
+    """List collections on the Plex server (title, type, item count, smart flag).
+    Paged — returns total plus a window."""
     try:
-        return await plex_collections()
+        items = await plex_collections()
     except HTTPException as e:
         raise _tool_error(e)
+    return {"total": len(items), "offset": offset,
+            "collections": items[offset:offset + max(1, min(limit, 500))]}
 
 @mcp_server.tool(name="get_collection_items")
-async def mcp_get_collection_items(rating_key: str) -> list[dict]:
-    """List the items inside a Plex collection."""
+async def mcp_get_collection_items(rating_key: str, offset: int = 0, limit: int = 100) -> dict:
+    """List the items inside a Plex collection. Paged — returns total plus a window."""
     try:
-        return await plex_collection_items(rating_key)
+        items = await plex_collection_items(rating_key)
     except HTTPException as e:
         raise _tool_error(e)
+    return {"total": len(items), "offset": offset,
+            "items": items[offset:offset + max(1, min(limit, 500))]}
 
 @mcp_server.tool(name="create_smart_collection")
 async def mcp_create_smart_collection(section_id: str, title: str, type: str = "movie",
@@ -6308,14 +6438,23 @@ async def mcp_update_smart_collection(rating_key: str, section_id: str, type: st
                                       decade: int | None = None, unwatched: bool = False,
                                       content_rating: str | None = None,
                                       title_contains: str | None = None, sort: str | None = None,
-                                      limit: int | None = None,
-                                      update_filters: bool = True) -> dict:
-    """Update a smart collection's title and/or replace its filter rules.
-    Set update_filters=false to rename only."""
+                                      limit: int | None = None) -> dict:
+    """Update a smart collection's title and/or REPLACE its filter rules.
+    Filter rules are only touched when at least one filter argument (genres,
+    year_min/max, decade, unwatched, content_rating, title_contains, sort,
+    limit) is provided — passing only `title` renames without changing rules.
+    When replacing rules, pass the COMPLETE new rule set: whatever you send
+    becomes the entire filter."""
+    # Only rebuild the filter when the caller actually supplied filter args —
+    # otherwise a rename-only call would replace the rules with an empty
+    # match-everything filter.
+    filters_given = bool(genres) or unwatched or any(
+        v is not None for v in (year_min, year_max, decade, content_rating,
+                                title_contains, sort, limit))
     filters = SmartCollectionFilters(genres=genres, year_min=year_min, year_max=year_max,
                                      decade=decade, unwatched=unwatched,
                                      content_rating=content_rating,
-                                     title_contains=title_contains) if update_filters else None
+                                     title_contains=title_contains) if filters_given else None
     body = SmartCollectionUpdateIn(section_id=section_id, type=type, title=title,
                                    filters=filters, sort=sort, limit=limit)
     try:
@@ -6357,6 +6496,64 @@ async def mcp_get_recent_events(limit: int = 50) -> list[dict]:
         return plex_events(event_type=None, limit=limit)
     except HTTPException as e:
         raise _tool_error(e)
+
+def _mcp_args_summary(kwargs: dict) -> dict:
+    """Compact, log-safe view of a tool call's arguments."""
+    out = {}
+    for k, v in kwargs.items():
+        if isinstance(v, list) and len(v) > 5:
+            out[k] = f"[{len(v)} items]"
+        elif isinstance(v, str) and len(v) > 80:
+            out[k] = v[:77] + "..."
+        else:
+            out[k] = v
+    return out
+
+def _instrument_mcp_tools() -> None:
+    """Wrap every registered MCP tool so each invocation lands in the Activity
+    Log (category 'mcp') with duration, arg summary, and outcome — successes
+    and failures alike. Also converts raw network errors (Plex/Tunarr down)
+    into a readable tool error instead of an httpx traceback. Wrapping happens
+    AFTER registration so the input schemas were already built from the
+    original signatures."""
+    import inspect as _inspect
+
+    def _wrap(tool):
+        orig = tool.fn
+
+        async def logged(**kwargs):
+            t0 = time.monotonic()
+            summary = _mcp_args_summary(kwargs)
+            try:
+                res = orig(**kwargs)
+                if _inspect.isawaitable(res):
+                    res = await res
+            except httpx.HTTPError as e:
+                _log_app("mcp", f"Tool {tool.name} failed", level="error",
+                         detail=f"Upstream unreachable: {e}",
+                         duration_ms=int((time.monotonic() - t0) * 1000),
+                         metadata={"tool": tool.name, "args": summary})
+                raise RuntimeError(f"Cannot reach the upstream server: {e}") from e
+            except Exception as e:
+                _log_app("mcp", f"Tool {tool.name} failed", level="error",
+                         detail=str(e)[:500],
+                         duration_ms=int((time.monotonic() - t0) * 1000),
+                         metadata={"tool": tool.name, "args": summary})
+                raise
+            _log_app("mcp", f"Tool {tool.name}",
+                     duration_ms=int((time.monotonic() - t0) * 1000),
+                     metadata={"tool": tool.name, "args": summary})
+            return res
+
+        try:
+            tool.fn = logged
+        except Exception:  # pydantic-frozen model fallback
+            object.__setattr__(tool, "fn", logged)
+
+    for t in mcp_server._tool_manager.list_tools():
+        _wrap(t)
+
+_instrument_mcp_tools()
 
 async def _mcp_asgi(scope, receive, send):
     """Thin delegate so the mount always talks to the CURRENT session manager
