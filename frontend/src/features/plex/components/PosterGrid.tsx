@@ -73,7 +73,7 @@ export function PosterGrid({
           return (
             <div
               key={item.rating_key}
-              className={`group flex items-center gap-3 rounded-lg border transition-all px-2 py-1.5 ${
+              className={`group flex items-center gap-3 rounded-lg border transition-all px-2 py-1.5 [content-visibility:auto] [contain-intrinsic-size:auto_56px] ${
                 isAssigned
                   ? 'border-emerald-600 bg-slate-800'
                   : 'border-slate-700 bg-slate-800 hover:border-slate-500'
@@ -160,7 +160,7 @@ export function PosterGrid({
             <div
               key={item.rating_key}
               title={`${item.title}${item.year ? ` (${item.year})` : ''}`}
-              className={`group relative aspect-[2/3] rounded overflow-hidden border ${
+              className={`group relative aspect-[2/3] rounded overflow-hidden border [content-visibility:auto] [contain-intrinsic-size:auto_240px] ${
                 isAssigned ? 'border-emerald-500' : 'border-slate-700 hover:border-slate-500'
               }`}
             >
