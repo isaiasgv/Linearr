@@ -8,12 +8,12 @@ import shutil
 import sqlite3
 import time
 import uuid
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from urllib.parse import urlencode as _urlencode
 import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -2136,8 +2136,29 @@ async def generate_collections(channel_number: int):
 
 _THUMB_ALLOWED_PREFIXES = ("/library/", "/photo/", "/metadata/")
 
+# In-memory LRU for transcoded thumbs: repeat navigations hit RAM instead of
+# re-proxying Plex. Transcoded thumbs are ~10-30 KB, so 1500 entries ≈ 30-45 MB.
+_THUMB_CACHE: "OrderedDict[tuple, tuple[str, bytes]]" = OrderedDict()
+_THUMB_CACHE_MAX_ENTRIES = 1500
+_THUMB_HEADERS = {
+    "Cache-Control": "public, max-age=604800, immutable",
+    "Vary": "Accept",
+}
+
+def _thumb_cache_get(key: tuple) -> "tuple[str, bytes] | None":
+    val = _THUMB_CACHE.get(key)
+    if val is not None:
+        _THUMB_CACHE.move_to_end(key)
+    return val
+
+def _thumb_cache_put(key: tuple, content_type: str, body: bytes) -> None:
+    _THUMB_CACHE[key] = (content_type, body)
+    _THUMB_CACHE.move_to_end(key)
+    while len(_THUMB_CACHE) > _THUMB_CACHE_MAX_ENTRIES:
+        _THUMB_CACHE.popitem(last=False)
+
 @app.get("/api/plex/thumb")
-async def plex_thumb(path: str = Query(...), w: int = Query(200), h: int = Query(300)):
+async def plex_thumb(path: str = Query(...), w: int = Query(240), h: int = Query(360)):
     # SSRF hardening: `path` is caller-controlled. Only allow Plex media/photo paths,
     # reject anything that could re-point the host (//, @, backslash, scheme), send the
     # token as a header (never appended to a user-influenced URL), and don't follow
@@ -2150,18 +2171,34 @@ async def plex_thumb(path: str = Query(...), w: int = Query(200), h: int = Query
     url, token = get_plex_config()
     if not token:
         raise HTTPException(400, "Plex token not configured")
-    full_url = f"{url}{path}"
+    # Clamp dimensions: keeps payloads small and stops cache-busting via
+    # arbitrary size permutations.
+    w = max(40, min(w, 1200))
+    h = max(40, min(h, 1800))
+
+    cache_key = (path, w, h)
+    cached = _thumb_cache_get(cache_key)
+    if cached is not None:
+        content_type, body = cached
+        return Response(content=body, media_type=content_type, headers=_THUMB_HEADERS)
+
     async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
-        resp = await client.get(full_url, headers=plex_headers(token), params={"width": w, "height": h})
-    headers = {
-        "Cache-Control": "public, max-age=86400, immutable",
-        "Vary": "Accept",
-    }
-    return StreamingResponse(
-        resp.aiter_bytes(),
-        media_type=resp.headers.get("content-type", "image/jpeg"),
-        headers=headers,
-    )
+        # Plex only resizes via its transcoder — the raw thumb path ignores
+        # width/height and returns the FULL-SIZE poster (often 0.5–2 MB for a
+        # 150px grid cell). Transcoded thumbs are ~10–30 KB.
+        resp = await client.get(
+            f"{url}/photo/:/transcode",
+            headers=plex_headers(token),
+            params={"url": path, "width": w, "height": h, "minSize": 1, "upscale": 1},
+        )
+        if resp.status_code != 200 or not resp.content:
+            # Some art paths don't transcode — fall back to the raw image.
+            resp = await client.get(f"{url}{path}", headers=plex_headers(token))
+    if resp.status_code != 200:
+        raise HTTPException(resp.status_code, "Plex thumb error")
+    content_type = resp.headers.get("content-type", "image/jpeg")
+    _thumb_cache_put(cache_key, content_type, resp.content)
+    return Response(content=resp.content, media_type=content_type, headers=_THUMB_HEADERS)
 
 @app.get("/api/plex/sessions")
 async def plex_sessions():
