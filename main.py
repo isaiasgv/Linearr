@@ -515,9 +515,18 @@ class ChannelCollectionIn(BaseModel):
     collection_rating_key: str
     collection_title: str
 
+class BulkAssignmentItem(BaseModel):
+    # Bulk items carry no channel_number — the channel is set once at the top
+    # level of BulkAssignmentIn and applied to every item by the handler.
+    plex_rating_key: str
+    plex_title: str
+    plex_type: str
+    plex_thumb: str | None = None
+    plex_year: int | None = None
+
 class BulkAssignmentIn(BaseModel):
     channel_number: int
-    items: list[AssignmentIn]
+    items: list[BulkAssignmentItem]
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -942,6 +951,34 @@ def bulk_assignments(body: BulkAssignmentIn):
     _log_app("assignment", f"Bulk assign to ch {body.channel_number}: {added} added, {skipped} skipped",
              metadata={"channel": body.channel_number, "added": added, "skipped": skipped})
     return {"added": added, "skipped": skipped, "assignments": [dict(r) for r in rows]}
+
+@app.delete("/api/assignments/channel/{channel_number}")
+def purge_channel_assignments(channel_number: int, content_type: str = Query("both")):
+    """Purge a channel's assigned content in bulk. content_type: movies | shows | both.
+    Returns how many rows were removed."""
+    if content_type not in ("movies", "shows", "both"):
+        raise HTTPException(400, "content_type must be 'movies', 'shows', or 'both'")
+    if not _get_channel(channel_number):
+        raise HTTPException(404, f"Channel {channel_number} not found")
+    try:
+        with get_db() as conn:
+            if content_type == "both":
+                cur = conn.execute("DELETE FROM assignments WHERE channel_number=?", (channel_number,))
+            else:
+                # 'movies' -> plex_type 'movie', 'shows' -> 'show'
+                plex_type = "movie" if content_type == "movies" else "show"
+                cur = conn.execute(
+                    "DELETE FROM assignments WHERE channel_number=? AND plex_type=?",
+                    (channel_number, plex_type))
+            removed = cur.rowcount
+    except sqlite3.Error as e:
+        log.exception("Failed to purge assignments for ch %s", channel_number)
+        _log_app("assignment", "Failed to purge channel assignments", level="error",
+                 detail=f"{type(e).__name__}: {e}", metadata={"channel": channel_number})
+        raise HTTPException(500, f"Database error: {e}")
+    _log_app("assignment", f"Purged {content_type} from ch {channel_number}: {removed} removed",
+             level="warn", metadata={"channel": channel_number, "content_type": content_type, "removed": removed})
+    return {"ok": True, "removed": removed, "content_type": content_type}
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -6382,8 +6419,8 @@ async def mcp_assign_items(channel_number: int, rating_keys: list[str]) -> dict:
     for rk in rating_keys:
         try:
             it = await plex_item(rk)
-            items.append(AssignmentIn(
-                channel_number=channel_number, plex_rating_key=str(it["rating_key"]),
+            items.append(BulkAssignmentItem(
+                plex_rating_key=str(it["rating_key"]),
                 plex_title=it.get("title") or rk, plex_type=it.get("type") or "movie",
                 plex_thumb=it.get("thumb"), plex_year=it.get("year")))
         except HTTPException as e:
@@ -6405,7 +6442,19 @@ async def mcp_unassign_item(channel_number: int, rating_key: str) -> dict:
             (channel_number, rating_key))
     if cur.rowcount == 0:
         raise RuntimeError(f"Nothing assigned with rating key {rating_key} on channel {channel_number}")
+    _log_app("assignment", f"Unassigned {rating_key} from ch {channel_number}",
+             metadata={"channel": channel_number, "rating_key": rating_key})
     return {"ok": True, "removed": cur.rowcount}
+
+@mcp_server.tool(name="purge_channel_content")
+async def mcp_purge_channel_content(channel_number: int, content_type: str = "both") -> dict:
+    """Bulk-remove a channel's assigned content. DESTRUCTIVE. content_type:
+    'movies' removes all movies, 'shows' removes all shows, 'both' clears
+    everything assigned to the channel. Returns how many items were removed."""
+    try:
+        return purge_channel_assignments(channel_number, content_type=content_type)
+    except HTTPException as e:
+        raise _tool_error(e)
 
 # ---- Collections ---------------------------------------------------------------
 

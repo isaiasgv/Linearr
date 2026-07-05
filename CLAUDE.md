@@ -296,6 +296,24 @@ Channels are stored in the SQLite `channels` table (fields: `number, name, tier,
 
 ---
 
+## Performance invariants (keep the app feeling fast)
+
+Image-heavy navigation is the hot path. Do **not** regress these — they're what
+make view-switching feel instant:
+
+- **Thumbnails must be transcoded, never full-size.** `/api/plex/thumb` proxies
+  Plex's `/photo/:/transcode` (10–30 KB), never the raw art path (0.5–2 MB).
+  Guarded by `tests/test_thumb_perf.py` (`test_thumb_uses_plex_transcoder`).
+- **Three cache layers**: in-process LRU (`_THUMB_CACHE`), the service worker's
+  `linearr-thumbs` cache (cache-first), and a 7-day immutable `Cache-Control`.
+  Any new thumb route must keep the long-lived cache headers.
+- **`PlexThumb` always passes `w`/`h`** (≈2× the rendered CSS size) so the
+  backend transcodes to the right dimensions; dims are clamped server-side.
+- **Poster grids use `content-visibility:auto`** with an intrinsic-size hint so
+  offscreen cells skip layout/paint on large libraries.
+- React Query defaults (`staleTime` 5 min) avoid refetch churn on tab switches;
+  keep server-state reads cached, don't add `refetchOnWindowFocus`.
+
 ## Deployment
 
 ```bash
