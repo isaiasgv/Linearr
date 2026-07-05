@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { useChannelAssignments } from '@/features/assignments/hooks'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
+import { useChannelAssignments, usePurgeChannel } from '@/features/assignments/hooks'
 import {
   useChannelCollections,
   useCollectionStatus,
@@ -10,7 +10,7 @@ import { useTunarrCollectionLinks } from '@/features/tunarr/hooks'
 import { PlexBrowser } from '@/features/plex/components/PlexBrowser'
 import { AssignmentGrid } from '@/features/assignments/components/AssignmentGrid'
 import { Spinner } from '@/shared/components/ui/Spinner'
-import { StatusDot } from '@/shared/components/ui'
+import { StatusDot, confirmDialog } from '@/shared/components/ui'
 import type { CollectionStatusEntry } from '@/shared/types'
 
 type ContentSubTab = 'browse' | 'assigned'
@@ -115,6 +115,112 @@ function CollectionTypeStatus({
           </svg>
           Add from collection
         </button>
+      )}
+    </div>
+  )
+}
+
+function PurgeMenu({
+  channelNumber,
+  movieCount,
+  showCount,
+}: {
+  channelNumber: number
+  movieCount: number
+  showCount: number
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const purge = usePurgeChannel()
+  const total = movieCount + showCount
+
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [open])
+
+  async function handlePurge(
+    contentType: 'movies' | 'shows' | 'both',
+    count: number,
+    label: string,
+  ) {
+    setOpen(false)
+    if (count === 0) return
+    const confirmed = await confirmDialog({
+      title: `Remove ${label}?`,
+      text: `This removes ${count} ${label} from this channel's assignments. Your Plex library is not affected.`,
+      confirmText: 'Remove',
+      danger: true,
+    })
+    if (confirmed) purge.mutate({ channelNumber, contentType })
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={total === 0 || purge.isPending}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Remove assigned content in bulk"
+        className="flex items-center gap-1 text-xs px-2.5 py-1 text-slate-400 hover:text-red-300 border border-slate-700 hover:border-red-800 rounded-lg transition-colors disabled:opacity-40 disabled:hover:text-slate-400 disabled:hover:border-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+      >
+        {purge.isPending ? (
+          <Spinner size="sm" />
+        ) : (
+          <svg
+            className="w-3 h-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" />
+          </svg>
+        )}
+        Purge
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-1 z-20 w-44 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-1"
+        >
+          <button
+            role="menuitem"
+            onClick={() => handlePurge('movies', movieCount, 'movies')}
+            disabled={movieCount === 0}
+            className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-40 focus:outline-none focus-visible:bg-slate-700"
+          >
+            Remove all movies ({movieCount})
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => handlePurge('shows', showCount, 'shows')}
+            disabled={showCount === 0}
+            className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-40 focus:outline-none focus-visible:bg-slate-700"
+          >
+            Remove all shows ({showCount})
+          </button>
+          <div className="my-1 border-t border-slate-700" />
+          <button
+            role="menuitem"
+            onClick={() => handlePurge('both', total, 'assigned content')}
+            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-950/50 focus:outline-none focus-visible:bg-red-950/50"
+          >
+            Remove everything ({total})
+          </button>
+        </div>
       )}
     </div>
   )
@@ -262,6 +368,16 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
             {assignments.length}
           </span>
         </button>
+
+        {subTab === 'assigned' && assignments.length > 0 && (
+          <div className="ml-auto flex items-center pr-3">
+            <PurgeMenu
+              channelNumber={channelNumber}
+              movieCount={assignments.filter((a) => a.plex_type === 'movie').length}
+              showCount={assignments.filter((a) => a.plex_type === 'show').length}
+            />
+          </div>
+        )}
       </div>
 
       {/* Tab content */}

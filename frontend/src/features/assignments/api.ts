@@ -23,4 +23,9 @@ export const assignmentsApi = {
     }),
 
   unassign: (id: number) => del<void>(`/api/assignments/${id}`),
+
+  purgeChannel: (channelNumber: number, contentType: 'movies' | 'shows' | 'both') =>
+    del<{ ok: boolean; removed: number; content_type: string }>(
+      `/api/assignments/channel/${channelNumber}?content_type=${contentType}`,
+    ),
 }

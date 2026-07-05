@@ -32,7 +32,28 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       let message = res.statusText
       try {
         const body = await res.json()
-        message = body.detail || body.message || body.error || message
+        const detail = body.detail ?? body.message ?? body.error
+        // FastAPI validation errors return `detail` as an array of
+        // {loc, msg, type} objects — flatten them to a readable string
+        // instead of letting it stringify to "[object Object],...".
+        if (Array.isArray(detail)) {
+          message =
+            detail
+              .map((d) =>
+                d && typeof d === 'object'
+                  ? `${d.msg ?? JSON.stringify(d)}${
+                      Array.isArray(d.loc)
+                        ? ` (${d.loc.filter((p: unknown) => p !== 'body').join('.')})`
+                        : ''
+                    }`
+                  : String(d),
+              )
+              .join('; ') || message
+        } else if (typeof detail === 'string') {
+          message = detail
+        } else if (detail != null) {
+          message = JSON.stringify(detail)
+        }
       } catch {
         // response wasn't JSON
       }
