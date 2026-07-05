@@ -1,3 +1,10 @@
+## [0.0.1-rc.10](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.9...v0.0.1-rc.10) (2026-07-05)
+
+### Bug Fixes
+
+* **assignments:** 'Add all from collection' 422 + add channel content purge ([ce56fd5](https://github.com/isaiasgv/Linearr/commit/ce56fd56f8d174420e2e3d39203b663d20aa28f6))
+* **logs:** deterministic newest-first ordering; de-flake mcp log test ([8ee5c47](https://github.com/isaiasgv/Linearr/commit/8ee5c47af3a503b2327886d1bd328cdb81f8fd22))
+
 ## [0.0.1-rc.9](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.8...v0.0.1-rc.9) (2026-07-04)
 
 ### Performance
