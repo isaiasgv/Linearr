@@ -4186,7 +4186,9 @@ def get_app_logs(limit: int = Query(100)):
     try:
         with get_db() as conn:
             rows = conn.execute(
-                "SELECT * FROM app_logs ORDER BY created_at DESC LIMIT ?", (limit,)
+                # id DESC tiebreaks rows sharing a created_at second so
+                # newest-first is deterministic (CURRENT_TIMESTAMP is 1s-granular).
+                "SELECT * FROM app_logs ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
     except sqlite3.OperationalError:

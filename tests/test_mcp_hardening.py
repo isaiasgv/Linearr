@@ -32,7 +32,9 @@ def test_list_channels_strips_icons(auth_client):
 def test_mcp_tool_calls_are_logged(auth_client):
     token = _token(auth_client)
     _call(auth_client, token, "list_channels")
-    logs = auth_client.get("/api/app-logs?limit=50").json()
+    # High limit: the shared test DB accumulates many logs across the suite, and
+    # created_at is 1s-granular, so a small window could miss this entry.
+    logs = auth_client.get("/api/app-logs?limit=1000").json()
     entries = logs.get("logs", logs) if isinstance(logs, dict) else logs
     mcp_entries = [e for e in entries if e.get("category") == "mcp"]
     assert mcp_entries, "MCP tool calls must appear in the Activity Log"
@@ -43,7 +45,7 @@ def test_mcp_tool_errors_are_logged(auth_client):
     token = _token(auth_client)
     result = _call(auth_client, token, "get_channel", {"number": 99999})
     assert result.get("isError")
-    logs = auth_client.get("/api/app-logs?limit=50").json()
+    logs = auth_client.get("/api/app-logs?limit=1000").json()
     entries = logs.get("logs", logs) if isinstance(logs, dict) else logs
     errs = [e for e in entries
             if e.get("category") == "mcp" and e.get("level") == "error"
