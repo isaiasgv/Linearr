@@ -15,6 +15,26 @@ export function useChannelAssignments(channelNumber: number) {
   return { data: (all[channelNumber] ?? []) as Assignment[], ...rest }
 }
 
+export function usePurgeChannel() {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+
+  return useMutation({
+    mutationFn: ({
+      channelNumber,
+      contentType,
+    }: {
+      channelNumber: number
+      contentType: 'movies' | 'shows' | 'both'
+    }) => assignmentsApi.purgeChannel(channelNumber, contentType),
+    onSuccess: (result) => {
+      addToast(`Removed ${result.removed} item${result.removed === 1 ? '' : 's'}`)
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+    },
+    onError: (err: Error) => addToast(err.message, true),
+  })
+}
+
 export function useAssign() {
   const qc = useQueryClient()
   const addToast = useToastStore((s) => s.addToast)
