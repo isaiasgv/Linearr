@@ -63,19 +63,19 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
       <div className="p-3 border-b border-slate-800 space-y-1.5">
         <button
           onClick={addText}
-          className="w-full px-2.5 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded transition"
+          className="w-full px-2.5 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded-sm transition"
         >
           + Text
         </button>
         <button
           onClick={() => addImage('image/png,image/jpeg,image/webp', 'png')}
-          className="w-full px-2.5 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition"
+          className="w-full px-2.5 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-sm transition"
         >
           + Image (PNG/JPG)
         </button>
         <button
           onClick={() => addImage('image/svg+xml', 'svg')}
-          className="w-full px-2.5 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition"
+          className="w-full px-2.5 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-sm transition"
         >
           + SVG
         </button>
@@ -101,7 +101,7 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
                 e.stopPropagation()
                 toggleVisible(layer.id)
               }}
-              className="text-slate-500 hover:text-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="text-slate-500 hover:text-slate-300 rounded-sm focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
               title={layer.visible === false ? 'Show layer' : 'Hide layer'}
               aria-label={layer.visible === false ? 'Show layer' : 'Hide layer'}
             >
@@ -132,7 +132,7 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
                 e.stopPropagation()
                 moveLayer(layer.id, 1)
               }}
-              className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-slate-500 hover:text-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-slate-500 hover:text-slate-300 rounded-sm focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
               title="Move layer up"
               aria-label="Move layer up"
             >
@@ -151,7 +151,7 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
                 e.stopPropagation()
                 moveLayer(layer.id, -1)
               }}
-              className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-slate-500 hover:text-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-slate-500 hover:text-slate-300 rounded-sm focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
               title="Move layer down"
               aria-label="Move layer down"
             >
@@ -170,7 +170,7 @@ export function LayerPanel({ composition, selectedId, onSelect, onChange }: Prop
                 e.stopPropagation()
                 removeLayer(layer.id)
               }}
-              className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-red-400 hover:text-red-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-red-400 hover:text-red-300 rounded-sm focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
               title="Delete layer"
               aria-label="Delete layer"
             >

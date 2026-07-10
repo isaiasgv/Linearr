@@ -157,14 +157,14 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
 
   return (
     <div
-      className="flex-1 flex flex-col items-center justify-center bg-[repeating-conic-gradient(#1e293b_0%_25%,#0f172a_0%_50%)] bg-[length:24px_24px] overflow-auto p-6 gap-3"
+      className="flex-1 flex flex-col items-center justify-center bg-[repeating-conic-gradient(#1e293b_0%_25%,#0f172a_0%_50%)] bg-size-[24px_24px] overflow-auto p-6 gap-3"
       onClick={() => onSelect(null)}
     >
       {/* Toolbar */}
       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
         <button
           onClick={() => onChange(autoFitLayers(composition))}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded-lg transition focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
           title="Auto-fit all layers to fill canvas"
         >
           <svg
@@ -183,7 +183,7 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
       {/* tabIndex makes the div focusable so it can receive keyboard events */}
       <div
         ref={wrapperRef}
-        className="relative outline-none"
+        className="relative outline-hidden"
         style={{ width: 480, height: 480 }}
         tabIndex={0}
       >

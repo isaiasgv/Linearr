@@ -149,14 +149,14 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
             </svg>
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-t from-slate-900 via-slate-900/40 to-transparent" />
         {/* Channel badge overlaid */}
         <div className="absolute bottom-1.5 left-2 flex items-center gap-1.5">
           {channel.icon && (
-            <img src={channel.icon} alt="" className="w-7 h-7 rounded object-cover shadow" />
+            <img src={channel.icon} alt="" className="w-7 h-7 rounded-sm object-cover shadow-sm" />
           )}
           <span
-            className={`text-xs font-mono font-bold rounded px-1 py-0.5 shadow ${tierColor(channel.tier)}`}
+            className={`text-xs font-mono font-bold rounded-sm px-1 py-0.5 shadow-sm ${tierColor(channel.tier)}`}
           >
             {channel.number}
           </span>
@@ -167,12 +167,12 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
         {/* Stats top-right */}
         <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
           {shows.length > 0 && (
-            <span className="text-xs bg-blue-600/80 text-white rounded-full px-1.5 py-0 font-medium shadow">
+            <span className="text-xs bg-blue-600/80 text-white rounded-full px-1.5 py-0 font-medium shadow-sm">
               {shows.length} TV
             </span>
           )}
           {movies.length > 0 && (
-            <span className="text-xs bg-yellow-600/80 text-white rounded-full px-1.5 py-0 font-medium shadow">
+            <span className="text-xs bg-yellow-600/80 text-white rounded-full px-1.5 py-0 font-medium shadow-sm">
               {movies.length} Mov
             </span>
           )}
@@ -231,7 +231,7 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
                 className="w-11 h-11 rounded-lg object-cover bg-slate-950"
               />
               <span
-                className={`absolute -bottom-1 -right-1 text-[10px] font-mono font-bold rounded px-1 py-0 leading-tight shadow ${tierColor(channel.tier)}`}
+                className={`absolute -bottom-1 -right-1 text-[10px] font-mono font-bold rounded-sm px-1 py-0 leading-tight shadow-sm ${tierColor(channel.tier)}`}
               >
                 {channel.number}
               </span>
@@ -270,7 +270,7 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
           {thumbItems.map((a, i) => (
             <div
               key={a.plex_rating_key || i}
-              className={`${POSTER_SIZES[posterSize]} shrink-0 rounded overflow-hidden bg-slate-800 relative`}
+              className={`${POSTER_SIZES[posterSize]} shrink-0 rounded-sm overflow-hidden bg-slate-800 relative`}
               title={a.plex_title}
             >
               <img
@@ -354,7 +354,7 @@ export function CablePlexView() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search channels…"
               aria-label="Search channels"
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
             />
           </div>
 

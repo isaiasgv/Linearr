@@ -51,7 +51,7 @@ export function IconEditor({
             value={iconName}
             onChange={(e) => onNameChange(e.target.value)}
             placeholder="Icon name…"
-            className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200"
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-sm px-2 py-1 text-sm text-slate-200"
           />
         </div>
       )}

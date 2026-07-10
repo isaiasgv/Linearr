@@ -28,7 +28,7 @@ function EpisodeList({ seasonKey }: { seasonKey: string }) {
           <PlexThumb
             path={ep.thumb}
             alt={ep.title}
-            className="w-14 h-8 object-cover rounded bg-slate-900 shrink-0"
+            className="w-14 h-8 object-cover rounded-sm bg-slate-900 shrink-0"
           />
           <div className="flex-1 min-w-0">
             <p className="text-xs text-slate-200 truncate">{ep.title}</p>
@@ -115,7 +115,7 @@ export function ItemDetailModal() {
         <div>
           {/* Header */}
           <div className="flex gap-4 p-5 border-b border-slate-700">
-            <div className="w-24 shrink-0 rounded-lg overflow-hidden bg-slate-900 aspect-[2/3]">
+            <div className="w-24 shrink-0 rounded-lg overflow-hidden bg-slate-900 aspect-2/3">
               <PlexThumb
                 path={item.thumb}
                 alt={item.title}
@@ -152,7 +152,7 @@ export function ItemDetailModal() {
                 <button
                   onClick={() => closeModal('itemDetail')}
                   aria-label="Close"
-                  className="shrink-0 text-slate-500 hover:text-slate-300 transition-colors rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  className="shrink-0 text-slate-500 hover:text-slate-300 transition-colors rounded-sm focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
                   <svg
                     className="w-5 h-5"
@@ -188,19 +188,19 @@ export function ItemDetailModal() {
               {item.media_info && (
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   {item.media_info.resolution && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-900/40 border border-indigo-800/50 text-indigo-300 font-mono font-medium">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-indigo-900/40 border border-indigo-800/50 text-indigo-300 font-mono font-medium">
                       {item.media_info.resolution === '4k'
                         ? '4K'
                         : `${item.media_info.resolution}p`}
                     </span>
                   )}
                   {item.media_info.video_codec && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400 font-mono">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-slate-800 border border-slate-700 text-slate-400 font-mono">
                       {item.media_info.video_codec.toUpperCase()}
                     </span>
                   )}
                   {item.media_info.audio_codec && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400 font-mono">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-slate-800 border border-slate-700 text-slate-400 font-mono">
                       {item.media_info.audio_codec.toUpperCase()}
                       {item.media_info.audio_channels
                         ? ` ${item.media_info.audio_channels === 6 ? '5.1' : item.media_info.audio_channels === 8 ? '7.1' : `${item.media_info.audio_channels}ch`}`
@@ -208,7 +208,7 @@ export function ItemDetailModal() {
                     </span>
                   )}
                   {item.subtitles && item.subtitles.length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/30 border border-amber-800/50 text-amber-400">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-amber-900/30 border border-amber-800/50 text-amber-400">
                       Subs: {item.subtitles.slice(0, 3).join(', ')}
                       {item.subtitles.length > 3 ? ` +${item.subtitles.length - 3}` : ''}
                     </span>

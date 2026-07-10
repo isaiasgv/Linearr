@@ -27,7 +27,7 @@ Self-hosted TV channel schedule manager for Plex and Tunarr (Galaxy Network). Ru
 | Backend | Python 3.12, FastAPI, uvicorn |
 | Frontend | React 18 + Vite + TypeScript (vertical slice architecture) |
 | State | Zustand (UI state) + TanStack React Query (server state) |
-| Styling | Tailwind CSS v3 (npm, not CDN) |
+| Styling | Tailwind CSS v4 (npm, not CDN; CSS-first `@theme` config in `src/index.css`, `@tailwindcss/postcss`) |
 | Database | SQLite at `/app/data/assignments.db` (persisted via Docker volume `./data`) |
 | Plex API | httpx async client, proxied through FastAPI routes |
 | Auth | Stateless HMAC-SHA256 session cookie |

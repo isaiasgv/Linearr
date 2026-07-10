@@ -214,7 +214,7 @@ export function SettingsView() {
   ]
 
   const inputClass =
-    'w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500'
+    'w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500'
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative">
@@ -272,7 +272,7 @@ export function SettingsView() {
               <div className="space-y-5">
                 {/* Always-visible Plex account info */}
                 {plexServerInfo && (
-                  <div className="bg-gradient-to-r from-amber-950/30 to-slate-900 border border-amber-800/30 rounded-xl p-4">
+                  <div className="bg-linear-to-r from-amber-950/30 to-slate-900 border border-amber-800/30 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
                         <img src="/plex.svg" alt="Plex" className="w-10 h-10" />
@@ -368,7 +368,7 @@ export function SettingsView() {
                     </div>
                   )}
                   {testPlex.isError && (
-                    <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded px-3 py-2">
+                    <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded-sm px-3 py-2">
                       {testPlex.error.message}
                     </p>
                   )}
@@ -511,7 +511,7 @@ export function SettingsView() {
                     </div>
                   )}
                   {testAi.isError && (
-                    <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded px-3 py-2">
+                    <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded-sm px-3 py-2">
                       {testAi.error.message}
                     </p>
                   )}
@@ -601,7 +601,7 @@ export function SettingsView() {
               <div className="space-y-5">
                 {/* Always-visible Tunarr info */}
                 {(versionCheck?.version || tunarrInfo?.ok) && (
-                  <div className="bg-gradient-to-r from-emerald-950/30 to-slate-900 border border-emerald-800/30 rounded-xl p-4">
+                  <div className="bg-linear-to-r from-emerald-950/30 to-slate-900 border border-emerald-800/30 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
                         <img src="/tunarr.svg" alt="Tunarr" className="w-10 h-10" />
@@ -705,7 +705,7 @@ export function SettingsView() {
                     </div>
                   )}
                   {testTunarr.isError && (
-                    <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded px-3 py-2">
+                    <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded-sm px-3 py-2">
                       {testTunarr.error.message}
                     </p>
                   )}
@@ -921,7 +921,7 @@ function McpServerCard() {
           <Spinner />
         </div>
       ) : isError || !mcpInfo ? (
-        <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded px-3 py-2">
+        <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded-sm px-3 py-2">
           Could not load MCP server info
         </p>
       ) : (
@@ -1083,7 +1083,7 @@ function LogsPanelContainer() {
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
               aria-label="Filter logs by category"
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             >
               {appCategories.map((c) => (
                 <option key={c} value={c}>
@@ -1106,7 +1106,7 @@ function LogsPanelContainer() {
           <button
             onClick={() => clear.mutate()}
             disabled={clear.isPending || logs.length === 0}
-            className="flex items-center gap-1 px-2.5 py-1 bg-red-900/30 hover:bg-red-900/50 disabled:opacity-40 border border-red-800/50 text-red-400 rounded text-xs font-medium transition"
+            className="flex items-center gap-1 px-2.5 py-1 bg-red-900/30 hover:bg-red-900/50 disabled:opacity-40 border border-red-800/50 text-red-400 rounded-sm text-xs font-medium transition"
           >
             {clear.isPending && <Spinner size="sm" />}
             Clear
@@ -1168,7 +1168,7 @@ function AppLogsTable({ logs }: { logs: AppLog[] }) {
               <tr
                 tabIndex={0}
                 aria-expanded={expandedId === l.id}
-                className="hover:bg-slate-800/50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+                className="hover:bg-slate-800/50 cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
                 onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -1182,7 +1182,7 @@ function AppLogsTable({ logs }: { logs: AppLog[] }) {
                 </td>
                 <td className="px-3 py-2">
                   <span
-                    className={`px-1.5 py-0.5 rounded border text-[10px] font-medium uppercase ${levelBadge(l.level)}`}
+                    className={`px-1.5 py-0.5 rounded-sm border text-[10px] font-medium uppercase ${levelBadge(l.level)}`}
                   >
                     {l.level}
                   </span>
@@ -1200,7 +1200,7 @@ function AppLogsTable({ logs }: { logs: AppLog[] }) {
                       {l.detail && (
                         <div>
                           <p className="text-xs font-semibold text-slate-400 mb-1">Detail</p>
-                          <pre className="text-xs text-slate-500 bg-slate-950 rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap">
+                          <pre className="text-xs text-slate-500 bg-slate-950 rounded-sm p-2 max-h-32 overflow-auto whitespace-pre-wrap">
                             {l.detail}
                           </pre>
                         </div>
@@ -1214,7 +1214,7 @@ function AppLogsTable({ logs }: { logs: AppLog[] }) {
                       {l.metadata && (
                         <div>
                           <p className="text-xs font-semibold text-slate-400 mb-1">Metadata</p>
-                          <pre className="text-xs text-slate-500 bg-slate-950 rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap">
+                          <pre className="text-xs text-slate-500 bg-slate-950 rounded-sm p-2 max-h-32 overflow-auto whitespace-pre-wrap">
                             {(() => {
                               try {
                                 return JSON.stringify(JSON.parse(l.metadata), null, 2)
@@ -1261,7 +1261,7 @@ function AiLogsTable({ logs }: { logs: AiLog[] }) {
               <tr
                 tabIndex={0}
                 aria-expanded={expandedId === l.id}
-                className="hover:bg-slate-800/50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+                className="hover:bg-slate-800/50 cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
                 onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -1302,7 +1302,7 @@ function AiLogsTable({ logs }: { logs: AiLog[] }) {
                           <p className="text-xs font-semibold text-slate-400 mb-1">
                             Prompt (truncated)
                           </p>
-                          <pre className="text-xs text-slate-500 bg-slate-950 rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap">
+                          <pre className="text-xs text-slate-500 bg-slate-950 rounded-sm p-2 max-h-32 overflow-auto whitespace-pre-wrap">
                             {l.prompt}
                           </pre>
                         </div>
@@ -1312,7 +1312,7 @@ function AiLogsTable({ logs }: { logs: AiLog[] }) {
                           <p className="text-xs font-semibold text-slate-400 mb-1">
                             Response (truncated)
                           </p>
-                          <pre className="text-xs text-slate-500 bg-slate-950 rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap">
+                          <pre className="text-xs text-slate-500 bg-slate-950 rounded-sm p-2 max-h-32 overflow-auto whitespace-pre-wrap">
                             {l.response_raw}
                           </pre>
                         </div>
@@ -1320,7 +1320,7 @@ function AiLogsTable({ logs }: { logs: AiLog[] }) {
                       {l.error && (
                         <div>
                           <p className="text-xs font-semibold text-red-400 mb-1">Error</p>
-                          <pre className="text-xs text-red-300 bg-red-950/30 rounded p-2 whitespace-pre-wrap">
+                          <pre className="text-xs text-red-300 bg-red-950/30 rounded-sm p-2 whitespace-pre-wrap">
                             {l.error}
                           </pre>
                         </div>

@@ -82,7 +82,7 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
         <button
           onClick={handleFetchSuggestions}
           disabled={networkAdvisor.isPending}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-indigo-100 rounded transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-indigo-100 rounded-sm transition-colors disabled:opacity-50"
         >
           {networkAdvisor.isPending ? (
             <>
@@ -160,7 +160,7 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
                     onChange={(e) =>
                       setSelectedChannel(e.target.value ? Number(e.target.value) : null)
                     }
-                    className="ml-2 bg-slate-700 border border-slate-600 rounded px-2 py-0.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+                    className="ml-2 bg-slate-700 border border-slate-600 rounded-sm px-2 py-0.5 text-xs text-slate-300 focus:outline-hidden focus:border-indigo-500"
                   >
                     <option value="">All channels</option>
                     {channelNumbers.map((n) => {
@@ -186,7 +186,7 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
                           <span className="text-xs font-semibold text-slate-300">
                             Ch {suggestion.channel_number} – {suggestion.channel_name}
                           </span>
-                          <span className="text-xs bg-slate-700 text-slate-400 rounded px-1.5 py-0.5">
+                          <span className="text-xs bg-slate-700 text-slate-400 rounded-sm px-1.5 py-0.5">
                             {suggestion.items.length} item{suggestion.items.length !== 1 ? 's' : ''}
                           </span>
                         </div>
@@ -197,7 +197,7 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
                           {suggestion.items.slice(0, 5).map((item) => (
                             <div
                               key={item.id}
-                              className="flex items-center gap-1 bg-slate-700/50 rounded px-1.5 py-0.5"
+                              className="flex items-center gap-1 bg-slate-700/50 rounded-sm px-1.5 py-0.5"
                             >
                               <span className="text-xs text-slate-300 truncate max-w-[120px]">
                                 {item.plex_title}
@@ -218,7 +218,7 @@ export function NetworkSuggestionsPanel({ channelNumber }: NetworkSuggestionsPan
                       <button
                         onClick={() => handleAddAll(suggestion)}
                         disabled={bulkAssign.isPending}
-                        className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-emerald-800 hover:bg-emerald-700 text-emerald-100 rounded transition-colors disabled:opacity-50"
+                        className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-emerald-800 hover:bg-emerald-700 text-emerald-100 rounded-sm transition-colors disabled:opacity-50"
                       >
                         {bulkAssign.isPending ? (
                           <Spinner size="sm" />

@@ -14,8 +14,7 @@ const GRID_COLS: Record<PosterSize, string> = {
 
 // Poster-wall is denser than grid at every size (no caption row).
 const WALL_COLS: Record<PosterSize, string> = {
-  small:
-    'grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 xl:grid-cols-[repeat(14,minmax(0,1fr))]',
+  small: 'grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 xl:grid-cols-14',
   medium: 'grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12',
   large: 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8',
 }
@@ -82,7 +81,7 @@ export function PosterGrid({
               {/* Thumbnail */}
               <button
                 onClick={() => onDetail?.(item.rating_key)}
-                className={`${LIST_THUMB[posterSize]} shrink-0 rounded overflow-hidden bg-slate-900 relative`}
+                className={`${LIST_THUMB[posterSize]} shrink-0 rounded-sm overflow-hidden bg-slate-900 relative`}
               >
                 {item.thumb ? (
                   <PlexThumb
@@ -160,7 +159,7 @@ export function PosterGrid({
             <div
               key={item.rating_key}
               title={`${item.title}${item.year ? ` (${item.year})` : ''}`}
-              className={`group relative aspect-[2/3] rounded overflow-hidden border [content-visibility:auto] [contain-intrinsic-size:auto_240px] ${
+              className={`group relative aspect-2/3 rounded overflow-hidden border [content-visibility:auto] [contain-intrinsic-size:auto_240px] ${
                 isAssigned ? 'border-emerald-500' : 'border-slate-700 hover:border-slate-500'
               }`}
             >
@@ -168,7 +167,7 @@ export function PosterGrid({
                 role="button"
                 tabIndex={0}
                 aria-label={item.title}
-                className="absolute inset-0 bg-slate-900 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+                className="absolute inset-0 bg-slate-900 cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
                 onClick={() => onDetail?.(item.rating_key)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -190,7 +189,7 @@ export function PosterGrid({
                 )}
               </div>
               {isAssigned && (
-                <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shadow">
+                <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm">
                   <svg
                     className="w-2 h-2 text-white"
                     viewBox="0 0 24 24"
@@ -209,7 +208,7 @@ export function PosterGrid({
                       e.stopPropagation()
                       onUnassign(assignment.id)
                     }}
-                    className="pointer-events-auto px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-[10px] rounded font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    className="pointer-events-auto px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-[10px] rounded-sm font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     Remove
                   </button>
@@ -219,7 +218,7 @@ export function PosterGrid({
                       e.stopPropagation()
                       onAssign(item)
                     }}
-                    className="pointer-events-auto px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] rounded font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    className="pointer-events-auto px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] rounded-sm font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     Add
                   </button>
@@ -252,7 +251,7 @@ export function PosterGrid({
               role="button"
               tabIndex={0}
               aria-label={item.title}
-              className="relative aspect-[2/3] bg-slate-900 overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+              className="relative aspect-2/3 bg-slate-900 overflow-hidden cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
               onClick={() => onDetail?.(item.rating_key)}
               onKeyDown={(e) => {
                 // Ignore key events bubbling from the overlay action button
@@ -287,7 +286,7 @@ export function PosterGrid({
               {/* Assigned overlay */}
               {isAssigned && (
                 <div className="absolute top-1.5 right-1.5">
-                  <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm">
                     <svg
                       className="w-3 h-3 text-white"
                       viewBox="0 0 24 24"

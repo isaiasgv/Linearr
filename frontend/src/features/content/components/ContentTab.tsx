@@ -51,14 +51,14 @@ function CollectionTypeStatus({
 
       {/* Plex existence */}
       <span
-        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 rounded px-1.5 py-0.5"
+        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 rounded-sm px-1.5 py-0.5"
         title={
           plexExists
             ? `Collection exists on Plex (${plexCount} item${plexCount !== 1 ? 's' : ''})`
             : 'No Plex collection yet'
         }
       >
-        <img src="/plex.svg" alt="Plex" className="w-3 h-3 rounded-sm" />
+        <img src="/plex.svg" alt="Plex" className="w-3 h-3 rounded-xs" />
         <StatusDot state={plexExists ? 'ok' : 'unknown'} pulse={false} />
         <span className={plexExists ? 'text-slate-300' : 'text-slate-500'}>
           {plexExists ? plexCount : 'none'}
@@ -67,10 +67,10 @@ function CollectionTypeStatus({
 
       {/* Tunarr linkage */}
       <span
-        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 rounded px-1.5 py-0.5"
+        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 rounded-sm px-1.5 py-0.5"
         title={tunarrLinked ? 'Collection synced to Tunarr' : 'Not on Tunarr'}
       >
-        <img src="/tunarr.svg" alt="Tunarr" className="w-3 h-3 rounded-sm" />
+        <img src="/tunarr.svg" alt="Tunarr" className="w-3 h-3 rounded-xs" />
         <StatusDot state={tunarrLinked ? 'ok' : 'unknown'} pulse={false} />
         <span className={tunarrLinked ? 'text-slate-300' : 'text-slate-500'}>
           {tunarrLinked ? 'synced' : '—'}
@@ -174,7 +174,7 @@ function PurgeMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         title="Remove assigned content in bulk"
-        className="flex items-center gap-1 text-xs px-2.5 py-1 text-slate-400 hover:text-red-300 border border-slate-700 hover:border-red-800 rounded-lg transition-colors disabled:opacity-40 disabled:hover:text-slate-400 disabled:hover:border-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        className="flex items-center gap-1 text-xs px-2.5 py-1 text-slate-400 hover:text-red-300 border border-slate-700 hover:border-red-800 rounded-lg transition-colors disabled:opacity-40 disabled:hover:text-slate-400 disabled:hover:border-slate-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
       >
         {purge.isPending ? (
           <Spinner size="sm" />
@@ -200,7 +200,7 @@ function PurgeMenu({
             role="menuitem"
             onClick={() => handlePurge('movies', movieCount, 'movies')}
             disabled={movieCount === 0}
-            className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-40 focus:outline-none focus-visible:bg-slate-700"
+            className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-40 focus:outline-hidden focus-visible:bg-slate-700"
           >
             Remove all movies ({movieCount})
           </button>
@@ -208,7 +208,7 @@ function PurgeMenu({
             role="menuitem"
             onClick={() => handlePurge('shows', showCount, 'shows')}
             disabled={showCount === 0}
-            className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-40 focus:outline-none focus-visible:bg-slate-700"
+            className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-40 focus:outline-hidden focus-visible:bg-slate-700"
           >
             Remove all shows ({showCount})
           </button>
@@ -216,7 +216,7 @@ function PurgeMenu({
           <button
             role="menuitem"
             onClick={() => handlePurge('both', total, 'assigned content')}
-            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-950/50 focus:outline-none focus-visible:bg-red-950/50"
+            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-950/50 focus:outline-hidden focus-visible:bg-red-950/50"
           >
             Remove everything ({total})
           </button>
@@ -250,7 +250,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Collection status bar — slim + collapsible */}
-      <div className="flex-shrink-0 bg-slate-900/60 border-b border-slate-800">
+      <div className="shrink-0 bg-slate-900/60 border-b border-slate-800">
         <div className="flex items-center gap-2 px-3 py-1.5 flex-wrap">
           <button
             onClick={() => setBarOpen((v) => !v)}
@@ -344,7 +344,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
       </div>
 
       {/* Sub-tab strip */}
-      <div className="flex-shrink-0 flex border-b border-slate-800 bg-slate-950/40">
+      <div className="shrink-0 flex border-b border-slate-800 bg-slate-950/40">
         <button
           onClick={() => setSubTab('browse')}
           className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${

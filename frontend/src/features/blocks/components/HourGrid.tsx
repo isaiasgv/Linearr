@@ -13,7 +13,7 @@ interface HourGridProps {
 function PlexThumbInline({ thumb, title }: { thumb: string | null; title: string }) {
   if (!thumb) {
     return (
-      <div className="w-8 h-12 flex-shrink-0 bg-slate-700 rounded flex items-center justify-center">
+      <div className="w-8 h-12 shrink-0 bg-slate-700 rounded-sm flex items-center justify-center">
         <svg className="w-3 h-3 text-slate-500" viewBox="0 0 24 24" fill="currentColor">
           <path d="M4 4h16v16H4z" />
         </svg>
@@ -25,7 +25,7 @@ function PlexThumbInline({ thumb, title }: { thumb: string | null; title: string
       src={`/api/plex/thumb?path=${encodeURIComponent(thumb)}`}
       alt={title}
       loading="lazy"
-      className="w-8 h-12 flex-shrink-0 object-cover rounded"
+      className="w-8 h-12 shrink-0 object-cover rounded-sm"
       onError={(e) => {
         const el = e.currentTarget
         el.style.display = 'none'
@@ -124,12 +124,12 @@ export function HourGrid({ blockId, block }: HourGridProps) {
                       : 'border-slate-700 border-dashed bg-transparent hover:border-slate-600'
                   }`}
                 >
-                  <span className="text-xs text-slate-500 w-16 flex-shrink-0 tabular-nums">
+                  <span className="text-xs text-slate-500 w-16 shrink-0 tabular-nums">
                     {to12h(hour)}
                   </span>
                   <button
                     onClick={() => startAddingSlot(blockId, hour)}
-                    className="flex items-center gap-1 rounded text-xs text-slate-500 hover:text-slate-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    className="flex items-center gap-1 rounded-sm text-xs text-slate-500 hover:text-slate-300 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <svg
                       className="w-3.5 h-3.5"
@@ -150,11 +150,11 @@ export function HourGrid({ blockId, block }: HourGridProps) {
                   draggable
                   onDragStart={(e) => handleDragStart(state.slot, e)}
                   onDragEnd={handleDragEnd}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 bg-slate-750 border border-slate-600 hover:border-slate-500 cursor-grab active:cursor-grabbing transition-colors"
+                  className="flex items-center gap-2 rounded-sm px-2 py-1.5 bg-slate-750 border border-slate-600 hover:border-slate-500 cursor-grab active:cursor-grabbing transition-colors"
                 >
                   {/* Drag handle */}
                   <svg
-                    className="w-3.5 h-3.5 text-slate-600 flex-shrink-0"
+                    className="w-3.5 h-3.5 text-slate-600 shrink-0"
                     viewBox="0 0 24 24"
                     fill="currentColor"
                   >
@@ -166,7 +166,7 @@ export function HourGrid({ blockId, block }: HourGridProps) {
                     <circle cx="15" cy="18" r="1.5" />
                   </svg>
 
-                  <span className="text-xs text-slate-400 w-16 flex-shrink-0 tabular-nums">
+                  <span className="text-xs text-slate-400 w-16 shrink-0 tabular-nums">
                     {to12h(hour)}
                   </span>
 
@@ -180,7 +180,7 @@ export function HourGrid({ blockId, block }: HourGridProps) {
                       {state.slot.plex_year && (
                         <span className="text-xs text-slate-500">{state.slot.plex_year}</span>
                       )}
-                      <span className="text-xs bg-slate-700 text-slate-400 rounded px-1 py-0.5">
+                      <span className="text-xs bg-slate-700 text-slate-400 rounded-sm px-1 py-0.5">
                         {durationLabel(state.slot.duration_minutes)}
                       </span>
                       <span
@@ -200,7 +200,7 @@ export function HourGrid({ blockId, block }: HourGridProps) {
                     disabled={removeSlot.isPending}
                     title="Remove slot"
                     aria-label="Remove slot"
-                    className="flex-shrink-0 p-1 rounded text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    className="shrink-0 p-1 rounded-sm text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     {removeSlot.isPending ? (
                       <Spinner size="sm" />
@@ -220,8 +220,8 @@ export function HourGrid({ blockId, block }: HourGridProps) {
               )}
 
               {state.type === 'continuation' && (
-                <div className="flex items-center gap-2 rounded px-2 py-1.5 min-h-[36px] bg-slate-900/40 border border-slate-800/50 opacity-60">
-                  <span className="text-xs text-slate-500 w-16 flex-shrink-0 tabular-nums">
+                <div className="flex items-center gap-2 rounded-sm px-2 py-1.5 min-h-[36px] bg-slate-900/40 border border-slate-800/50 opacity-60">
+                  <span className="text-xs text-slate-500 w-16 shrink-0 tabular-nums">
                     {to12h(hour)}
                   </span>
                   <span className="text-slate-500 text-sm">↓</span>

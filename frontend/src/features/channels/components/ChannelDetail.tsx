@@ -64,7 +64,7 @@ export function ChannelDetail() {
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       {/* Header — single compact row: identity · tabs · actions */}
-      <div className="flex-shrink-0 px-4 md:px-6 py-2.5 bg-slate-900 border-b border-slate-800">
+      <div className="shrink-0 px-4 md:px-6 py-2.5 bg-slate-900 border-b border-slate-800">
         <div className="flex items-center gap-3 flex-wrap">
           {/* Identity */}
           <div className="flex items-center gap-2.5 min-w-0">
@@ -76,7 +76,7 @@ export function ChannelDetail() {
                   className="w-9 h-9 rounded-lg object-cover border border-slate-700"
                 />
                 <span
-                  className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded px-1 leading-tight shadow ${tierNumberColor(ch.tier)}`}
+                  className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded-sm px-1 leading-tight shadow-sm ${tierNumberColor(ch.tier)}`}
                 >
                   {ch.number}
                 </span>
@@ -93,12 +93,12 @@ export function ChannelDetail() {
                 <h2 className="text-base font-semibold text-slate-100 truncate">{ch.name}</h2>
                 <TierBadge tier={ch.tier} />
                 <span
-                  className={`text-xs font-medium border rounded px-1.5 py-0.5 ${tierColor(ch.tier)}`}
+                  className={`text-xs font-medium border rounded-sm px-1.5 py-0.5 ${tierColor(ch.tier)}`}
                 >
                   {assignments.length} assigned
                 </span>
                 {tunarrLink && (
-                  <span className="text-xs px-2 py-0.5 rounded border bg-emerald-900/40 text-emerald-300 border-emerald-700">
+                  <span className="text-xs px-2 py-0.5 rounded-sm border bg-emerald-900/40 text-emerald-300 border-emerald-700">
                     Tunarr #{tunarrLink.tunarr_number ?? '?'}
                   </span>
                 )}
@@ -134,7 +134,7 @@ export function ChannelDetail() {
           <div className="relative shrink-0 ml-auto" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
               aria-label="Channel actions"
               title="Channel actions"
               aria-haspopup="menu"

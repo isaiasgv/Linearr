@@ -35,7 +35,7 @@ export function SegmentedControl<T extends string>({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(option.value)}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${
               active ? ACTIVE_CLASSES[tone] : 'text-slate-400 hover:text-slate-200'
             }`}
           >

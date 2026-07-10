@@ -25,7 +25,7 @@ function StatusBadge({
       className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-full px-3 py-1 text-sm"
       title={detail || label}
     >
-      {icon && <img src={icon} alt="" className="w-4 h-4 rounded-sm" />}
+      {icon && <img src={icon} alt="" className="w-4 h-4 rounded-xs" />}
       <StatusDot
         state={connected === null ? 'unknown' : connected ? 'ok' : 'error'}
         pulse={false}

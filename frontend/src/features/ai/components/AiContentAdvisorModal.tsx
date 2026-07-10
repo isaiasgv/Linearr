@@ -26,7 +26,7 @@ function PosterCard({ item, channelNumber }: { item: PlexItem; channelNumber: nu
 
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg overflow-hidden group">
-      <div className="aspect-[2/3] bg-slate-800 relative overflow-hidden">
+      <div className="aspect-2/3 bg-slate-800 relative overflow-hidden">
         {item.thumb ? (
           <PlexThumb path={item.thumb} alt={item.title} className="w-full h-full object-cover" />
         ) : (

@@ -200,10 +200,10 @@ function TunarrChannelCard({ channel, linkedGalaxyName }: TunarrChannelCardProps
           <img
             src={channel.icon.path}
             alt={channel.name}
-            className="w-8 h-8 rounded object-cover shrink-0"
+            className="w-8 h-8 rounded-sm object-cover shrink-0"
           />
         ) : (
-          <div className="w-8 h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-sm bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
             <span className="text-xs font-mono text-slate-400">{channel.number}</span>
           </div>
         )}
@@ -212,7 +212,7 @@ function TunarrChannelCard({ channel, linkedGalaxyName }: TunarrChannelCardProps
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-xs text-slate-500">CH {channel.number}</p>
             {linkedGalaxyName && (
-              <span className="text-xs bg-emerald-900/40 border border-emerald-700/50 text-emerald-400 rounded px-1.5 py-0.5">
+              <span className="text-xs bg-emerald-900/40 border border-emerald-700/50 text-emerald-400 rounded-sm px-1.5 py-0.5">
                 → {linkedGalaxyName}
               </span>
             )}
@@ -220,7 +220,7 @@ function TunarrChannelCard({ channel, linkedGalaxyName }: TunarrChannelCardProps
         </div>
         <button
           onClick={() => setShowSchedule((v) => !v)}
-          className={`text-xs px-2 py-1 rounded border transition-colors ${showSchedule ? 'bg-indigo-900/40 border-indigo-700/50 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}
+          className={`text-xs px-2 py-1 rounded-sm border transition-colors ${showSchedule ? 'bg-indigo-900/40 border-indigo-700/50 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}
         >
           Schedule
         </button>
@@ -351,13 +351,13 @@ function ChannelBuilder247() {
                     <img
                       src={`/api/plex/thumb?path=${encodeURIComponent(s.thumb)}`}
                       alt={s.title}
-                      className="w-12 h-16 object-cover rounded shrink-0"
+                      className="w-12 h-16 object-cover rounded-sm shrink-0"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none'
                       }}
                     />
                   ) : (
-                    <div className="w-12 h-16 bg-slate-800 rounded shrink-0 flex items-center justify-center">
+                    <div className="w-12 h-16 bg-slate-800 rounded-sm shrink-0 flex items-center justify-center">
                       <span className="text-xs text-slate-600">?</span>
                     </div>
                   )}
@@ -367,7 +367,7 @@ function ChannelBuilder247() {
                     </p>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span
-                        className={`text-xs px-1.5 py-0.5 rounded ${s.type === 'shows' ? 'bg-blue-900/50 text-blue-400' : 'bg-purple-900/50 text-purple-400'}`}
+                        className={`text-xs px-1.5 py-0.5 rounded-sm ${s.type === 'shows' ? 'bg-blue-900/50 text-blue-400' : 'bg-purple-900/50 text-purple-400'}`}
                       >
                         {s.type === 'shows' ? 'TV' : 'Movies'}
                       </span>
@@ -494,7 +494,7 @@ function AiChannelSuggestions() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
                         <span
-                          className={`text-xs px-1.5 py-0.5 rounded border ${tierColor(s.tier)}`}
+                          className={`text-xs px-1.5 py-0.5 rounded-sm border ${tierColor(s.tier)}`}
                         >
                           CH {s.number}
                         </span>
@@ -512,7 +512,7 @@ function AiChannelSuggestions() {
                       {s.suggested_content.slice(0, 4).map((c) => (
                         <span
                           key={c}
-                          className="text-xs bg-slate-800 text-slate-400 rounded px-1.5 py-0.5"
+                          className="text-xs bg-slate-800 text-slate-400 rounded-sm px-1.5 py-0.5"
                         >
                           {c}
                         </span>
@@ -555,7 +555,7 @@ function AiChannelSuggestions() {
                       {pkg.channel_numbers.map((n) => (
                         <span
                           key={n}
-                          className="text-xs bg-slate-800 border border-slate-700 text-slate-400 rounded px-1.5 py-0.5"
+                          className="text-xs bg-slate-800 border border-slate-700 text-slate-400 rounded-sm px-1.5 py-0.5"
                         >
                           {n}
                         </span>
@@ -672,7 +672,7 @@ export function TunarrView() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <img src="/tunarr.svg" alt="Tunarr" className="w-5 h-5 rounded-sm" />
+              <img src="/tunarr.svg" alt="Tunarr" className="w-5 h-5 rounded-xs" />
               Tunarr Integration
             </h1>
             <div className="flex items-center gap-2 mt-0.5">
@@ -680,7 +680,7 @@ export function TunarrView() {
                 <span className="text-xs text-slate-500">{settings.tunarr_url}</span>
               )}
               {versionCheck?.version && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                <span className="text-xs px-1.5 py-0.5 rounded-sm bg-slate-800 text-slate-400 border border-slate-700">
                   v{versionCheck.version}
                 </span>
               )}
@@ -1191,7 +1191,7 @@ export function TunarrView() {
                             [ch.number]: e.target.checked,
                           }))
                         }
-                        className="rounded border-slate-600 bg-slate-700 text-indigo-500 focus:ring-indigo-500"
+                        className="rounded-sm border-slate-600 bg-slate-700 text-indigo-500 focus:ring-indigo-500"
                       />
                       <div className="flex-1 min-w-0">
                         <p

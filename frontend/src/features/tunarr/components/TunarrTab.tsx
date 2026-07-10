@@ -150,7 +150,7 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
                   <select
                     value={selectedTunarrId}
                     onChange={(e) => setSelectedTunarrId(e.target.value)}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus:border-indigo-500"
                   >
                     <option value="">Select Tunarr channel…</option>
                     {tunarrChannels.map((tc) => (
@@ -197,7 +197,7 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400 w-12">Movies</span>
               {movieCollectionLink ? (
-                <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded truncate max-w-[200px]">
+                <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-sm truncate max-w-[200px]">
                   {movieCollectionLink.tunarr_collection_name ??
                     movieCollectionLink.tunarr_collection_id}
                 </span>
@@ -237,7 +237,7 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400 w-12">Shows</span>
               {showCollectionLink ? (
-                <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded truncate max-w-[200px]">
+                <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-sm truncate max-w-[200px]">
                   {showCollectionLink.tunarr_collection_name ??
                     showCollectionLink.tunarr_collection_id}
                 </span>

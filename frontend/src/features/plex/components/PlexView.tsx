@@ -208,7 +208,7 @@ function LibraryBrowser({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter..."
               aria-label="Filter library items"
-              className="w-40 bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="w-40 bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-hidden focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500"
             />
           </div>
         </div>
@@ -341,10 +341,10 @@ export function PlexView() {
             Could not connect to Plex. Check Settings.
           </div>
         ) : serverInfo ? (
-          <div className="bg-gradient-to-r from-amber-950/30 to-slate-900 border border-amber-800/30 rounded-xl p-5">
+          <div className="bg-linear-to-r from-amber-950/30 to-slate-900 border border-amber-800/30 rounded-xl p-5">
             <div className="flex items-center gap-4 mb-4">
               <div className="w-12 h-12 rounded-xl bg-amber-600 flex items-center justify-center shrink-0">
-                <img src="/plex.svg" alt="Plex" className="w-7 h-7 rounded" />
+                <img src="/plex.svg" alt="Plex" className="w-7 h-7 rounded-sm" />
               </div>
               <div>
                 <h2 className="text-lg font-bold text-white">{serverInfo.server_name}</h2>
@@ -406,7 +406,7 @@ export function PlexView() {
                       openModal('itemDetail', { itemDetailRatingKey: s.rating_key })
                     }
                   }}
-                  className="bg-gradient-to-r from-slate-800 to-slate-900 border border-slate-700 rounded-xl overflow-hidden cursor-pointer hover:border-slate-500 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  className="bg-linear-to-r from-slate-800 to-slate-900 border border-slate-700 rounded-xl overflow-hidden cursor-pointer hover:border-slate-500 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
                   <div className="flex gap-3 p-3">
                     {/* Poster */}
@@ -440,7 +440,7 @@ export function PlexView() {
                         </div>
                         {/* Meta row */}
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="inline-flex items-center gap-1 text-[10px] bg-slate-700/60 text-slate-300 rounded px-1.5 py-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] bg-slate-700/60 text-slate-300 rounded-sm px-1.5 py-0.5">
                             <svg
                               className="w-2.5 h-2.5"
                               viewBox="0 0 24 24"
@@ -453,7 +453,7 @@ export function PlexView() {
                             </svg>
                             {s.user}
                           </span>
-                          <span className="inline-flex items-center gap-1 text-[10px] bg-slate-700/60 text-slate-400 rounded px-1.5 py-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] bg-slate-700/60 text-slate-400 rounded-sm px-1.5 py-0.5">
                             <svg
                               className="w-2.5 h-2.5"
                               viewBox="0 0 24 24"
@@ -467,17 +467,17 @@ export function PlexView() {
                             {s.player}
                           </span>
                           {s.video_resolution && (
-                            <span className="text-[10px] bg-indigo-900/40 text-indigo-300 rounded px-1.5 py-0.5 font-medium">
+                            <span className="text-[10px] bg-indigo-900/40 text-indigo-300 rounded-sm px-1.5 py-0.5 font-medium">
                               {s.video_resolution}p
                             </span>
                           )}
                           {s.transcode && (
-                            <span className="text-[10px] bg-amber-900/40 text-amber-300 rounded px-1.5 py-0.5">
+                            <span className="text-[10px] bg-amber-900/40 text-amber-300 rounded-sm px-1.5 py-0.5">
                               Transcode
                             </span>
                           )}
                           {s.state === 'paused' && (
-                            <span className="text-[10px] bg-yellow-900/40 text-yellow-300 rounded px-1.5 py-0.5">
+                            <span className="text-[10px] bg-yellow-900/40 text-yellow-300 rounded-sm px-1.5 py-0.5">
                               Paused
                             </span>
                           )}
@@ -536,7 +536,7 @@ export function PlexView() {
                           setBrowsingLibrary({ id: lib.id, title: lib.title })
                         }
                       }}
-                      className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-indigo-500 hover:bg-slate-800/80 transition-all text-left cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                      className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-indigo-500 hover:bg-slate-800/80 transition-all text-left cursor-pointer group focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <div
@@ -593,7 +593,7 @@ export function PlexView() {
                             e.stopPropagation()
                             scanLibrary.mutate(lib.id)
                           }}
-                          className="text-xs text-slate-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-all rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                          className="text-xs text-slate-500 hover:text-indigo-400 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-all rounded-sm focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                           title="Scan library"
                           aria-label={`Scan ${lib.title}`}
                         >
@@ -736,7 +736,7 @@ export function PlexView() {
                           setBrowsingCollection({ ratingKey: coll.rating_key, title: coll.title })
                         }
                       }}
-                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 hover:border-slate-600 transition-colors group relative cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                      className="bg-slate-800 border border-slate-700 rounded-xl p-3 hover:border-slate-600 transition-colors group relative cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                     >
                       <div className="flex items-center gap-2 mb-2">
                         {coll.thumb ? (
@@ -785,7 +785,7 @@ export function PlexView() {
                           }
                         }}
                         disabled={deleteCollection.isPending}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity p-1 bg-red-900/60 hover:bg-red-900 rounded text-red-400 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity p-1 bg-red-900/60 hover:bg-red-900 rounded-sm text-red-400 disabled:cursor-not-allowed focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                         title="Delete collection"
                         aria-label={`Delete collection ${coll.title}`}
                       >
