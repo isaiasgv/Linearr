@@ -3,7 +3,7 @@ interface SkeletonProps {
 }
 
 export function Skeleton({ className = '' }: SkeletonProps) {
-  return <div className={`animate-pulse bg-slate-700/50 rounded ${className}`} />
+  return <div className={`animate-pulse bg-slate-700/50 rounded-sm ${className}`} />
 }
 
 export function ChannelSkeleton() {
@@ -21,7 +21,7 @@ export function ChannelSkeleton() {
 export function PosterSkeleton() {
   return (
     <div className="space-y-2">
-      <Skeleton className="aspect-[2/3] rounded-lg" />
+      <Skeleton className="aspect-2/3 rounded-lg" />
       <Skeleton className="h-3 w-3/4" />
       <Skeleton className="h-2.5 w-1/2" />
     </div>
@@ -47,10 +47,10 @@ export function BlockSkeleton() {
       </div>
       <div className="flex gap-1">
         {Array.from({ length: 7 }, (_, i) => (
-          <Skeleton key={i} className="h-6 w-8 rounded" />
+          <Skeleton key={i} className="h-6 w-8 rounded-sm" />
         ))}
       </div>
-      <Skeleton className="h-12 w-full rounded" />
+      <Skeleton className="h-12 w-full rounded-sm" />
     </div>
   )
 }

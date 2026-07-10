@@ -47,7 +47,7 @@ export function AssignmentGrid({ channelNumber }: AssignmentGridProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Filter tabs */}
-      <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 border-b border-slate-800">
+      <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-slate-800">
         <span className="text-xs text-slate-500 font-medium mr-1">Filter:</span>
         {TYPE_FILTERS.map(({ label, value }) => (
           <button
@@ -83,7 +83,7 @@ export function AssignmentGrid({ channelNumber }: AssignmentGridProps) {
               title={value.charAt(0).toUpperCase() + value.slice(1)}
               aria-label={`${value.charAt(0).toUpperCase() + value.slice(1)} grid size`}
               aria-pressed={gridSize === value}
-              className={`p-1 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+              className={`p-1 rounded transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                 gridSize === value
                   ? 'bg-slate-700 text-white'
                   : 'text-slate-500 hover:text-slate-300'
@@ -142,7 +142,7 @@ export function AssignmentGrid({ channelNumber }: AssignmentGridProps) {
                 className="group relative rounded-lg overflow-hidden border border-slate-700 bg-slate-800 hover:border-slate-600 transition-all"
               >
                 {/* Poster */}
-                <div className="relative aspect-[2/3] bg-slate-900 overflow-hidden">
+                <div className="relative aspect-2/3 bg-slate-900 overflow-hidden">
                   {a.plex_thumb ? (
                     <PlexThumb
                       path={a.plex_thumb}

@@ -159,7 +159,7 @@ export function ChannelSidebar() {
           accent="bg-orange-900/40 border border-orange-700 text-orange-300"
           onClick={() => setActiveView('plex')}
           label="Plex"
-          icon={<img src="/plex.svg" alt="Plex" className="w-4 h-4 rounded-sm" />}
+          icon={<img src="/plex.svg" alt="Plex" className="w-4 h-4 rounded-xs" />}
           trailing={
             plexSessions.length > 0 ? (
               <span className="ml-auto flex items-center gap-1">
@@ -212,7 +212,7 @@ export function ChannelSidebar() {
           accent="bg-emerald-900/40 border border-emerald-700 text-emerald-300"
           onClick={() => setActiveView('tunarr')}
           label="Tunarr"
-          icon={<img src="/tunarr.svg" alt="Tunarr" className="w-4 h-4 rounded-sm" />}
+          icon={<img src="/tunarr.svg" alt="Tunarr" className="w-4 h-4 rounded-xs" />}
           trailing={
             tunarrLinkedCount > 0 ? (
               <span className="ml-auto text-xs bg-emerald-700 text-emerald-100 rounded-full px-1.5 py-0.5 font-semibold">
@@ -275,13 +275,13 @@ export function ChannelSidebar() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search channels..."
               aria-label="Search channels"
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
             {search && (
               <button
                 onClick={() => setSearch('')}
                 aria-label="Clear search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded text-slate-500 hover:text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm text-slate-500 hover:text-slate-300 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -363,14 +363,14 @@ export function ChannelSidebar() {
                     className="w-8 h-8 rounded-lg object-cover bg-slate-900"
                   />
                   <span
-                    className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded px-1 leading-tight shadow ${tierNumberColor(ch.tier)}`}
+                    className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded-sm px-1 leading-tight shadow-sm ${tierNumberColor(ch.tier)}`}
                   >
                     {ch.number}
                   </span>
                 </div>
               ) : (
                 <span
-                  className={`flex-shrink-0 w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}
+                  className={`shrink-0 w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}
                 >
                   {ch.number}
                 </span>
@@ -381,7 +381,7 @@ export function ChannelSidebar() {
                   <span className="text-sm font-medium text-slate-100 truncate">{ch.name}</span>
                   {isLinked && (
                     <span
-                      className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400"
+                      className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400"
                       title="Linked to Tunarr"
                     />
                   )}
@@ -391,7 +391,7 @@ export function ChannelSidebar() {
 
               {assignments.length > 0 && (
                 <span
-                  className={`flex-shrink-0 text-xs rounded-full px-1.5 py-0.5 font-medium border ${tierColor(ch.tier)}`}
+                  className={`shrink-0 text-xs rounded-full px-1.5 py-0.5 font-medium border ${tierColor(ch.tier)}`}
                 >
                   {assignments.length}
                 </span>

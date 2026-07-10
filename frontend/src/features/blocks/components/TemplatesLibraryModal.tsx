@@ -97,7 +97,7 @@ export function TemplatesLibraryModal() {
         <button
           onClick={handleClose}
           aria-label="Close"
-          className="p-1.5 text-slate-400 hover:text-slate-200 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="p-1.5 text-slate-400 hover:text-slate-200 rounded-sm transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <svg
             className="w-4 h-4"
@@ -128,7 +128,7 @@ export function TemplatesLibraryModal() {
         {!isLoading && !isError && (
           <>
             {/* Category sidebar */}
-            <aside className="w-44 flex-shrink-0 border-r border-slate-700 overflow-y-auto py-2">
+            <aside className="w-44 shrink-0 border-r border-slate-700 overflow-y-auto py-2">
               {categories.length === 0 && (
                 <p className="text-xs text-slate-500 px-4 py-3">No categories</p>
               )}
@@ -189,7 +189,7 @@ export function TemplatesLibraryModal() {
                     <button
                       onClick={() => handleApply(template)}
                       disabled={createBlock.isPending}
-                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-indigo-100 rounded transition-colors disabled:opacity-50"
+                      className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-700 hover:bg-indigo-600 text-indigo-100 rounded-sm transition-colors disabled:opacity-50"
                     >
                       {createBlock.isPending ? <Spinner size="sm" /> : null}
                       Apply

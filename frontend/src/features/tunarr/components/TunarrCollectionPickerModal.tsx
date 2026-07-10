@@ -84,7 +84,7 @@ export function TunarrCollectionPickerModal() {
             placeholder="Filter smart collections..."
             aria-label="Filter smart collections"
             autoFocus
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-hidden focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500"
           />
         </div>
       </div>

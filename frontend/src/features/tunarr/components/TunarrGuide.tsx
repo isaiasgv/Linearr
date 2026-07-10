@@ -40,7 +40,7 @@ function ProgramBar({ title, episode, startMs, durationMs, timelineStart }: Prog
 
   return (
     <div
-      className="absolute top-1 bottom-1 bg-indigo-900/60 border border-indigo-700/50 rounded px-1.5 py-0.5 overflow-hidden hover:bg-indigo-800/70 hover:border-indigo-600 transition-colors cursor-default group"
+      className="absolute top-1 bottom-1 bg-indigo-900/60 border border-indigo-700/50 rounded-sm px-1.5 py-0.5 overflow-hidden hover:bg-indigo-800/70 hover:border-indigo-600 transition-colors cursor-default group"
       style={{ left: `${left}px`, width: `${width}px` }}
       title={`${title}${epLabel ? ` (${epLabel})` : ''}\n${formatTime(startMs)} — ${formatTime(startMs + durationMs)}`}
     >
@@ -133,7 +133,7 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
                   className="flex items-center gap-2 px-3 border-b border-slate-800/50 hover:bg-slate-900/50"
                   style={{ height: ROW_HEIGHT }}
                 >
-                  <span className="text-xs font-mono bg-slate-800 text-slate-400 rounded px-1.5 py-0.5 shrink-0">
+                  <span className="text-xs font-mono bg-slate-800 text-slate-400 rounded-sm px-1.5 py-0.5 shrink-0">
                     {ch.tunarr_number ?? ch.channel_number}
                   </span>
                   <span className="text-sm text-slate-200 truncate">
@@ -148,7 +148,7 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
           <div ref={scrollRef} className="flex-1 overflow-auto" style={{ scrollbarWidth: 'thin' }}>
             {/* Time header */}
             <div
-              className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-sm border-b border-slate-800 flex"
+              className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-xs border-b border-slate-800 flex"
               style={{ width: totalWidth, height: 32 }}
             >
               {timeSlots.map((ts) => (

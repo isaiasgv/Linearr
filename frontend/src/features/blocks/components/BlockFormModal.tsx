@@ -118,7 +118,7 @@ export function BlockFormModal() {
             type="button"
             onClick={handleClose}
             aria-label="Close"
-            className="p-1.5 text-slate-400 hover:text-slate-200 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="p-1.5 text-slate-400 hover:text-slate-200 rounded-sm transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
             <svg
               className="w-4 h-4"
@@ -164,7 +164,7 @@ export function BlockFormModal() {
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="e.g. Primetime"
               required
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 transition-colors"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 transition-colors"
             />
           </div>
 
@@ -183,7 +183,7 @@ export function BlockFormModal() {
                 value={form.start_time}
                 onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))}
                 required
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 transition-colors"
               />
             </div>
             <div>
@@ -196,7 +196,7 @@ export function BlockFormModal() {
                 value={form.end_time}
                 onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))}
                 required
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 transition-colors"
               />
             </div>
           </div>
@@ -260,7 +260,7 @@ export function BlockFormModal() {
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               placeholder="Optional notes..."
               rows={3}
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 transition-colors resize-none"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 transition-colors resize-none"
             />
           </div>
         </div>

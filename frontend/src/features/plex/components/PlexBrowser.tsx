@@ -173,7 +173,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Slim sticky toolbar */}
-      <div className="flex-shrink-0 sticky top-0 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800 px-3 py-2 flex items-center gap-2 flex-wrap">
+      <div className="shrink-0 sticky top-0 z-10 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800 px-3 py-2 flex items-center gap-2 flex-wrap">
         {/* Source toggle */}
         <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
           {(['library', 'collection'] as Source[]).map((s) => (
@@ -203,7 +203,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
               }}
               disabled={librariesLoading}
               aria-label="Plex library"
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"
             >
               <option value="">Select library…</option>
               {libraries.map((lib) => (
@@ -226,7 +226,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
               value={selectedCollection}
               onChange={(e) => setSelectedCollection(e.target.value)}
               aria-label="Plex collection"
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 max-w-[14rem]"
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 max-w-56"
             >
               <option value="">Select collection…</option>
               {collections.map((c) => (
@@ -246,14 +246,14 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
         )}
 
         {/* Search */}
-        <div className="relative flex-1 min-w-[8rem]">
+        <div className="relative flex-1 min-w-32">
           <input
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search…"
             aria-label="Search Plex"
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
           />
         </div>
 
@@ -321,7 +321,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
                       setLoadLibrary(true)
                     }}
                     aria-label="Genre"
-                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    className="bg-slate-800 border border-slate-700 rounded-sm px-2 py-1 text-xs text-slate-200 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <option value="">All Genres</option>
                     {filterOptions.genres.map((g) => (
@@ -339,7 +339,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
                       setLoadLibrary(true)
                     }}
                     aria-label="Year"
-                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    className="bg-slate-800 border border-slate-700 rounded-sm px-2 py-1 text-xs text-slate-200 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <option value="">All Years</option>
                     {filterOptions.years.map((y) => (
@@ -357,7 +357,7 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
                       setLoadLibrary(true)
                     }}
                     aria-label="Content rating"
-                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    className="bg-slate-800 border border-slate-700 rounded-sm px-2 py-1 text-xs text-slate-200 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <option value="">All Ratings</option>
                     {filterOptions.content_ratings.map((r) => (

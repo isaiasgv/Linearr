@@ -10,6 +10,35 @@ import { Button, Input, Field, Card, confirmDialog } from '@/shared/components/u
 
 ---
 
+## Tailwind v4
+
+Styling is **Tailwind CSS v4** with CSS-first config. There is **no
+`tailwind.config.js`** — tokens live in a `@theme` block at the top of
+`frontend/src/index.css`, and the entry is `@import "tailwindcss"` (not the old
+`@tailwind base/components/utilities` directives). Build runs through
+`@tailwindcss/postcss`; content sources are auto-detected (no `content` array).
+
+Custom tokens defined in `@theme`: the `brand`/`success`/`danger`/`warning`
+semantic ramps (mapped to indigo/emerald/red/amber), `slate-750` (`#293548`),
+the `galaxy-*` legacy palette, and `text-2xs` (0.6875rem). Raw palette names
+(`indigo-600`, `slate-900`, …) remain valid and are what most components use.
+
+**Two v4 compatibility shims live in `@layer base` in `index.css` — keep them:**
+- **Border color** — v4 defaults `border` to `currentColor`; a base rule restores
+  the v3 `gray-200` default so the ~176 bare-`border` sites render unchanged.
+- **Button cursor** — v4's Preflight no longer sets `cursor: pointer` on buttons;
+  a base rule restores it for enabled `button` / `[role=button]` elements.
+
+**Dark-only:** the app never uses `dark:` variants — it is always dark, so there
+is no dark-mode toggle or `@custom-variant dark`. Do not introduce `dark:`
+utilities; style directly with the slate/indigo tokens below.
+
+The **four component states** (empty / loading / error / ready) have a reference
+implementation at `frontend/src/shared/components/ui/StateExample.tsx` — copy its
+`Result<T>` discriminated-union pattern rather than assuming "ready".
+
+---
+
 ## Tokens
 
 ### Surface hierarchy

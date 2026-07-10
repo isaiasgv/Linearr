@@ -21,7 +21,7 @@ const DURATION_OPTIONS = [
 function ItemThumb({ thumb, title }: { thumb: string | null; title: string }) {
   if (!thumb) {
     return (
-      <div className="w-7 h-10 flex-shrink-0 bg-slate-700 rounded flex items-center justify-center">
+      <div className="w-7 h-10 shrink-0 bg-slate-700 rounded-sm flex items-center justify-center">
         <svg className="w-3 h-3 text-slate-500" viewBox="0 0 24 24" fill="currentColor">
           <rect x="4" y="4" width="16" height="16" rx="1" />
         </svg>
@@ -33,7 +33,7 @@ function ItemThumb({ thumb, title }: { thumb: string | null; title: string }) {
       src={`/api/plex/thumb?path=${encodeURIComponent(thumb)}`}
       alt={title}
       loading="lazy"
-      className="w-7 h-10 flex-shrink-0 object-cover rounded"
+      className="w-7 h-10 shrink-0 object-cover rounded-sm"
       onError={(e) => {
         e.currentTarget.style.display = 'none'
       }}
@@ -139,7 +139,7 @@ export function SlotEditor({ blockId, targetHour }: SlotEditorProps) {
           onChange={(e) => setSlotSearch(e.target.value)}
           placeholder="Search Plex..."
           autoFocus
-          className="w-full bg-slate-800 border border-slate-600 rounded px-2.5 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+          className="w-full bg-slate-800 border border-slate-600 rounded-sm px-2.5 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-hidden focus:border-indigo-500 transition-colors"
         />
       </div>
 
