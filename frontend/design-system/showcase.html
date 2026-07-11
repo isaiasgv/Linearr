@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Linearr — Design System</title>
+    <!-- Compiled from src/index.css by showcase-build.mjs; renders standalone via file://. -->
+    <link rel="stylesheet" href="./app.css" />
+    <style>
+      /* Showcase chrome only — NOT part of the design system. */
+      body { background: #020617; color: #e2e8f0; }
+      .ds-wrap { max-width: 1100px; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+      .ds-wrap h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+      .ds-wrap h2 { font-size: 1.25rem; font-weight: 600; margin: 2.5rem 0 1rem; color: #f1f5f9; border-bottom: 1px solid #1e293b; padding-bottom: 0.5rem; }
+      .ds-wrap h3 { font-size: 0.8125rem; font-weight: 600; margin: 1.25rem 0 0.5rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem; }
+      .sw { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.5rem; background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; font-size: 0.75rem; }
+      .sw .chip { width: 20px; height: 20px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; }
+      .sw code { color: #cbd5e1; }
+      .sw .val { margin-left: auto; color: #64748b; font-family: ui-monospace, monospace; font-size: 0.6875rem; }
+      .type .row { display: flex; align-items: baseline; justify-content: space-between; padding: 0.375rem 0; border-bottom: 1px solid #0f172a; color: #e2e8f0; }
+      .type .row .val { font-size: 0.75rem; color: #64748b; font-family: ui-monospace, monospace; }
+      .gallery { display: flex; flex-direction: column; gap: 0.75rem; }
+      .demo { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 1rem; background: #0f172a; border: 1px solid #1e293b; border-radius: 0.75rem; }
+      .lbl { font-size: 0.6875rem; color: #64748b; width: 100%; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      .note { color: #64748b; font-size: 0.8125rem; margin-top: 0.25rem; }
+    </style>
+  </head>
+  <body>
+    <div class="ds-wrap">
+      <h1>Linearr Design System</h1>
+      <p class="note">
+        Dark-only · slate surfaces · indigo brand · Tailwind v4. Foundations below are
+        auto-generated from <code>src/index.css</code> <code>@theme</code>; the component kit
+        is hand-authored. Full reference: <code>docs/DESIGN_SYSTEM.md</code>.
+      </p>
+
+      <!-- TOKENS:START -->
+<!-- AUTO-GENERATED from src/index.css @theme — do not edit by hand; run npm run showcase:build -->
+<h2>Colors</h2>
+<h3>brand</h3>
+<div class="grid">
+<div class="sw"><span class="chip" style="background:#eef2ff"></span><code>brand-50</code><span class="val">#eef2ff</span></div>
+<div class="sw"><span class="chip" style="background:#e0e7ff"></span><code>brand-100</code><span class="val">#e0e7ff</span></div>
+<div class="sw"><span class="chip" style="background:#c7d2fe"></span><code>brand-200</code><span class="val">#c7d2fe</span></div>
+<div class="sw"><span class="chip" style="background:#a5b4fc"></span><code>brand-300</code><span class="val">#a5b4fc</span></div>
+<div class="sw"><span class="chip" style="background:#818cf8"></span><code>brand-400</code><span class="val">#818cf8</span></div>
+<div class="sw"><span class="chip" style="background:#6366f1"></span><code>brand-500</code><span class="val">#6366f1</span></div>
+<div class="sw"><span class="chip" style="background:#4f46e5"></span><code>brand-600</code><span class="val">#4f46e5</span></div>
+<div class="sw"><span class="chip" style="background:#4338ca"></span><code>brand-700</code><span class="val">#4338ca</span></div>
+<div class="sw"><span class="chip" style="background:#3730a3"></span><code>brand-800</code><span class="val">#3730a3</span></div>
+<div class="sw"><span class="chip" style="background:#312e81"></span><code>brand-900</code><span class="val">#312e81</span></div>
+<div class="sw"><span class="chip" style="background:#1e1b4b"></span><code>brand-950</code><span class="val">#1e1b4b</span></div>
+</div>
+<h3>danger</h3>
+<div class="grid">
+<div class="sw"><span class="chip" style="background:#fef2f2"></span><code>danger-50</code><span class="val">#fef2f2</span></div>
+<div class="sw"><span class="chip" style="background:#fee2e2"></span><code>danger-100</code><span class="val">#fee2e2</span></div>
+<div class="sw"><span class="chip" style="background:#fecaca"></span><code>danger-200</code><span class="val">#fecaca</span></div>
+<div class="sw"><span class="chip" style="background:#fca5a5"></span><code>danger-300</code><span class="val">#fca5a5</span></div>
+<div class="sw"><span class="chip" style="background:#f87171"></span><code>danger-400</code><span class="val">#f87171</span></div>
+<div class="sw"><span class="chip" style="background:#ef4444"></span><code>danger-500</code><span class="val">#ef4444</span></div>
+<div class="sw"><span class="chip" style="background:#dc2626"></span><code>danger-600</code><span class="val">#dc2626</span></div>
+<div class="sw"><span class="chip" style="background:#b91c1c"></span><code>danger-700</code><span class="val">#b91c1c</span></div>
+<div class="sw"><span class="chip" style="background:#991b1b"></span><code>danger-800</code><span class="val">#991b1b</span></div>
+<div class="sw"><span class="chip" style="background:#7f1d1d"></span><code>danger-900</code><span class="val">#7f1d1d</span></div>
+<div class="sw"><span class="chip" style="background:#450a0a"></span><code>danger-950</code><span class="val">#450a0a</span></div>
+</div>
+<h3>slate</h3>
+<div class="grid">
+<div class="sw"><span class="chip" style="background:#293548"></span><code>slate-750</code><span class="val">#293548</span></div>
+</div>
+<h3>success</h3>
+<div class="grid">
+<div class="sw"><span class="chip" style="background:#ecfdf5"></span><code>success-50</code><span class="val">#ecfdf5</span></div>
+<div class="sw"><span class="chip" style="background:#d1fae5"></span><code>success-100</code><span class="val">#d1fae5</span></div>
+<div class="sw"><span class="chip" style="background:#a7f3d0"></span><code>success-200</code><span class="val">#a7f3d0</span></div>
+<div class="sw"><span class="chip" style="background:#6ee7b7"></span><code>success-300</code><span class="val">#6ee7b7</span></div>
+<div class="sw"><span class="chip" style="background:#34d399"></span><code>success-400</code><span class="val">#34d399</span></div>
+<div class="sw"><span class="chip" style="background:#10b981"></span><code>success-500</code><span class="val">#10b981</span></div>
+<div class="sw"><span class="chip" style="background:#059669"></span><code>success-600</code><span class="val">#059669</span></div>
+<div class="sw"><span class="chip" style="background:#047857"></span><code>success-700</code><span class="val">#047857</span></div>
+<div class="sw"><span class="chip" style="background:#065f46"></span><code>success-800</code><span class="val">#065f46</span></div>
+<div class="sw"><span class="chip" style="background:#064e3b"></span><code>success-900</code><span class="val">#064e3b</span></div>
+<div class="sw"><span class="chip" style="background:#022c22"></span><code>success-950</code><span class="val">#022c22</span></div>
+</div>
+<h3>warning</h3>
+<div class="grid">
+<div class="sw"><span class="chip" style="background:#fffbeb"></span><code>warning-50</code><span class="val">#fffbeb</span></div>
+<div class="sw"><span class="chip" style="background:#fef3c7"></span><code>warning-100</code><span class="val">#fef3c7</span></div>
+<div class="sw"><span class="chip" style="background:#fde68a"></span><code>warning-200</code><span class="val">#fde68a</span></div>
+<div class="sw"><span class="chip" style="background:#fcd34d"></span><code>warning-300</code><span class="val">#fcd34d</span></div>
+<div class="sw"><span class="chip" style="background:#fbbf24"></span><code>warning-400</code><span class="val">#fbbf24</span></div>
+<div class="sw"><span class="chip" style="background:#f59e0b"></span><code>warning-500</code><span class="val">#f59e0b</span></div>
+<div class="sw"><span class="chip" style="background:#d97706"></span><code>warning-600</code><span class="val">#d97706</span></div>
+<div class="sw"><span class="chip" style="background:#b45309"></span><code>warning-700</code><span class="val">#b45309</span></div>
+<div class="sw"><span class="chip" style="background:#92400e"></span><code>warning-800</code><span class="val">#92400e</span></div>
+<div class="sw"><span class="chip" style="background:#78350f"></span><code>warning-900</code><span class="val">#78350f</span></div>
+<div class="sw"><span class="chip" style="background:#451a03"></span><code>warning-950</code><span class="val">#451a03</span></div>
+</div>
+<h3>standalone</h3>
+<div class="grid">
+<div class="sw"><span class="chip" style="background:#0f172a"></span><code>galaxy</code><span class="val">#0f172a</span></div>
+<div class="sw"><span class="chip" style="background:#1e293b"></span><code>galaxy-card</code><span class="val">#1e293b</span></div>
+<div class="sw"><span class="chip" style="background:#334155"></span><code>galaxy-border</code><span class="val">#334155</span></div>
+</div>
+<h2>Type scale</h2>
+<div class="type">
+<div class="row" style="font-size:0.6875rem"><span>text-2xs</span><span class="val">0.6875rem / 11px</span></div>
+</div>
+<!-- TOKENS:END -->
+
+      <!-- KIT:START — hand-authored component gallery; never overwritten by the build -->
+      <h2>Components</h2>
+      <div class="gallery">
+        <div class="demo">
+          <span class="lbl">Buttons — variants</span>
+          <button class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium px-4 py-2 text-sm bg-indigo-600 text-white hover:bg-indigo-500">Primary</button>
+          <button class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium px-4 py-2 text-sm bg-slate-800 text-slate-100 hover:bg-slate-750 border border-slate-700">Secondary</button>
+          <button class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Ghost</button>
+          <button class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-500">Danger</button>
+          <button class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium px-4 py-2 text-sm bg-red-500/10 text-red-400 hover:bg-red-500/20">Danger soft</button>
+          <button class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium px-4 py-2 text-sm bg-emerald-600 text-white hover:bg-emerald-500">Success</button>
+        </div>
+
+        <div class="demo">
+          <span class="lbl">Buttons — sizes</span>
+          <button class="inline-flex items-center rounded-lg font-medium bg-indigo-600 text-white px-2 py-1 text-2xs">xs</button>
+          <button class="inline-flex items-center rounded-lg font-medium bg-indigo-600 text-white px-3 py-1.5 text-xs">sm</button>
+          <button class="inline-flex items-center rounded-lg font-medium bg-indigo-600 text-white px-4 py-2 text-sm">md</button>
+        </div>
+
+        <div class="demo">
+          <span class="lbl">Form controls</span>
+          <input class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500" placeholder="Channel name" />
+          <select class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100">
+            <option>Galaxy Main</option><option>Classics</option>
+          </select>
+          <input class="bg-slate-900 border border-red-500 rounded-lg px-3 py-2 text-sm text-slate-100" value="invalid" />
+        </div>
+
+        <div class="demo">
+          <span class="lbl">Cards — surface levels</span>
+          <div class="bg-slate-900 border border-slate-700 rounded-xl p-4 text-sm text-slate-300">base · slate-900</div>
+          <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 text-sm text-slate-300">raised · slate-800</div>
+        </div>
+
+        <div class="demo">
+          <span class="lbl">Badges — Plex type &amp; tiers</span>
+          <span class="text-2xs font-medium rounded px-1.5 py-0.5 bg-purple-500/15 text-purple-300">movie</span>
+          <span class="text-2xs font-medium rounded px-1.5 py-0.5 bg-blue-500/15 text-blue-300">show</span>
+          <span class="text-xs font-mono font-bold rounded px-1.5 py-0.5 bg-indigo-500/15 text-indigo-300">100</span>
+        </div>
+
+        <div class="demo">
+          <span class="lbl">StatusDot</span>
+          <span class="inline-flex items-center gap-1.5 text-xs text-slate-300"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Connected</span>
+          <span class="inline-flex items-center gap-1.5 text-xs text-slate-300"><span class="w-2 h-2 rounded-full bg-red-500"></span>Unreachable</span>
+          <span class="inline-flex items-center gap-1.5 text-xs text-slate-300"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Degraded</span>
+          <span class="inline-flex items-center gap-1.5 text-xs text-slate-300"><span class="w-2 h-2 rounded-full bg-slate-500"></span>Unknown</span>
+        </div>
+
+        <div class="demo" style="flex-direction: column; align-items: stretch;">
+          <span class="lbl">Four states (empty / loading / error / ready) — see StateExample.tsx</span>
+          <div class="flex flex-col items-center justify-center text-center px-6 py-8 border border-slate-800 rounded-lg">
+            <p class="text-sm font-medium text-slate-300">No blocks yet</p>
+            <p class="mt-1 text-xs text-slate-500">Create a schedule block to start planning.</p>
+          </div>
+        </div>
+      </div>
+      <!-- KIT:END -->
+
+      <p class="note" style="margin-top: 3rem;">
+        Regenerate the Foundations section with <code>npm run showcase:build</code> after
+        editing tokens in <code>src/index.css</code>.
+      </p>
+    </div>
+  </body>
+</html>

@@ -12,6 +12,7 @@
     "format": "prettier --write 'src/**/*.{ts,tsx}'",
     "format:check": "prettier --check 'src/**/*.{ts,tsx}'",
     "typecheck": "tsc --noEmit",
+    "showcase:build": "node design-system/showcase-build.mjs",
     "generate-icons": "node scripts/generate-icons.mjs",
     "release:dry-run": "cd .. && npx semantic-release --dry-run",
     "setup": "cd .. && git config core.hooksPath .githooks && echo 'Git hooks configured'"
