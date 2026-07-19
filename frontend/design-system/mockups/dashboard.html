@@ -1,0 +1,400 @@
+<!-- Linearr DESIGN SYSTEM — mockup: dashboard.html · seed for the Patterns → Dashboard gallery
+     Self-contained, zero-build, token-grounded. Resolved token values below mirror
+     ../showcase.html's TOKENS block — if you re-run `npm run showcase:build` and the
+     values drift, copy the refreshed :root / .dark block over by hand; this file is
+     NOT touched by showcase-build.mjs (it only ever rewrites showcase.html). -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light dark" />
+<title>Linearr — Dashboard Mockup</title>
+
+<!-- FOUC-safe bootstrap: resolve the theme BEFORE the styles below paint, so
+     there is never a flash of the wrong look. Independent localStorage key
+     from the showcase's own toggle — this file is opened on its own. -->
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem('ds-mockup-theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.classList.toggle('dark', saved === 'dark' || (!saved && prefersDark));
+    } catch (e) {}
+  })();
+</script>
+
+<style>
+/* ================================================================
+   RESOLVED DESIGN TOKENS — literal values, same source as app.css's
+   @theme block. No var() into a build tool's internal palette, so
+   this renders correctly offline / over file://.
+   ================================================================ */
+:root {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #176bff;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #15803d;
+  --success-foreground: #ffffff;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --input: #e2e8f0;
+  --ring: #176bff;
+  --oribion: #176bff;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --radius: 0.5rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-lg: calc(var(--radius) + 4px);
+  --ease-quiet: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration: 200ms;
+
+  /* Mockup-only shell constants — not part of the app's @theme contract,
+     same pattern as showcase.html's own --sidebar-w / --sb-* tokens. */
+  --sidebar-w: 220px;
+  --topbar-h: 48px;
+  --sb-bg: #0b1220;
+  --sb-border: rgba(255,255,255,.08);
+  --sb-text: rgba(255,255,255,.72);
+  --sb-strong: #ffffff;
+  --sb-muted: rgba(255,255,255,.5);
+  --sb-hover: rgba(255,255,255,.06);
+  --sb-active: color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+.dark {
+  --background: #020617;
+  --foreground: #f8fafc;
+  --card: #0f172a;
+  --card-foreground: #f8fafc;
+  --popover: #0f172a;
+  --popover-foreground: #f8fafc;
+  --primary: #176bff;
+  --primary-foreground: #ffffff;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --success: #22c55e;
+  --success-foreground: #052e16;
+  --warning: #f59e0b;
+  --warning-foreground: #422006;
+  --border: #1e293b;
+  --border-strong: #334155;
+  --input: #1e293b;
+  --ring: #3b82ff;
+}
+
+/* ============================================================ RESET */
+*,*::before,*::after{ box-sizing:border-box; margin:0; padding:0; }
+html{ color-scheme:light; }
+html.dark{ color-scheme:dark; }
+body{ font-family:var(--font-sans); color:var(--foreground); background:var(--background); line-height:1.5; -webkit-font-smoothing:antialiased;
+  transition:background var(--duration) var(--ease-quiet), color var(--duration) var(--ease-quiet); }
+code,.mono{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+h1,h2,h3{ margin:0; letter-spacing:-.02em; }
+button,input{ font:inherit; color:inherit; }
+@media (prefers-reduced-motion:reduce){ *{ animation-duration:.01ms !important; transition-duration:.01ms !important; } }
+:focus-visible{ outline:2px solid var(--ring); outline-offset:2px; border-radius:4px; }
+
+/* skip link */
+.skip{ position:fixed; top:-100%; left:1rem; z-index:999; padding:.6rem 1rem; background:var(--primary); color:#fff; border-radius:8px; font-weight:600; text-decoration:none; }
+.skip:focus{ top:1rem; }
+.visually-hidden{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+/* meta strip — clearly NOT part of the fictional product chrome */
+.meta-strip{ background:var(--muted); border-bottom:1px dashed var(--border-strong); padding:.5rem 1rem; font-size:.78rem; color:var(--muted-foreground);
+  display:flex; align-items:center; justify-content:center; gap:.4rem; text-align:center; }
+.meta-strip a{ color:var(--primary); font-weight:600; text-decoration:none; }
+.meta-strip a:hover{ text-decoration:underline; }
+
+/* ============================================================ SHELL */
+.shell{ display:flex; min-height:100dvh; }
+
+/* ============================================================ SIDEBAR (fixed dark — independent of the .dark toggle, same convention as showcase.html) */
+.sidebar{ width:var(--sidebar-w); background:var(--sb-bg); border-right:1px solid var(--sb-border);
+  display:flex; flex-direction:column; position:fixed; inset:0 auto 0 0; z-index:50; overflow-y:auto; }
+.sb-logo{ display:flex; align-items:center; gap:.6rem; padding:1rem 1.1rem; border-bottom:1px solid var(--sb-border); }
+.sb-mark{ width:30px; height:30px; border-radius:8px; background:var(--primary); color:#fff; display:grid; place-items:center; font-weight:800; font-size:.7rem; flex:none; }
+.sb-logo .nm{ color:var(--sb-strong); font-weight:700; font-size:.95rem; letter-spacing:-.01em; }
+.sb-nav{ flex:1; padding:.75rem .6rem; display:flex; flex-direction:column; gap:2px; }
+.nav-lbl{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--sb-muted); padding:.9rem .7rem .35rem; }
+.nav-link{ display:flex; align-items:center; gap:.6rem; width:100%; text-align:left; padding:8px .7rem; border:0; background:none;
+  border-radius:8px; color:var(--sb-text); font-size:13px; cursor:pointer; position:relative; transition:background .12s,color .12s; text-decoration:none; }
+.nav-link:hover{ background:var(--sb-hover); color:var(--sb-strong); }
+.nav-link.active{ background:var(--sb-active); color:var(--sb-strong); font-weight:600; }
+.nav-link.active::before{ content:""; position:absolute; left:0; top:6px; bottom:6px; width:3px; border-radius:0 2px 2px 0; background:var(--primary); }
+.nav-link svg{ width:15px; height:15px; flex:none; opacity:.85; }
+.sb-foot{ padding:.9rem 1.1rem; border-top:1px solid var(--sb-border); font-size:11px; color:var(--sb-muted); }
+
+/* ============================================================ MAIN */
+.main{ margin-left:var(--sidebar-w); flex:1; min-width:0; }
+.topbar{ position:sticky; top:0; z-index:40; height:var(--topbar-h); background:var(--primary); color:var(--primary-foreground);
+  padding:0 clamp(1rem,3vw,2rem); display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+.crumb{ font-size:.85rem; font-weight:600; }
+.tb-actions{ display:flex; align-items:center; gap:.6rem; }
+.tb-search{ height:30px; padding:0 12px; border-radius:999px; border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.12);
+  color:#fff; font-size:.78rem; width:180px; }
+.tb-search::placeholder{ color:rgba(255,255,255,.7); }
+.tb-search:focus-visible{ outline:2px solid #fff; outline-offset:1px; background:rgba(255,255,255,.2); }
+.icon-btn{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:999px; border:1px solid rgba(255,255,255,.35);
+  background:rgba(255,255,255,.1); color:#fff; cursor:pointer; font-size:.85rem; line-height:1; }
+.icon-btn:hover{ background:rgba(255,255,255,.22); }
+.avatar{ width:28px; height:28px; border-radius:50%; background:rgba(255,255,255,.9); color:var(--primary); display:grid; place-items:center;
+  font-weight:700; font-size:.68rem; flex:none; }
+
+.content{ padding:clamp(1.2rem,3vw,2rem) clamp(1.2rem,4vw,2.4rem) 3rem; max-width:1180px; }
+.page-head{ margin-bottom:1.6rem; }
+.page-head h1{ font-size:1.6rem; font-weight:700; margin-bottom:.3rem; }
+.page-head p{ color:var(--muted-foreground); font-size:.92rem; }
+
+/* ============================================================ ① KPI STAT GRID (max 4, top accent bar in --primary) */
+.stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; margin-bottom:1.5rem; }
+@media(max-width:900px){ .stat-grid{ grid-template-columns:repeat(2,1fr); } }
+@media(max-width:520px){ .stat-grid{ grid-template-columns:1fr; } }
+.stat{ background:var(--card); border:1px solid var(--border); border-top:3px solid var(--primary); border-radius:var(--radius-lg); padding:1.1rem 1.2rem; }
+.stat .lbl{ font-size:.78rem; color:var(--muted-foreground); margin-bottom:.4rem; }
+.stat .val{ font-size:1.5rem; font-weight:700; letter-spacing:-.02em; margin-bottom:.35rem; }
+.stat .delta{ font-size:.78rem; font-weight:600; display:flex; align-items:center; gap:4px; }
+.stat .delta.up{ color:var(--success); } .stat .delta.down{ color:var(--destructive); }
+
+/* ============================================================ ② CHART + BREAKDOWN (flex-2 / flex-1) */
+.split{ display:flex; gap:1rem; margin-bottom:1.5rem; align-items:stretch; }
+@media(max-width:820px){ .split{ flex-direction:column; } }
+.card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:1.2rem 1.3rem; }
+.card .t{ font-weight:650; font-size:.95rem; margin-bottom:.9rem; display:flex; align-items:center; justify-content:space-between; }
+.chart-card{ flex:2; min-width:0; }
+.aside-card{ flex:1; min-width:0; }
+.period-pills{ display:flex; gap:4px; }
+.period-pill{ font-size:.72rem; font-weight:600; padding:3px 10px; border-radius:999px; border:1px solid var(--border); background:var(--background); color:var(--muted-foreground); cursor:pointer; }
+.period-pill.active{ background:var(--primary); border-color:var(--primary); color:var(--primary-foreground); }
+.bars{ display:flex; align-items:flex-end; gap:8px; height:140px; }
+.bars .bar{ flex:1; border-radius:6px 6px 0 0; background:linear-gradient(180deg,var(--primary),color-mix(in srgb,var(--primary) 60%,var(--card))); position:relative; }
+.bars .bar .cap{ position:absolute; bottom:-20px; left:0; right:0; text-align:center; font-size:.65rem; color:var(--muted-foreground); }
+.chan-list{ list-style:none; display:flex; flex-direction:column; gap:.7rem; }
+.chan-list li{ display:flex; align-items:center; gap:.6rem; font-size:.82rem; }
+.chan-dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+.chan-list .name{ flex:1; color:var(--foreground); }
+.chan-list .pct{ font-weight:650; color:var(--muted-foreground); font-family:var(--font-mono); font-size:.78rem; }
+
+/* ============================================================ ③ DATA TABLE (toolbar, accent-colored header, pagination) */
+.table-card{ padding:0; overflow:hidden; }
+.toolbar{ display:flex; align-items:center; justify-content:space-between; gap:.8rem; padding:1rem 1.2rem; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.toolbar h2{ font-size:.95rem; font-weight:650; }
+.toolbar .actions{ display:flex; gap:.6rem; align-items:center; }
+.input{ height:34px; padding:0 12px; border-radius:var(--radius); border:1px solid var(--input); background:var(--background); color:var(--foreground); font-size:.82rem; }
+.input:focus-visible{ outline:2px solid var(--ring); outline-offset:1px; border-color:var(--ring); }
+.btn{ display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 14px; border-radius:var(--radius); font-size:.82rem; font-weight:600;
+  cursor:pointer; border:1px solid var(--border); background:var(--background); color:var(--foreground); }
+.btn-primary{ background:var(--primary); color:var(--primary-foreground); border-color:var(--primary); }
+.btn-primary:hover{ background:color-mix(in srgb,var(--primary) 85%,black); }
+.btn-ghost:hover{ background:var(--accent); }
+.tbl-wrap{ overflow-x:auto; }
+table{ width:100%; border-collapse:collapse; font-size:.85rem; }
+th{ background:var(--primary); color:var(--primary-foreground); text-align:left; padding:.65rem 1.2rem; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
+td{ padding:.7rem 1.2rem; border-bottom:1px solid var(--border); color:var(--muted-foreground); vertical-align:middle; white-space:nowrap; }
+tbody tr:last-child td{ border-bottom:0; }
+tbody tr:hover td{ background:var(--muted); }
+td:first-child{ color:var(--foreground); font-weight:600; }
+.badge{ display:inline-flex; align-items:center; gap:5px; font-size:.72rem; font-weight:600; padding:2px 9px; border-radius:999px; border:1px solid var(--border); }
+.badge .dot{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+.badge.success{ background:color-mix(in srgb,var(--success) 14%,transparent); color:var(--success); border-color:color-mix(in srgb,var(--success) 32%,transparent); }
+.badge.warning{ background:color-mix(in srgb,var(--warning) 16%,transparent); color:var(--warning); border-color:color-mix(in srgb,var(--warning) 34%,transparent); }
+.badge.destructive{ background:color-mix(in srgb,var(--destructive) 14%,transparent); color:var(--destructive); border-color:color-mix(in srgb,var(--destructive) 32%,transparent); }
+.pagination{ display:flex; align-items:center; justify-content:space-between; padding:.9rem 1.2rem; border-top:1px solid var(--border); font-size:.78rem; color:var(--muted-foreground); }
+.pg-btns{ display:flex; gap:.4rem; }
+.pg-btn{ min-width:30px; height:30px; padding:0 8px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--background); color:var(--foreground); cursor:pointer; font-size:.78rem; }
+.pg-btn[disabled]{ opacity:.45; cursor:not-allowed; }
+.pg-btn.active{ background:var(--primary); border-color:var(--primary); color:var(--primary-foreground); font-weight:600; }
+</style>
+</head>
+<body>
+
+<a href="#main" class="skip">Skip to content</a>
+
+<div class="meta-strip">This is a static, self-contained mockup from the design system — <a href="../showcase.html#/patterns-dashboard">▸ back to the Dashboard pattern in showcase.html</a></div>
+
+<div class="shell">
+
+  <!-- ================= SIDEBAR ================= -->
+  <nav class="sidebar" aria-label="Primary">
+    <div class="sb-logo">
+      <div class="sb-mark" aria-hidden="true">DS</div>
+      <div class="nm">Linearr</div>
+    </div>
+    <div class="sb-nav" role="list">
+      <span class="nav-lbl">Workspace</span>
+      <a href="#main" class="nav-link active" role="listitem" aria-current="page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a href="#main" class="nav-link" role="listitem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M14 9h6M14 13h6M4 17h5"/></svg>
+        Customers
+      </a>
+      <a href="#main" class="nav-link" role="listitem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+        Orders
+      </a>
+      <a href="#main" class="nav-link" role="listitem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Reports
+      </a>
+      <span class="nav-lbl">Account</span>
+      <a href="#main" class="nav-link" role="listitem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </a>
+    </div>
+    <div class="sb-foot">Signed in as <strong style="color:var(--sb-strong)">jordan@example.com</strong></div>
+  </nav>
+
+  <!-- ================= MAIN ================= -->
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb">Dashboard</div>
+      <div class="tb-actions">
+        <label class="visually-hidden" for="tb-search-input">Search</label>
+        <input class="tb-search" id="tb-search-input" type="search" placeholder="Search…">
+        <button class="icon-btn" id="themeBtn" type="button" aria-pressed="false" aria-label="Toggle light/dark theme"><span id="ti" aria-hidden="true">&#9728;</span></button>
+        <div class="avatar" aria-hidden="true">JD</div>
+      </div>
+    </div>
+
+    <main class="content" id="main" tabindex="-1">
+      <div class="page-head">
+        <h1>Welcome back, Jordan</h1>
+        <p>Here's what's happening across your account today.</p>
+      </div>
+
+      <!-- ① KPI STAT GRID -->
+      <section aria-label="Key metrics" class="stat-grid" role="list">
+        <div class="stat" role="listitem">
+          <div class="lbl">Total revenue</div>
+          <div class="val">$48,210</div>
+          <div class="delta up">&#8593; 12% vs last month</div>
+        </div>
+        <div class="stat" role="listitem">
+          <div class="lbl">Active customers</div>
+          <div class="val">1,204</div>
+          <div class="delta up">&#8593; 34 new</div>
+        </div>
+        <div class="stat" role="listitem">
+          <div class="lbl">Open orders</div>
+          <div class="val">37</div>
+          <div class="delta down">&#8595; 5 vs yesterday</div>
+        </div>
+        <div class="stat" role="listitem">
+          <div class="lbl">Avg. response time</div>
+          <div class="val">1.4h</div>
+          <div class="delta up">&#8595; 18% faster</div>
+        </div>
+      </section>
+
+      <!-- ② CHART + BREAKDOWN -->
+      <section class="split" aria-label="Revenue trend and channel breakdown">
+        <div class="card chart-card">
+          <div class="t">Revenue trend
+            <div class="period-pills" role="group" aria-label="Chart period">
+              <button class="period-pill" type="button">7d</button>
+              <button class="period-pill active" type="button" aria-pressed="true">30d</button>
+              <button class="period-pill" type="button">90d</button>
+            </div>
+          </div>
+          <div class="bars" role="img" aria-label="Bar chart of revenue over the last 6 weeks, trending upward">
+            <div class="bar" style="height:42%"><span class="cap">W1</span></div>
+            <div class="bar" style="height:58%"><span class="cap">W2</span></div>
+            <div class="bar" style="height:51%"><span class="cap">W3</span></div>
+            <div class="bar" style="height:70%"><span class="cap">W4</span></div>
+            <div class="bar" style="height:64%"><span class="cap">W5</span></div>
+            <div class="bar" style="height:88%"><span class="cap">W6</span></div>
+          </div>
+        </div>
+        <div class="card aside-card">
+          <div class="t">Top channels</div>
+          <ul class="chan-list">
+            <li><span class="chan-dot" style="background:#2a78d6"></span><span class="name">Direct</span><span class="pct">42%</span></li>
+            <li><span class="chan-dot" style="background:#1baf7a"></span><span class="name">Referral</span><span class="pct">27%</span></li>
+            <li><span class="chan-dot" style="background:#eda100"></span><span class="name">Email</span><span class="pct">18%</span></li>
+            <li><span class="chan-dot" style="background:#eb6834"></span><span class="name">Social</span><span class="pct">13%</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ③ DATA TABLE -->
+      <section class="card table-card" aria-label="Recent orders">
+        <div class="toolbar">
+          <h2>Recent orders</h2>
+          <div class="actions">
+            <input class="input" id="orders-search" name="orders-search" type="search" placeholder="Search orders…" aria-label="Search orders">
+            <button class="btn btn-ghost" type="button">Filter</button>
+            <button class="btn btn-primary" type="button">+ New order</button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr><th scope="col">Order</th><th scope="col">Customer</th><th scope="col">Status</th><th scope="col" style="text-align:right;">Amount</th><th scope="col">Date</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>ORD-4471</td><td>Nimbus Robotics Inc.</td><td><span class="badge success"><span class="dot"></span>Paid</span></td><td style="text-align:right;">$2,340.00</td><td>Apr 17, 2026</td></tr>
+              <tr><td>ORD-4470</td><td>Rivera Pharmacy</td><td><span class="badge warning"><span class="dot"></span>Pending</span></td><td style="text-align:right;">$860.00</td><td>Apr 17, 2026</td></tr>
+              <tr><td>ORD-4469</td><td>Ada Lovelace</td><td><span class="badge success"><span class="dot"></span>Paid</span></td><td style="text-align:right;">$129.00</td><td>Apr 16, 2026</td></tr>
+              <tr><td>ORD-4468</td><td>Grace Hopper</td><td><span class="badge destructive"><span class="dot"></span>Failed</span></td><td style="text-align:right;">$412.50</td><td>Apr 16, 2026</td></tr>
+              <tr><td>ORD-4467</td><td>Nimbus Robotics Inc.</td><td><span class="badge success"><span class="dot"></span>Paid</span></td><td style="text-align:right;">$5,120.00</td><td>Apr 15, 2026</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span>Showing 1–5 of 37</span>
+          <div class="pg-btns">
+            <button class="pg-btn" type="button" disabled aria-label="Previous page">&#8249;</button>
+            <button class="pg-btn active" type="button" aria-current="page">1</button>
+            <button class="pg-btn" type="button">2</button>
+            <button class="pg-btn" type="button">3</button>
+            <button class="pg-btn" type="button" aria-label="Next page">&#8250;</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeBtn');
+    var icon = document.getElementById('ti');
+    function sync() {
+      var isDark = document.documentElement.classList.contains('dark');
+      btn.setAttribute('aria-pressed', String(isDark));
+      icon.innerHTML = isDark ? '&#9789;' : '&#9728;';
+    }
+    btn.addEventListener('click', function () {
+      var isDark = document.documentElement.classList.toggle('dark');
+      try { localStorage.setItem('ds-mockup-theme', isDark ? 'dark' : 'light'); } catch (e) {}
+      sync();
+    });
+    sync();
+  })();
+</script>
+</body>
+</html>
