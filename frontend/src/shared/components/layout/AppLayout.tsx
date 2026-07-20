@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { TopBar } from './TopBar'
+import { OribionFooter } from './OribionFooter'
 
 import { useUIStore } from '@/shared/store/ui.store'
 
@@ -55,6 +56,10 @@ export function AppLayout({ sidebar, children }: AppLayoutProps) {
           {children}
         </main>
       </div>
+
+      {/* oribion-branding:footer */}
+      <OribionFooter />
+      {/* /oribion-branding:footer */}
     </div>
   )
 }
