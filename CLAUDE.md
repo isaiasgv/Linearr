@@ -334,3 +334,14 @@ Linearr is installable as a PWA. Assets in `frontend/public/`:
 - `favicon.svg`, `icon-192.svg`, `icon-512.svg` — SVG icons
 
 The service worker and manifest are registered/linked in `frontend/index.html`.
+
+<!-- ownership:labeling-rule -->
+## Issue part-labeling (always-on)
+
+- When creating or triaging an issue, infer the part, apply the `part:*` label,
+  and assign it. Before working an unlabeled issue, infer and apply a label
+  first. If it genuinely spans parts, apply `part:cross-cutting` and flag triage
+  to split it. `part:*` = who may *pick it up*; CODEOWNERS = who must *approve* —
+  orthogonal axes; do not derive one from the other. The map lives in
+  `docs/ownership.md`.
+<!-- /ownership:labeling-rule -->
