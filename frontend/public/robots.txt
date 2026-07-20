@@ -1,0 +1,5 @@
+# Linearr is a self-hosted, auth-gated dashboard — not meant to be crawled or
+# indexed. This reinforces the <meta name="robots" content="noindex,nofollow">
+# already set in index.html, in case an instance is exposed to the public internet.
+User-agent: *
+Disallow: /
