@@ -596,6 +596,13 @@ async def create_channel(body: ChannelIn):
     result["tunarr_sync"] = sync
     return result
 
+def _tunarr_write_error(status: int) -> str:
+    """Format a Tunarr write-failure message. Tunarr has no 409 — a duplicate
+    channel number surfaces as a 500 with an empty body, so hint at that
+    rather than reporting a bare status."""
+    hint = " — the channel number may already be in use in Tunarr" if status >= 500 else ""
+    return f"Tunarr {status}{hint}"
+
 async def _sync_channel_to_tunarr(channel_number: int):
     """Sync Cable Plex channel metadata to linked Tunarr channel.
     If no link exists, creates a new Tunarr channel and links it.
@@ -632,12 +639,8 @@ async def _sync_channel_to_tunarr(channel_number: int):
                             (ch.get("name"), ch.get("number"), channel_number)
                         )
                     return {"synced": True, "action": "updated", "tunarr_id": tunarr_id}
-                # Tunarr has no 409 — a duplicate number surfaces as a 500 with
-                # an empty body, so say so rather than reporting a bare status.
-                hint = (" — the channel number may already be in use in Tunarr"
-                        if r.status_code >= 500 else "")
                 return {"synced": False, "action": "error",
-                        "message": f"Tunarr {r.status_code}{hint}"}
+                        "message": _tunarr_write_error(r.status_code)}
             else:
                 transcode_id = await _tunarr_resolve_transcode_config(client, url)
                 channel_obj = _tunarr_channel_obj(
@@ -656,10 +659,8 @@ async def _sync_channel_to_tunarr(channel_number: int):
                             (channel_number, new_ch["id"], new_ch.get("name"), new_ch.get("number"))
                         )
                     return {"synced": True, "action": "created", "tunarr_id": new_ch["id"]}
-                hint = (" — the channel number may already be in use in Tunarr"
-                        if r.status_code >= 500 else "")
                 return {"synced": False, "action": "error",
-                        "message": f"Tunarr {r.status_code}{hint}"}
+                        "message": _tunarr_write_error(r.status_code)}
     except Exception as e:
         log.warning("Tunarr sync failed for CH %s: %s", channel_number, e)
         return {"synced": False, "action": "error", "message": str(e)}
