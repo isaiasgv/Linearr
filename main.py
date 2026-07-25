@@ -610,39 +610,36 @@ async def _sync_channel_to_tunarr(channel_number: int):
     if not url:
         return {"synced": False, "action": "error", "message": "Tunarr not configured"}
 
-    # Build metadata payload for Tunarr
-    update_data = {
+    # Only the keys Linearr owns; _tunarr_save_channel preserves everything else.
+    changes = {
         "name": ch.get("name", ""),
         "number": ch.get("number", 0),
         "groupTitle": ch.get("tier", "Linearr"),
     }
-    # Sync icon if present
     icon_data = ch.get("icon")
     if icon_data and icon_data.startswith("data:"):
-        update_data["icon"] = _tunarr_icon_obj(icon_data)
+        changes["icon"] = _tunarr_icon_obj(icon_data)
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             if link:
-                # Update existing Tunarr channel
                 tunarr_id = link["tunarr_id"]
-                r = await client.put(f"{url}/api/channels/{tunarr_id}", json=update_data)
+                r = await _tunarr_save_channel(client, url, tunarr_id, changes)
                 if r.status_code in (200, 204):
-                    # Update cached name/number in link
                     with get_db() as conn:
                         conn.execute(
                             "UPDATE tunarr_channel_links SET tunarr_name=?, tunarr_number=? WHERE channel_number=?",
                             (ch.get("name"), ch.get("number"), channel_number)
                         )
                     return {"synced": True, "action": "updated", "tunarr_id": tunarr_id}
-                return {"synced": False, "action": "error", "message": f"Tunarr {r.status_code}"}
+                # Tunarr has no 409 — a duplicate number surfaces as a 500 with
+                # an empty body, so say so rather than reporting a bare status.
+                hint = (" — the channel number may already be in use in Tunarr"
+                        if r.status_code >= 500 else "")
+                return {"synced": False, "action": "error",
+                        "message": f"Tunarr {r.status_code}{hint}"}
             else:
-                # Create new Tunarr channel
-                ffmpeg_r = await client.get(f"{url}/api/ffmpeg-settings")
-                transcode_id = None
-                if ffmpeg_r.status_code == 200:
-                    fj = ffmpeg_r.json()
-                    transcode_id = fj.get("defaultTranscodeConfigId") or fj.get("configId") or fj.get("id")
+                transcode_id = await _tunarr_resolve_transcode_config(client, url)
                 channel_obj = _tunarr_channel_obj(
                     name=ch.get("name", ""),
                     number=ch.get("number", 0),
@@ -659,7 +656,10 @@ async def _sync_channel_to_tunarr(channel_number: int):
                             (channel_number, new_ch["id"], new_ch.get("name"), new_ch.get("number"))
                         )
                     return {"synced": True, "action": "created", "tunarr_id": new_ch["id"]}
-                return {"synced": False, "action": "error", "message": f"Tunarr {r.status_code}"}
+                hint = (" — the channel number may already be in use in Tunarr"
+                        if r.status_code >= 500 else "")
+                return {"synced": False, "action": "error",
+                        "message": f"Tunarr {r.status_code}{hint}"}
     except Exception as e:
         log.warning("Tunarr sync failed for CH %s: %s", channel_number, e)
         return {"synced": False, "action": "error", "message": str(e)}
@@ -4338,25 +4338,24 @@ def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
         obj["id"] = channel_id
     if transcode_id:
         obj["transcodeConfigId"] = transcode_id
-    else:
-        obj["transcoding"] = {"targetResolution": "1920x1080"}
+    # No `transcoding` fallback: it is read-only in Tunarr's SaveableChannel
+    # (stripped on write) while transcodeConfigId is required. Sending it in
+    # place of a real config id guarantees a 400 — the caller must resolve one
+    # via _tunarr_resolve_transcode_config.
     return obj
 
 async def _tunarr_create_channel(client: "httpx.AsyncClient", url: str, channel_obj: dict):
-    """POST a new channel, tolerating Tunarr's create-request shape change.
+    """POST a new channel.
 
-    Tunarr 1.3.x expects a discriminated `{"type":"new","channel":{...}}` body
-    where the client supplies the channel id; older Tunarr accepted a flat channel
-    object and assigned the id server-side. Tries the modern wrapped form first and
-    falls back to the flat form on a schema/route rejection. Returns the response.
+    Tunarr's create body is a discriminated union — `{"type":"new","channel":{…}}`
+    — in every 1.x release (verified against v1.0.0 through v1.3.9); there has
+    never been a flat-object form. The client must supply `channel.id` because
+    the schema requires it, but Tunarr ignores the value and assigns its own
+    uuid, so the real id must be read from the response.
     """
     obj = dict(channel_obj)
     obj.setdefault("id", str(uuid.uuid4()))
-    r = await client.post(f"{url}/api/channels", json={"type": "new", "channel": obj})
-    if r.status_code in (400, 404, 422):
-        flat = {k: v for k, v in channel_obj.items() if k != "id"}
-        r = await client.post(f"{url}/api/channels", json=flat)
-    return r
+    return await client.post(f"{url}/api/channels", json={"type": "new", "channel": obj})
 
 
 # Tunarr's ChannelSchema exposes these but SaveableChannel omits them — they are
@@ -4550,31 +4549,7 @@ async def tunarr_create_channel(body: dict):
     channel_id = str(uuid.uuid4())
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Fetch the actual default transcode config ID from Tunarr
-        transcode_id = "default"
-        try:
-            tr = await client.get(f"{url}/api/ffmpeg-settings")
-            if tr.status_code == 200:
-                data = tr.json()
-                # Could be a list or a single object — get the first/default
-                if isinstance(data, list) and data:
-                    transcode_id = data[0].get("id", "default")
-                elif isinstance(data, dict):
-                    transcode_id = data.get("id", "default")
-        except Exception:
-            pass
-
-        # Also copy settings from an existing channel if available
-        existing_channel = None
-        try:
-            cr = await client.get(f"{url}/api/channels")
-            if cr.status_code == 200:
-                channels = cr.json()
-                if channels:
-                    existing_channel = channels[0]
-                    transcode_id = existing_channel.get("transcodeConfigId", transcode_id)
-        except Exception:
-            pass
+        transcode_id = await _tunarr_resolve_transcode_config(client, url)
 
         icon_in = body.get("icon")
         channel_obj = _tunarr_channel_obj(

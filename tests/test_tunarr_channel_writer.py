@@ -263,3 +263,37 @@ async def test_save_channel_surfaces_a_500_as_is():
             client, "http://t.test", CH_UUID, {"number": 999})
     assert r.status_code == 500
     assert state["puts"] == 1
+
+
+@pytest.mark.anyio
+async def test_channel_obj_never_sends_readonly_transcoding():
+    """`transcoding` is read-only in SaveableChannel; sending it instead of
+    transcodeConfigId produced an invalid create body."""
+    obj = main._tunarr_channel_obj(
+        name="X", number=1, group_title="G", transcode_id=None)
+    assert "transcoding" not in obj
+
+
+@pytest.mark.anyio
+async def test_create_sends_the_union_and_does_not_retry_flat():
+    """No flat-object create form exists in any supported Tunarr version, so a
+    rejected create must not be retried with a flat body."""
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content or b"{}"))
+        return httpx.Response(400, json={"error": "nope"})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
+        r = await main._tunarr_create_channel(
+            client, "http://t.test",
+            main._tunarr_channel_obj(
+                name="X", number=1, group_title="G", transcode_id=TC_UUID),
+        )
+
+    assert r.status_code == 400
+    assert len(bodies) == 1, "a 400 must not trigger a flat-body retry"
+    assert bodies[0]["type"] == "new"
+    assert bodies[0]["channel"]["name"] == "X"
+    assert "id" in bodies[0]["channel"], "Tunarr's schema requires channel.id"

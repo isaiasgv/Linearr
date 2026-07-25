@@ -584,13 +584,9 @@ In `main.py`, replace the body of `_sync_channel_to_tunarr` from `    # Build me
                         "message": f"Tunarr {r.status_code}{hint}"}
 ```
 
-`_watermark_for_tunarr` is defined in Task 7. To keep this task independently green, add this temporary stub directly above `_sync_channel_to_tunarr` (Task 7 replaces it):
-
-```python
-def _watermark_for_tunarr(ch: dict) -> dict | None:
-    """Watermark payload for a channel row, or None when unset. Task 7 fills this in."""
-    return None
-```
+This task introduces no watermark code at all — Task 7 adds both `_watermark_for_tunarr` and
+the two lines in `_sync_channel_to_tunarr` that call it, so nothing here references a
+watermark and no stub is needed.
 
 - [ ] **Step 3d: Use the resolver in the standalone create route**
 
