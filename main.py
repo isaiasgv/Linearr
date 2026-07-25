@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -9,7 +10,7 @@ import sqlite3
 import time
 import uuid
 from collections import OrderedDict, defaultdict
-from urllib.parse import urlencode as _urlencode
+from urllib.parse import urlencode as _urlencode, urlparse as _urlparse
 import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -859,6 +860,66 @@ async def delete_channel_watermark(channel_number: int):
              level="warn", metadata={"number": channel_number})
     sync = await _sync_channel_to_tunarr(channel_number)
     return {"ok": True, "tunarr_sync": sync}
+
+
+class WatermarkImageIn(BaseModel):
+    # Omit both to fall back to the channel's icon.
+    image: str | None = None   # data URI to upload
+    url: str | None = None     # absolute URL to use as-is
+
+
+@app.post("/api/channels/{channel_number}/watermark/image")
+async def set_channel_watermark_image(channel_number: int, body: WatermarkImageIn):
+    """Resolve the watermark image to an absolute URL Tunarr can fetch.
+
+    An explicit absolute `url` is stored verbatim. A data URI — either supplied
+    directly or taken from the channel's icon — is uploaded to Tunarr, because
+    Tunarr passes this value to ffmpeg as an HTTP input and cannot read a
+    `data:` URI (which is also why leaving `url` blank to inherit the channel
+    icon does not work: the icon is itself stored as a data URI).
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT icon FROM channels WHERE number=?", (channel_number,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+
+    if body.url:
+        parsed = _urlparse(body.url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise HTTPException(
+                400, "Watermark URL must be absolute (http:// or https://) — "
+                     "Tunarr fetches it over HTTP and cannot use a relative path"
+            )
+        image_url = body.url
+    else:
+        source = body.image or row["icon"]
+        decoded = _decode_data_uri(source or "")
+        if decoded is None:
+            raise HTTPException(
+                400, "No usable image — supply a data URI, an absolute URL, or "
+                     "set a channel icon first"
+            )
+        raw, content_type, filename = decoded
+        tunarr_url = get_tunarr_url()
+        if not tunarr_url:
+            raise HTTPException(400, "Tunarr not configured")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            image_url = await _tunarr_upload_image(
+                client, tunarr_url, raw, content_type, filename)
+        if not image_url:
+            raise HTTPException(502, "Tunarr rejected the watermark image upload")
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE channels SET watermark_image_url=? WHERE number=?",
+            (image_url, channel_number),
+        )
+    _log_app("channel", f"Set watermark image for channel {channel_number}",
+             metadata={"number": channel_number, "image_url": image_url})
+    sync = await _sync_channel_to_tunarr(channel_number)
+    return {"ok": True, "image_url": image_url, "tunarr_sync": sync}
 
 @app.get("/api/icons/export")
 def export_icon_pack():
@@ -4368,6 +4429,68 @@ def get_tunarr_url() -> str:
     with get_db() as conn:
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
     return rows.get("tunarr_url", "http://tunarr:8000").rstrip("/")
+
+_DATA_URI_RE = _re.compile(r"^data:(?P<mime>[\w.+/-]+);base64,(?P<b64>.+)$", _re.DOTALL)
+
+_MIME_EXT = {
+    "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp",
+    "image/svg+xml": "svg", "image/gif": "gif",
+}
+
+
+def _decode_data_uri(data_uri: str) -> tuple[bytes, str, str] | None:
+    """Decode a base64 data URI into (bytes, content_type, filename).
+
+    Returns None for anything that is not a base64 data URI, including the
+    absolute URLs a user may paste as a watermark override.
+    """
+    if not isinstance(data_uri, str):
+        return None
+    m = _DATA_URI_RE.match(data_uri.strip())
+    if not m:
+        return None
+    mime = m.group("mime").lower()
+    try:
+        raw = base64.b64decode(m.group("b64"), validate=True)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    return raw, mime, f"linearr-watermark.{_MIME_EXT.get(mime, 'png')}"
+
+
+async def _tunarr_upload_image(
+    client: "httpx.AsyncClient", url: str, raw: bytes,
+    content_type: str, filename: str,
+) -> str | None:
+    """Upload an image to Tunarr and return an absolute, reachable URL.
+
+    Tunarr builds `fileUrl` from the inbound Host header, so the URL it returns
+    is often unreachable from Linearr (which talks to `http://tunarr:8000`).
+    The path is kept and the host rewritten onto the configured base URL.
+    """
+    try:
+        r = await client.post(
+            f"{url}/api/upload/image",
+            files={"file": (filename, raw, content_type)},
+        )
+    except Exception as e:
+        log.warning("Tunarr image upload failed: %s", e)
+        return None
+    if r.status_code not in (200, 201):
+        log.warning("Tunarr rejected image upload: %s %s", r.status_code, r.text[:200])
+        return None
+    try:
+        file_url = (r.json() or {}).get("fileUrl") or ""
+    except Exception:
+        return None
+    if not file_url:
+        return None
+    path = _urlparse(file_url).path or ""
+    if not path:
+        return None
+    return f"{url.rstrip('/')}{path}"
+
 
 def _watermark_to_tunarr(wm: dict, image_url: str | None) -> dict:
     """Map stored watermark config to Tunarr's WatermarkSchema.

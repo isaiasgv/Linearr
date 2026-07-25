@@ -128,3 +128,69 @@ def test_tunarr_payload_omits_fade_when_unset():
     }, None)
     assert "fadeConfig" not in out
     assert out.get("url", "") == ""
+
+
+import base64
+
+import httpx
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+# 1x1 transparent PNG
+_PNG_B64 = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGMAAQAABQAB"
+            "oIJXOQAAAABJRU5ErkJggg==")
+_PNG_DATA_URI = f"data:image/png;base64,{_PNG_B64}"
+
+
+def test_decode_data_uri_extracts_bytes_and_type():
+    import main
+    got = main._decode_data_uri(_PNG_DATA_URI)
+    assert got is not None
+    raw, content_type, filename = got
+    assert raw == base64.b64decode(_PNG_B64)
+    assert content_type == "image/png"
+    assert filename.endswith(".png")
+
+
+def test_decode_data_uri_rejects_non_data_uri():
+    import main
+    assert main._decode_data_uri("http://example.com/x.png") is None
+    assert main._decode_data_uri("") is None
+
+
+@pytest.mark.anyio
+async def test_upload_image_rewrites_the_returned_host():
+    """Tunarr builds fileUrl from the inbound Host header, so the URL it returns
+    is unreachable when Linearr talks to it as http://tunarr:8000."""
+    import main
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/upload/image"
+        return httpx.Response(200, json={
+            "name": "logo.png",
+            "fileUrl": "http://localhost:8000/images/uploads/logo.png",
+        })
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://tunarr:8000") as client:
+        got = await main._tunarr_upload_image(
+            client, "http://tunarr:8000", b"\x89PNG", "image/png", "logo.png")
+    assert got == "http://tunarr:8000/images/uploads/logo.png"
+
+
+@pytest.mark.anyio
+async def test_upload_image_returns_none_on_rejection():
+    import main
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://tunarr:8000") as client:
+        got = await main._tunarr_upload_image(
+            client, "http://tunarr:8000", b"nope", "image/png", "logo.png")
+    assert got is None
