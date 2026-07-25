@@ -448,12 +448,29 @@ async def test_channel_obj_never_sends_readonly_transcoding():
     assert "transcoding" not in obj
 
 
-def test_create_body_is_always_the_discriminated_union():
-    """No flat-object create form exists in any supported Tunarr version."""
-    import inspect
-    src = inspect.getsource(main._tunarr_create_channel)
-    assert '"type": "new"' in src
-    assert "flat" not in src.lower()
+@pytest.mark.anyio
+async def test_create_sends_the_union_and_does_not_retry_flat():
+    """No flat-object create form exists in any supported Tunarr version, so a
+    rejected create must not be retried with a flat body."""
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content or b"{}"))
+        return httpx.Response(400, json={"error": "nope"})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
+        r = await main._tunarr_create_channel(
+            client, "http://t.test",
+            main._tunarr_channel_obj(
+                name="X", number=1, group_title="G", transcode_id=TC_UUID),
+        )
+
+    assert r.status_code == 400
+    assert len(bodies) == 1, "a 400 must not trigger a flat-body retry"
+    assert bodies[0]["type"] == "new"
+    assert bodies[0]["channel"]["name"] == "X"
+    assert "id" in bodies[0]["channel"], "Tunarr's schema requires channel.id"
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -489,29 +506,7 @@ with:
     return obj
 ```
 
-Also add `watermark` support now, since Task 7 needs it. Change the signature (line 4268-4270) from:
-
-```python
-def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
-                        channel_id: str | None = None, transcode_id: str | None = None,
-                        icon_data: str | None = None) -> dict:
-```
-
-to:
-
-```python
-def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
-                        channel_id: str | None = None, transcode_id: str | None = None,
-                        icon_data: str | None = None,
-                        watermark: dict | None = None) -> dict:
-```
-
-and immediately before `if channel_id:` add:
-
-```python
-    if watermark is not None:
-        obj["watermark"] = watermark
-```
+Leave the signature alone — Task 7 adds the `watermark` parameter when there is a caller for it.
 
 - [ ] **Step 3b: Drop the dead flat-create fallback**
 
@@ -546,9 +541,6 @@ In `main.py`, replace the body of `_sync_channel_to_tunarr` from `    # Build me
     icon_data = ch.get("icon")
     if icon_data and icon_data.startswith("data:"):
         changes["icon"] = _tunarr_icon_obj(icon_data)
-    watermark = _watermark_for_tunarr(ch)
-    if watermark is not None:
-        changes["watermark"] = watermark
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -576,7 +568,6 @@ In `main.py`, replace the body of `_sync_channel_to_tunarr` from `    # Build me
                     group_title=ch.get("tier", "Linearr"),
                     transcode_id=transcode_id,
                     icon_data=icon_data if (icon_data and icon_data.startswith("data:")) else None,
-                    watermark=watermark,
                 )
                 r = await _tunarr_create_channel(client, url, channel_obj)
                 if r.status_code in (200, 201):
@@ -947,7 +938,6 @@ class WatermarkIn(BaseModel):
     never read by any pipeline builder at 1.3.6.
     """
     enabled: bool = False
-    url: str | None = None
     position: str = "bottom-right"
     width: float = Field(default=10.0, gt=0)          # percent of frame width, strictly > 0
     vertical_margin: float = Field(default=1.0, ge=0, le=100)
@@ -1335,12 +1325,12 @@ returned host, which Tunarr derives from the inbound Host header."
 ### Task 7: Send the watermark on every channel sync
 
 **Files:**
-- Modify: `main.py` (replace the `_watermark_for_tunarr` stub added in Task 3)
+- Modify: `main.py` (new helper above `_sync_channel_to_tunarr`; wire into both branches of `_sync_channel_to_tunarr`; add the `watermark` parameter to `_tunarr_channel_obj`)
 - Test: `tests/test_watermark.py` (append)
 
 **Interfaces:**
-- Consumes: `_watermark_to_tunarr` (Task 5), the `watermark`/`watermark_image_url` columns (Task 5).
-- Produces: `def _watermark_for_tunarr(ch: dict) -> dict | None` — real implementation.
+- Consumes: `_watermark_to_tunarr` (Task 5), the `watermark`/`watermark_image_url` columns (Task 5), `_sync_channel_to_tunarr` as rewritten in Task 3.
+- Produces: `def _watermark_for_tunarr(ch: dict) -> dict | None`; `_tunarr_channel_obj` gains a `watermark: dict | None = None` keyword.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1380,11 +1370,11 @@ def test_watermark_for_tunarr_survives_corrupt_json():
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `python -m pytest tests/test_watermark.py -v -k watermark_for_tunarr`
-Expected: FAIL — the stub returns `None`, so `test_watermark_for_tunarr_reads_the_channel_row` fails on `assert out is not None`
+Expected: FAIL — `AttributeError: module 'main' has no attribute '_watermark_for_tunarr'`
 
-- [ ] **Step 3: Replace the stub**
+- [ ] **Step 3a: Add the helper**
 
-In `main.py`, replace the Task 3 stub with:
+In `main.py`, directly above `_sync_channel_to_tunarr`, add:
 
 ```python
 def _watermark_for_tunarr(ch: dict) -> dict | None:
@@ -1404,6 +1394,46 @@ def _watermark_for_tunarr(ch: dict) -> dict | None:
         return None
     return _watermark_to_tunarr(wm, ch.get("watermark_image_url"))
 ```
+
+- [ ] **Step 3b: Add the `watermark` keyword to the create builder**
+
+In `main.py`, change `_tunarr_channel_obj`'s signature from:
+
+```python
+def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
+                        channel_id: str | None = None, transcode_id: str | None = None,
+                        icon_data: str | None = None) -> dict:
+```
+
+to:
+
+```python
+def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
+                        channel_id: str | None = None, transcode_id: str | None = None,
+                        icon_data: str | None = None,
+                        watermark: dict | None = None) -> dict:
+```
+
+and immediately before `if channel_id:` add:
+
+```python
+    if watermark is not None:
+        obj["watermark"] = watermark
+```
+
+- [ ] **Step 3c: Wire it into the sync helper**
+
+In `_sync_channel_to_tunarr` (as rewritten in Task 3), after the `icon_data` block that
+sets `changes["icon"]` and before `try:`, add:
+
+```python
+    watermark = _watermark_for_tunarr(ch)
+    if watermark is not None:
+        changes["watermark"] = watermark
+```
+
+and in the create branch, add `watermark=watermark,` to the `_tunarr_channel_obj(...)`
+call, after the `icon_data=` argument.
 
 - [ ] **Step 4: Run the full backend suite**
 
@@ -1486,8 +1516,6 @@ export interface WatermarkFade {
 
 export interface Watermark {
   enabled: boolean
-  /** Absolute URL override. Blank means "use the channel icon". */
-  url?: string | null
   position: WatermarkPosition
   /** Percent of the output frame width. Tunarr requires strictly > 0. */
   width: number
@@ -1507,7 +1535,6 @@ export interface Watermark {
 
 export const DEFAULT_WATERMARK: Watermark = {
   enabled: false,
-  url: null,
   position: 'bottom-right',
   width: 10,
   vertical_margin: 1,
@@ -1765,6 +1792,9 @@ export function WatermarkEditorModal() {
 
   const [form, setForm] = useState<Watermark>(DEFAULT_WATERMARK)
   const [fadeOn, setFadeOn] = useState(false)
+  // Transient: the resolved absolute URL is owned by the backend
+  // (watermark_image_url), so this input is only what to send next.
+  const [urlInput, setUrlInput] = useState('')
 
   // Hydrate when the modal opens or the stored config arrives.
   useEffect(() => {
@@ -1772,6 +1802,7 @@ export function WatermarkEditorModal() {
     const stored = data?.watermark
     setForm(stored ? { ...DEFAULT_WATERMARK, ...stored } : DEFAULT_WATERMARK)
     setFadeOn(Boolean(stored?.fade))
+    setUrlInput(stored?.image_url ?? '')
   }, [open, data])
 
   const set = <K extends keyof Watermark>(key: K, value: Watermark[K]) =>
@@ -1832,14 +1863,14 @@ export function WatermarkEditorModal() {
                   size="sm"
                   variant="secondary"
                   loading={setImage.isPending}
-                  onClick={() => setImage.mutate(form.use_channel_icon ? {} : { url: form.url ?? '' })}
+                  onClick={() => setImage.mutate(form.use_channel_icon ? {} : { url: urlInput })}
                 >
                   {form.use_channel_icon ? 'Upload icon to Tunarr' : 'Use this URL'}
                 </Button>
                 {!form.use_channel_icon && (
                   <Input
-                    value={form.url ?? ''}
-                    onChange={(e) => set('url', e.target.value)}
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
                     placeholder="https://example.com/logo.png"
                   />
                 )}
