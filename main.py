@@ -4358,6 +4358,47 @@ async def _tunarr_create_channel(client: "httpx.AsyncClient", url: str, channel_
         r = await client.post(f"{url}/api/channels", json=flat)
     return r
 
+
+# Tunarr's ChannelSchema exposes these but SaveableChannel omits them — they are
+# stripped by its zod object, so sending them is harmless but pointless. We drop
+# them explicitly so a read-modify-write PUT carries only writable fields.
+_TUNARR_READONLY_CHANNEL_KEYS = frozenset(
+    {"programCount", "transcoding", "sessions", "fallback", "programs"}
+)
+
+
+async def _tunarr_save_channel(
+    client: "httpx.AsyncClient", url: str, tunarr_id: str, changes: dict
+) -> "httpx.Response":
+    """Update a Tunarr channel by read-modify-write.
+
+    Tunarr's `PUT /api/channels/:id` body is the FULL SaveableChannel — only
+    `onDemand` is partial — so a body carrying just the changed keys is a 400.
+    Read the channel, apply `changes`, and write the whole object back.
+
+    Values we do not touch are echoed verbatim, which is required for
+    `guideMinimumDuration` (whose unit is inconsistent inside Tunarr) and
+    `duration` (server-maintained; sending 0 zeroes it).
+
+    Returns the PUT response, or the failing GET response when the read fails
+    (so the caller sees one status either way).
+    """
+    r = await client.get(f"{url}/api/channels/{tunarr_id}")
+    if r.status_code != 200:
+        return r
+    try:
+        current = r.json()
+    except Exception:
+        return r
+    if not isinstance(current, dict):
+        return r
+
+    payload = {k: v for k, v in current.items() if k not in _TUNARR_READONLY_CHANNEL_KEYS}
+    payload.update(changes)
+    payload.setdefault("id", tunarr_id)
+    return await client.put(f"{url}/api/channels/{tunarr_id}", json=payload)
+
+
 class TunarrTestIn(BaseModel):
     url: str | None = None
 
