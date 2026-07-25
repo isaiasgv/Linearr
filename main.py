@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -256,6 +256,20 @@ def init_db():
             pass
         try:
             conn.execute("ALTER TABLE channels ADD COLUMN icon TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # Watermark config as a JSON blob: Tunarr's watermark schema is identical
+        # across every supported version (v1.0.0-v1.3.9), so there is nothing to
+        # normalize into columns. NULL = no watermark.
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN watermark TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # Absolute URL of the watermark image hosted BY TUNARR. Tunarr feeds this
+        # to ffmpeg as an HTTP input, so a base64 data URI (how Linearr stores
+        # icons) cannot be used directly — it must be uploaded and cached here.
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN watermark_image_url TEXT")
         except sqlite3.OperationalError:
             pass
         try:
@@ -515,6 +529,43 @@ class ChannelCollectionIn(BaseModel):
     collection_rating_key: str
     collection_title: str
 
+_WATERMARK_POSITIONS = ("top-left", "top-right", "bottom-left", "bottom-right")
+
+
+class WatermarkFade(BaseModel):
+    # Tunarr requires periodMins >= 1 and silently drops entries <= 0.
+    period_mins: int = Field(ge=1)
+    leading_edge: bool = True
+
+
+class WatermarkIn(BaseModel):
+    """Watermark config, validated against Tunarr's real constraints.
+
+    Mirrors Tunarr's WatermarkSchema so an invalid value is rejected here with a
+    clear message rather than as an opaque 400 from Tunarr. Deliberately omits
+    `animated` and `fadeConfig[].programType`: both are persisted by Tunarr but
+    never read by any pipeline builder at 1.3.6.
+    """
+    enabled: bool = False
+    position: str = "bottom-right"
+    width: float = Field(default=10.0, gt=0)          # percent of frame width, strictly > 0
+    vertical_margin: float = Field(default=1.0, ge=0, le=100)
+    horizontal_margin: float = Field(default=1.0, ge=0, le=100)
+    duration: float = Field(default=0.0, ge=0)        # seconds; 0 = always on
+    opacity: int = Field(default=100, ge=0, le=100)   # must be an int for Tunarr
+    fixed_size: bool = False                          # true makes `width` inert
+    use_channel_icon: bool = True
+    fade: WatermarkFade | None = None
+
+    @field_validator("position")
+    @classmethod
+    def _check_position(cls, v: str) -> str:
+        if v not in _WATERMARK_POSITIONS:
+            raise ValueError(
+                f"position must be one of {', '.join(_WATERMARK_POSITIONS)}"
+            )
+        return v
+
 class BulkAssignmentItem(BaseModel):
     # Bulk items carry no channel_number — the channel is set once at the top
     # level of BulkAssignmentIn and applied to every item by the handler.
@@ -747,6 +798,67 @@ async def delete_channel_icon(channel_number: int):
     _log_app("channel", f"Removed icon for channel {channel_number}", metadata={"number": channel_number})
     await _sync_channel_to_tunarr(channel_number)
     return {"ok": True}
+
+# ── Channel watermark ─────────────────────────────────────────────────────────
+
+@app.get("/api/channels/{channel_number}/watermark")
+def get_channel_watermark(channel_number: int):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT watermark, watermark_image_url FROM channels WHERE number=?",
+            (channel_number,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+    stored = row["watermark"]
+    if not stored:
+        return {"watermark": None}
+    try:
+        wm = json.loads(stored)
+    except (TypeError, ValueError):
+        return {"watermark": None}
+    wm["image_url"] = row["watermark_image_url"]
+    return {"watermark": wm}
+
+
+@app.put("/api/channels/{channel_number}/watermark")
+async def put_channel_watermark(channel_number: int, body: WatermarkIn):
+    with get_db() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM channels WHERE number=?", (channel_number,)
+        ).fetchone()
+        if exists is None:
+            raise HTTPException(404, "Channel not found")
+        conn.execute(
+            "UPDATE channels SET watermark=? WHERE number=?",
+            (json.dumps(body.model_dump()), channel_number),
+        )
+    _log_app("channel", f"Updated watermark for channel {channel_number}",
+             metadata={"number": channel_number, "enabled": body.enabled})
+    sync = await _sync_channel_to_tunarr(channel_number)
+    return {"ok": True, "watermark": body.model_dump(), "tunarr_sync": sync}
+
+
+@app.delete("/api/channels/{channel_number}/watermark")
+async def delete_channel_watermark(channel_number: int):
+    """Clear the watermark.
+
+    Tunarr has no way to null the watermark column via its API. Clearing it
+    here removes Linearr's copy and stops Linearr from sending a watermark on
+    subsequent syncs; because channel writes are read-modify-write, a watermark
+    Tunarr already holds is echoed back untouched until it is disabled there.
+    """
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE channels SET watermark=NULL, watermark_image_url=NULL WHERE number=?",
+            (channel_number,),
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(404, "Channel not found")
+    _log_app("channel", f"Cleared watermark for channel {channel_number}",
+             level="warn", metadata={"number": channel_number})
+    sync = await _sync_channel_to_tunarr(channel_number)
+    return {"ok": True, "tunarr_sync": sync}
 
 @app.get("/api/icons/export")
 def export_icon_pack():
@@ -4256,6 +4368,33 @@ def get_tunarr_url() -> str:
     with get_db() as conn:
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
     return rows.get("tunarr_url", "http://tunarr:8000").rstrip("/")
+
+def _watermark_to_tunarr(wm: dict, image_url: str | None) -> dict:
+    """Map stored watermark config to Tunarr's WatermarkSchema.
+
+    Only `fadeConfig[0]` is ever applied by Tunarr, so at most one entry is
+    sent. `animated` and `fadeConfig[].programType` are omitted: Tunarr
+    persists both but no pipeline builder reads them (1.3.6).
+    """
+    out: dict = {
+        "enabled": bool(wm.get("enabled", False)),
+        "position": wm.get("position", "bottom-right"),
+        "width": float(wm.get("width", 10.0)),
+        "verticalMargin": float(wm.get("vertical_margin", 1.0)),
+        "horizontalMargin": float(wm.get("horizontal_margin", 1.0)),
+        "duration": float(wm.get("duration", 0.0)),
+        "opacity": int(wm.get("opacity", 100)),
+        "fixedSize": bool(wm.get("fixed_size", False)),
+        "url": image_url or "",
+    }
+    fade = wm.get("fade")
+    if isinstance(fade, dict) and int(fade.get("period_mins", 0)) >= 1:
+        out["fadeConfig"] = [{
+            "periodMins": int(fade["period_mins"]),
+            "leadingEdge": bool(fade.get("leading_edge", True)),
+        }]
+    return out
+
 
 _UUID_RE = _re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
