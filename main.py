@@ -2120,12 +2120,9 @@ async def generate_collections(channel_number: int):
                 # just created/updated exist as tags before the smart collections
                 # that query those tags are written.
                 scan_ok = await _tunarr_scan_libraries(tc, tunarr_url, wait=True)
-                sc_path = "/api/smart_collections"
-                # Fetch existing Tunarr smart collections (underscore, hyphen fallback)
+                sc_path = _TUNARR_SC_PATH
+                # Fetch existing Tunarr smart collections
                 sr = await tc.get(f"{tunarr_url}{sc_path}")
-                if sr.status_code == 404:
-                    sc_path = "/api/smart-collections"
-                    sr = await tc.get(f"{tunarr_url}{sc_path}")
                 existing_sc = {sc["name"]: sc for sc in (sr.json() if sr.status_code == 200 else [])}
 
                 created_sc, updated_sc = [], []
