@@ -4259,6 +4259,57 @@ def get_tunarr_url() -> str:
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
     return rows.get("tunarr_url", "http://tunarr:8000").rstrip("/")
 
+_UUID_RE = _re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+async def _tunarr_resolve_transcode_config(
+    client: "httpx.AsyncClient", url: str
+) -> str | None:
+    """Resolve a transcode-config uuid Tunarr will actually accept.
+
+    Tunarr 1.3.x validates `transcodeConfigId` as a uuid AND checks it exists;
+    both failures are a 400. Prefers the config flagged default, else the first
+    one with a uuid-shaped id, else `/api/ffmpeg-settings`. Returns None rather
+    than a bogus value — the caller must not send a non-uuid.
+    """
+    def _uuid_or_none(value) -> str | None:
+        return value if isinstance(value, str) and _UUID_RE.match(value) else None
+
+    try:
+        r = await client.get(f"{url}/api/transcode_configs")
+        if r.status_code == 200:
+            data = r.json()
+            configs = data if isinstance(data, list) else data.get("data", [])
+            if isinstance(configs, list) and configs:
+                for cfg in configs:
+                    if isinstance(cfg, dict) and cfg.get("isDefault"):
+                        found = _uuid_or_none(cfg.get("id"))
+                        if found:
+                            return found
+                for cfg in configs:
+                    if isinstance(cfg, dict):
+                        found = _uuid_or_none(cfg.get("id"))
+                        if found:
+                            return found
+    except Exception as e:
+        log.debug("transcode_configs lookup failed: %s", e)
+
+    try:
+        r = await client.get(f"{url}/api/ffmpeg-settings")
+        if r.status_code == 200:
+            fj = r.json()
+            if isinstance(fj, dict):
+                for key in ("defaultTranscodeConfigId", "transcodeConfigId", "configId", "id"):
+                    found = _uuid_or_none(fj.get(key))
+                    if found:
+                        return found
+    except Exception as e:
+        log.debug("ffmpeg-settings lookup failed: %s", e)
+
+    return None
+
 def _tunarr_icon_obj(data_uri: str | None) -> dict:
     """Channel icon write object. A data:/http path sets a custom icon; an empty
     path renders as none. (Tunarr 1.3 has three icon states custom/default/none —
