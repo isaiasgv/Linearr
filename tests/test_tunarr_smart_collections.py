@@ -8,6 +8,7 @@ and never trust a bare 2xx.
 """
 import httpx
 import pytest
+from fastapi import HTTPException
 
 import main
 
@@ -176,18 +177,74 @@ async def test_task_run_falls_back_to_empty_object():
     assert seen == [False, True], "must retry once with {} after a bare-400"
 
 
+def _install_mock_client(monkeypatch, handler):
+    """Point the handler's internally-built `httpx.AsyncClient` at a MockTransport.
+
+    `tunarr_list_smart_collections` constructs its own client
+    (`httpx.AsyncClient(timeout=10.0)`), so we swap `main.httpx.AsyncClient` for a
+    factory returning a real client bound to the mock transport — still a valid
+    async context manager, so the call site is untouched. The real class is
+    captured BEFORE patching, otherwise the factory would recurse into itself
+    (`main.httpx` is the `httpx` module object itself).
+    """
+    calls: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return handler(request)
+
+    transport = httpx.MockTransport(_handler)
+    real_async_client = httpx.AsyncClient
+
+    def _factory(*args, **kwargs):
+        return real_async_client(transport=transport)
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", _factory)
+    return calls
+
+
+def test_smart_collections_path_constant_is_underscored():
+    """The constant's value is itself load-bearing — Tunarr 1.2.10..1.3.6 only
+    ever served the underscored route."""
+    assert main._TUNARR_SC_PATH == "/api/smart_collections"
+
+
 @pytest.mark.anyio
-async def test_smart_collections_path_is_underscored_only():
-    """The hyphen route does not exist in any supported Tunarr version."""
-    seen: list[str] = []
+async def test_list_smart_collections_does_not_retry_hyphen_on_404(monkeypatch):
+    """Regression: Linearr used to retry `/api/smart-collections` after a 404 on
+    `/api/smart_collections`. That route has never existed in any supported
+    Tunarr version, so the retry was dead code that doubled every failure's
+    latency and masked the real error. Drive the REAL route handler: a 404 must
+    produce exactly one request (the underscored one) and surface as an error.
+    """
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request.url.path)
-        return httpx.Response(200, json=[])
+        return httpx.Response(404, text="Not Found")
 
-    transport = httpx.MockTransport(handler)
-    async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
-        await client.get(f"http://t.test{main._TUNARR_SC_PATH}")
+    calls = _install_mock_client(monkeypatch, handler)
 
-    assert seen == ["/api/smart_collections"]
-    assert main._TUNARR_SC_PATH == "/api/smart_collections"
+    with pytest.raises(HTTPException) as exc:
+        await main.tunarr_list_smart_collections()
+
+    assert [r.url.path for r in calls] == ["/api/smart_collections"], (
+        "a 404 must NOT be followed by a hyphenated retry — "
+        f"saw {[r.url.path for r in calls]}"
+    )
+    assert exc.value.status_code == 404, "the 404 must surface, not be swallowed"
+
+
+@pytest.mark.anyio
+async def test_list_smart_collections_uses_underscored_path_on_success(monkeypatch):
+    """Happy path: one GET, underscored, and the Tunarr payload is returned as-is."""
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
+
+    payload = [{"uuid": "u-1", "name": "Galaxy ONE Movies"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    calls = _install_mock_client(monkeypatch, handler)
+
+    assert await main.tunarr_list_smart_collections() == payload
+    assert [(r.method, r.url.path) for r in calls] == [("GET", "/api/smart_collections")]
