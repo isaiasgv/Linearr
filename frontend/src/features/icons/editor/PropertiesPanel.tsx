@@ -9,7 +9,7 @@ interface Props {
 }
 
 const inputClass =
-  'w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500'
+  'w-full bg-slate-900 border border-slate-700 rounded-sm px-2 py-1 text-xs text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500'
 
 const labelClass = 'text-[10px] uppercase text-slate-500 font-medium tracking-wide'
 
@@ -125,7 +125,7 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
               type="color"
               value={layer.color}
               onChange={(e) => update({ color: e.target.value })}
-              className="w-8 h-8 bg-transparent border border-slate-700 rounded cursor-pointer"
+              className="w-8 h-8 bg-transparent border border-slate-700 rounded-sm cursor-pointer"
             />
             <input
               type="text"
@@ -197,7 +197,7 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
         <img
           src={layer.src}
           alt=""
-          className="w-full h-24 object-contain bg-slate-900 border border-slate-700 rounded"
+          className="w-full h-24 object-contain bg-slate-900 border border-slate-700 rounded-sm"
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -240,7 +240,7 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
             type="color"
             value={layer.tint || '#ffffff'}
             onChange={(e) => update({ tint: e.target.value })}
-            className="w-8 h-8 bg-transparent border border-slate-700 rounded cursor-pointer"
+            className="w-8 h-8 bg-transparent border border-slate-700 rounded-sm cursor-pointer"
           />
           <input
             type="text"

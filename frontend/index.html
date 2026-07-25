@@ -1,8 +1,20 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- FOUC-safe theme: set .dark before first paint from localStorage / OS pref.
+         Added by /setup-design-system. Defaults to dark when nothing is saved and
+         the OS has no light preference, preserving Linearr's dark-first feel. -->
+    <script>
+      (function () {
+        var saved = localStorage.getItem('theme');
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', saved === 'dark' || (!saved && prefersDark));
+      })();
+    </script>
+
     <title>Linearr</title>
 
     <!-- PWA -->
@@ -26,11 +38,11 @@
     <meta name="robots" content="noindex,nofollow" />
     <meta name="googlebot" content="noindex,nofollow" />
   </head>
-  <body class="bg-slate-900 text-slate-100 antialiased">
+  <body class="bg-background text-foreground antialiased">
     <div id="root">
       <!-- Splash screen — visible until React mounts and replaces this content -->
       <style>
-        .splash{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#020617;animation:splash-in .4s ease}
+        .splash{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:var(--background,#020617);animation:splash-in .4s ease}
         .splash svg{animation:splash-pulse 2s ease-in-out infinite}
         @keyframes splash-in{from{opacity:0}to{opacity:1}}
         @keyframes splash-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(1.04)}}

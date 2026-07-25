@@ -86,7 +86,7 @@ export function ExportPanel({ composition, onChange, baseName = 'icon' }: Props)
             type="color"
             value={composition.background.value || '#1e293b'}
             onChange={(e) => updateBg({ value: e.target.value })}
-            className="w-full h-8 bg-transparent border border-slate-700 rounded cursor-pointer"
+            className="w-full h-8 bg-transparent border border-slate-700 rounded-sm cursor-pointer"
           />
         )}
         {composition.background.type === 'gradient' && (
@@ -108,13 +108,13 @@ export function ExportPanel({ composition, onChange, baseName = 'icon' }: Props)
                 type="color"
                 value={gradC1}
                 onChange={(e) => updateBg({ value: `${gradAngle}|${e.target.value}|${gradC2}` })}
-                className="flex-1 h-8 bg-transparent border border-slate-700 rounded cursor-pointer"
+                className="flex-1 h-8 bg-transparent border border-slate-700 rounded-sm cursor-pointer"
               />
               <input
                 type="color"
                 value={gradC2}
                 onChange={(e) => updateBg({ value: `${gradAngle}|${gradC1}|${e.target.value}` })}
-                className="flex-1 h-8 bg-transparent border border-slate-700 rounded cursor-pointer"
+                className="flex-1 h-8 bg-transparent border border-slate-700 rounded-sm cursor-pointer"
               />
             </div>
           </div>
@@ -132,7 +132,7 @@ export function ExportPanel({ composition, onChange, baseName = 'icon' }: Props)
             id="icon-export-color-mode"
             value={exportMode}
             onChange={(e) => setExportMode(e.target.value as ColorMode)}
-            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+            className="w-full bg-slate-900 border border-slate-700 rounded-sm px-2 py-1 text-xs text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
           >
             {COLOR_MODES.map((m) => (
               <option key={m.id} value={m.id}>
@@ -144,20 +144,20 @@ export function ExportPanel({ composition, onChange, baseName = 'icon' }: Props)
         <div className="flex gap-2">
           <button
             onClick={exportSvg}
-            className="flex-1 px-2 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded"
+            className="flex-1 px-2 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-sm"
           >
             Download SVG
           </button>
           <button
             onClick={exportPng}
-            className="flex-1 px-2 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded"
+            className="flex-1 px-2 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-sm"
           >
             Download PNG
           </button>
         </div>
         <button
           onClick={exportAll}
-          className="w-full px-2 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 text-white rounded"
+          className="w-full px-2 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 text-white rounded-sm"
         >
           Download All Variants (8 files)
         </button>

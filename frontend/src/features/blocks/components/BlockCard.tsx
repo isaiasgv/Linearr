@@ -83,7 +83,7 @@ export function BlockCard({ block }: BlockCardProps) {
         tabIndex={0}
         aria-expanded={isExpanded}
         aria-label={`${block.name} — ${isExpanded ? 'collapse' : 'expand'} block`}
-        className={`border-l-4 ${borderColor} px-4 py-3 flex items-center gap-3 cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset`}
+        className={`border-l-4 ${borderColor} px-4 py-3 flex items-center gap-3 cursor-pointer select-none focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset`}
         onClick={() => expandBlock(block.id)}
         onKeyDown={(e) => {
           if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
@@ -103,7 +103,7 @@ export function BlockCard({ block }: BlockCardProps) {
               <span className="text-xs text-slate-500">{block.days.join(', ')}</span>
             )}
             <span
-              className={`text-xs px-1.5 py-0.5 rounded font-medium ${CONTENT_TYPE_COLOR[block.content_type]}`}
+              className={`text-xs px-1.5 py-0.5 rounded-sm font-medium ${CONTENT_TYPE_COLOR[block.content_type]}`}
             >
               {CONTENT_TYPE_LABEL[block.content_type]}
             </span>
@@ -111,7 +111,7 @@ export function BlockCard({ block }: BlockCardProps) {
         </div>
 
         {/* Fill status */}
-        <div className="flex-shrink-0 text-xs text-slate-400 tabular-nums">
+        <div className="shrink-0 text-xs text-slate-400 tabular-nums">
           {fill ? (
             <span className={fill.covered === fill.total ? 'text-emerald-400' : ''}>
               {fill.covered}/{fill.total}h
@@ -122,7 +122,7 @@ export function BlockCard({ block }: BlockCardProps) {
         </div>
 
         {/* Action buttons */}
-        <div className="flex-shrink-0 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="shrink-0 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {isGeneric && selectedChannel && (
             <Button
               size="xs"
@@ -240,7 +240,7 @@ export function BlockCard({ block }: BlockCardProps) {
             .map((s) => (
               <div
                 key={s.id}
-                className="w-8 h-12 shrink-0 rounded overflow-hidden bg-slate-700 relative"
+                className="w-8 h-12 shrink-0 rounded-sm overflow-hidden bg-slate-700 relative"
                 title={`${to12h(s.slot_time)} — ${s.plex_title}`}
               >
                 <img

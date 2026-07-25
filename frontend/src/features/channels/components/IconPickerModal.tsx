@@ -47,7 +47,7 @@ export function IconPickerModal() {
           <button
             onClick={() => closeModal('iconPicker')}
             aria-label="Close"
-            className="rounded text-slate-400 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="rounded-sm text-slate-400 hover:text-slate-200 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
             <svg
               className="w-5 h-5"
@@ -99,7 +99,7 @@ export function IconPickerModal() {
                   onClick={() => handlePick(icon.data)}
                   className="group flex flex-col items-center bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-indigo-500 rounded-lg p-2 transition-colors"
                 >
-                  <div className="w-full aspect-square bg-slate-800 rounded mb-1.5 flex items-center justify-center overflow-hidden">
+                  <div className="w-full aspect-square bg-slate-800 rounded-sm mb-1.5 flex items-center justify-center overflow-hidden">
                     <img src={icon.data} alt={icon.name} className="max-w-full max-h-full" />
                   </div>
                   <p className="text-xs text-slate-300 truncate w-full text-center">{icon.name}</p>

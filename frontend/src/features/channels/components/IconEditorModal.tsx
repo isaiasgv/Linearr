@@ -261,7 +261,7 @@ export function IconEditorModal() {
             <button
               onClick={handleSaveProjectOnly}
               disabled={disabled}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-sm disabled:opacity-50"
             >
               {busy && <Spinner size="sm" />}
               Save Project
@@ -334,7 +334,7 @@ export function IconEditorModal() {
               <button
                 onClick={() => handleExport('png', true)}
                 disabled={disabled}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 text-white rounded disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 text-white rounded-sm disabled:opacity-50"
               >
                 {busy && <Spinner size="sm" />}
                 Assign to CH {selectedChannel.number}
@@ -344,7 +344,7 @@ export function IconEditorModal() {
               <button
                 onClick={() => handleExport('png', false)}
                 disabled={disabled}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 text-white rounded disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 text-white rounded-sm disabled:opacity-50"
               >
                 {busy && <Spinner size="sm" />}
                 Use Icon

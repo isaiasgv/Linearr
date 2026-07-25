@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { TopBar } from './TopBar'
+import { OribionFooter } from './OribionFooter'
 
 import { useUIStore } from '@/shared/store/ui.store'
 
@@ -17,7 +18,7 @@ export function AppLayout({ sidebar, children }: AppLayoutProps) {
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-indigo-600 focus:text-white focus:rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-100 focus:px-4 focus:py-2 focus:bg-indigo-600 focus:text-white focus:rounded-lg focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-400"
       >
         Skip to content
       </a>
@@ -55,6 +56,10 @@ export function AppLayout({ sidebar, children }: AppLayoutProps) {
           {children}
         </main>
       </div>
+
+      {/* oribion-branding:footer */}
+      <OribionFooter />
+      {/* /oribion-branding:footer */}
     </div>
   )
 }

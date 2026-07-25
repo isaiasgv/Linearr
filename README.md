@@ -17,6 +17,10 @@ Build, manage, and push programming schedules for your personal TV network — c
 [![Release](https://img.shields.io/github/v/release/isaiasgv/Linearr?include_prereleases&sort=semver)](https://github.com/isaiasgv/Linearr/releases)
 [![License](https://img.shields.io/github/license/isaiasgv/Linearr)](./LICENSE)
 [![GHCR](https://img.shields.io/badge/ghcr-isaiasgv%2FLinearr-blue?logo=docker)](https://github.com/isaiasgv/Linearr/pkgs/container/linearr)
+[![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen?logo=dependabot)](./.github/dependabot.yml)
+[![Lifecycle: Active Development](https://img.shields.io/badge/lifecycle-active--development-brightgreen)](.repo-meta.yml)
+[![Cadence: Continuous](https://img.shields.io/badge/cadence-continuous-brightgreen)](.repo-meta.yml)
+[![Criticality: Internal](https://img.shields.io/badge/criticality-internal-lightgrey)](.repo-meta.yml)
 <!-- /repo-standards:badges -->
 
 [Features](#features) &bull; [Quick Start](#-quick-start) &bull; [Screenshots](#-how-it-works) &bull; [Stack](#-stack) &bull; [API Docs](#-api-documentation) &bull; [Contributing](#-contributing)

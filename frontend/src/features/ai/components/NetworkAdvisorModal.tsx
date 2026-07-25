@@ -126,7 +126,7 @@ export function NetworkAdvisorModal() {
                   >
                     <div className="flex items-start justify-between gap-4 mb-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-slate-500 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded">
+                        <span className="text-xs font-mono text-slate-500 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-sm">
                           CH {rec.channel_number}
                         </span>
                         <span className="font-medium text-slate-100 text-sm">
@@ -171,7 +171,7 @@ export function NetworkAdvisorModal() {
                             <PlexThumb
                               path={item.plex_thumb}
                               alt={item.plex_title}
-                              className="w-6 h-6 rounded object-cover shrink-0"
+                              className="w-6 h-6 rounded-sm object-cover shrink-0"
                             />
                           )}
                           <div>

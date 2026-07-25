@@ -140,13 +140,13 @@ function QuickStart({
               onChange={(e) => setPresetSearch(e.target.value)}
               placeholder="Search HBO, Disney, FX…"
               aria-label="Search network presets"
-              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
             <select
               value={presetCategory}
               onChange={(e) => setPresetCategory(e.target.value)}
               aria-label="Preset category"
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             >
               <option value="all">All categories</option>
               {NETWORK_CATEGORIES.map((c) => (
@@ -170,7 +170,7 @@ function QuickStart({
                   key={p.id}
                   type="button"
                   onClick={() => applyPreset(p)}
-                  className="w-full text-left px-3 py-2 bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 rounded transition-colors"
+                  className="w-full text-left px-3 py-2 bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 rounded-sm transition-colors"
                   title={p.style}
                 >
                   <div className="flex items-baseline gap-2">
@@ -195,7 +195,7 @@ function QuickStart({
             <button
               type="button"
               onClick={() => aiSuggest.mutate()}
-              className="w-full px-3 py-2 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium"
+              className="w-full px-3 py-2 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-sm font-medium"
             >
               Generate suggestions from your library
             </button>
@@ -218,7 +218,7 @@ function QuickStart({
                   key={`${s.number}-${i}`}
                   type="button"
                   onClick={() => applyAiSuggestion(s)}
-                  className="w-full text-left px-2.5 py-2 bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 rounded transition-colors group"
+                  className="w-full text-left px-2.5 py-2 bg-slate-800 hover:bg-indigo-700/30 hover:border-indigo-500 border border-slate-700 rounded-sm transition-colors group"
                 >
                   <div className="flex items-baseline gap-2">
                     <span className="text-[10px] font-mono text-slate-500">CH {s.number}</span>
@@ -250,7 +250,7 @@ function QuickStart({
             <button
               type="button"
               onClick={() => suggest247.mutate()}
-              className="w-full px-3 py-2 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium"
+              className="w-full px-3 py-2 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-sm font-medium"
             >
               Scan library for 24/7 channel candidates
             </button>
@@ -266,13 +266,13 @@ function QuickStart({
                     key={s.rating_key}
                     type="button"
                     onClick={() => apply247(s)}
-                    className="w-full text-left flex items-center gap-2.5 px-2.5 py-2 bg-slate-800 hover:bg-emerald-700/20 hover:border-emerald-500 border border-slate-700 rounded transition-colors"
+                    className="w-full text-left flex items-center gap-2.5 px-2.5 py-2 bg-slate-800 hover:bg-emerald-700/20 hover:border-emerald-500 border border-slate-700 rounded-sm transition-colors"
                   >
                     {s.thumb && (
                       <img
                         src={`/api/plex/thumb?path=${encodeURIComponent(s.thumb)}`}
                         alt=""
-                        className="w-10 h-14 rounded object-cover shrink-0 bg-slate-900"
+                        className="w-10 h-14 rounded-sm object-cover shrink-0 bg-slate-900"
                       />
                     )}
                     <div className="flex-1 min-w-0">
@@ -485,7 +485,7 @@ export function ChannelFormModal() {
             type="button"
             onClick={handleClose}
             aria-label="Close"
-            className="rounded text-slate-500 hover:text-slate-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="rounded-sm text-slate-500 hover:text-slate-300 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
             <svg
               className="w-5 h-5"
@@ -543,7 +543,7 @@ export function ChannelFormModal() {
                       iconPickerCallback: (dataUrl: string) => setIcon(dataUrl),
                     })
                   }
-                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded"
+                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-sm"
                 >
                   Pick from Library
                 </button>
@@ -554,14 +554,14 @@ export function ChannelFormModal() {
                       iconEditorCallback: (dataUrl: string) => setIcon(dataUrl),
                     })
                   }
-                  className="px-2.5 py-1 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded"
+                  className="px-2.5 py-1 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded-sm"
                 >
                   Create New
                 </button>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded"
+                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-sm"
                 >
                   Upload
                 </button>
@@ -569,7 +569,7 @@ export function ChannelFormModal() {
                   <button
                     type="button"
                     onClick={() => setIcon(null)}
-                    className="px-2.5 py-1 text-xs bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-400 rounded"
+                    className="px-2.5 py-1 text-xs bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-400 rounded-sm"
                   >
                     Clear
                   </button>
@@ -610,7 +610,7 @@ export function ChannelFormModal() {
                 min={1}
                 max={9999}
                 disabled={isEditing}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
 
@@ -627,14 +627,14 @@ export function ChannelFormModal() {
                   onChange={(e) => setColor(e.target.value)}
                   placeholder="#hex"
                   aria-invalid={!colorValid || undefined}
-                  className={`w-full bg-slate-900 border rounded-lg pl-3 pr-9 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                  className={`w-full bg-slate-900 border rounded-lg pl-3 pr-9 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                     colorValid ? 'border-slate-600 focus:border-indigo-500' : 'border-red-500'
                   }`}
                 />
                 <span
                   aria-hidden="true"
                   title={colorValid ? color || 'No color' : 'Invalid color'}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded border border-slate-600"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm border border-slate-600"
                   style={{
                     backgroundColor: colorValid && color.trim() ? color.trim() : 'transparent',
                   }}
@@ -657,7 +657,7 @@ export function ChannelFormModal() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
 
@@ -671,7 +671,7 @@ export function ChannelFormModal() {
                 id={ids.tier}
                 value={tier}
                 onChange={(e) => setTier(e.target.value as Channel['tier'])}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
               >
                 {TIERS.map((t) => (
                   <option key={t} value={t}>
@@ -690,7 +690,7 @@ export function ChannelFormModal() {
                 id={ids.mode}
                 value={mode}
                 onChange={(e) => setMode(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
               >
                 {MODES.map((m) => (
                   <option key={m} value={m}>
@@ -713,7 +713,7 @@ export function ChannelFormModal() {
               onChange={(e) => setVibe(e.target.value)}
               placeholder="e.g. Cozy crime procedurals"
               list="vibe-templates"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
             />
             <datalist id="vibe-templates">
               {VIBE_TEMPLATES.map((v) => (
@@ -745,7 +745,7 @@ export function ChannelFormModal() {
                             (e.currentTarget.closest('details') as HTMLDetailsElement) ?? null
                           if (det) det.open = false
                         }}
-                        className="text-left px-2 py-1 text-xs hover:bg-slate-800 rounded"
+                        className="text-left px-2 py-1 text-xs hover:bg-slate-800 rounded-sm"
                         title={t.text}
                       >
                         <span className="text-slate-200 font-medium">{t.label}</span>
@@ -762,7 +762,7 @@ export function ChannelFormModal() {
               onChange={(e) => setStyle(e.target.value)}
               rows={3}
               placeholder="Brief channel identity description"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 resize-none"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 resize-none"
             />
           </div>
         </div>

@@ -1,6 +1,191 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  ── shadcn-style semantic token layer ──────────────────────────────────────
+  Added by /setup-design-system (additive migration). These semantic tokens
+  (--background/--foreground/--primary/…) sit ALONGSIDE the palette ramps below
+  (--color-brand-*, --color-galaxy, …) that the existing components still use.
+  Components are migrated to the semantic utilities (bg-background,
+  text-foreground, bg-primary, …) incrementally — see
+  design-system/MIGRATION-REPORT.md for the catalog.
+
+  --primary is the app's own indigo brand (#6366f1), carried over unchanged.
+  Dark values mirror the app's real slate palette (slate-900 body, slate-800
+  cards, slate-700 borders) so migrating a `bg-slate-900` → `bg-background` is a
+  visual no-op in the current dark-only default.
+
+  Light + dark are both defined (the FOUC script in index.html toggles .dark).
+  NOTE: light mode is infrastructural until components stop hardcoding
+  bg-slate-*/text-slate-* — see the migration report.
+*/
+:root {
+  --background: #ffffff;            --foreground: #0f172a;
+  --card: #ffffff;                  --card-foreground: #0f172a;
+  --popover: #ffffff;               --popover-foreground: #0f172a;
+  --primary: #6366f1;               --primary-foreground: #ffffff;   /* indigo brand */
+  --secondary: #f1f5f9;             --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;                 --muted-foreground: #64748b;
+  --accent: #f1f5f9;                --accent-foreground: #0f172a;    /* neutral hover — NOT the brand */
+  --destructive: #dc2626;           --destructive-foreground: #ffffff;
+  --success: #15803d;               --success-foreground: #ffffff;
+  --warning: #b45309;               --warning-foreground: #ffffff;
+  --info: #0e7490;                  --info-foreground: #ffffff;
+  --border: #e2e8f0;                --border-strong: #cbd5e1;
+  --input: #e2e8f0;                 --ring: #6366f1;
+  --oribion: #176bff;               /* family badge — mode-invariant */
+}
+
+/* Dark — mirrors the app's real slate values. --oribion is invariant (no pair). */
+.dark {
+  --background: #0f172a;            --foreground: #f1f5f9;           /* slate-900 / slate-100 */
+  --card: #1e293b;                  --card-foreground: #f1f5f9;      /* slate-800 */
+  --popover: #1e293b;               --popover-foreground: #f1f5f9;
+  --primary: #6366f1;               --primary-foreground: #ffffff;
+  --secondary: #293548;             --secondary-foreground: #f1f5f9; /* slate-750 */
+  --muted: #1e293b;                 --muted-foreground: #94a3b8;     /* slate-400 */
+  --accent: #293548;                --accent-foreground: #f1f5f9;
+  --destructive: #ef4444;           --destructive-foreground: #ffffff;
+  --success: #10b981;               --success-foreground: #052e16;
+  --warning: #f59e0b;               --warning-foreground: #422006;
+  --info: #06b6d4;                  --info-foreground: #083344;
+  --border: #334155;                --border-strong: #475569;        /* slate-700 / slate-600 */
+  --input: #334155;                 --ring: #6366f1;
+}
+
+/* Map semantic tokens into Tailwind utilities + static type/radius/motion scales. */
+@theme inline {
+  --color-background: var(--background);   --color-foreground: var(--foreground);
+  --color-card: var(--card);               --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);         --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);         --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);     --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);             --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);           --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive); --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);         --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);         --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);               --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);           --color-border-strong: var(--border-strong);
+  --color-input: var(--input);             --color-ring: var(--ring);
+  --color-oribion: var(--oribion);
+
+  /* Type scale */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --text-xs: 0.75rem;  --text-sm: 0.875rem; --text-base: 1rem;
+  --text-lg: 1.125rem; --text-xl: 1.25rem;  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem; --text-4xl: 2.25rem;
+
+  /* Radius + motion */
+  --radius: 0.5rem;  --radius-sm: calc(var(--radius) - 4px);  --radius-lg: calc(var(--radius) + 4px);
+  --ease-quiet: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms;  --duration: 200ms;
+}
+
+/* ── Existing palette ramps (kept — components still reference these) ──────── */
+@theme {
+  --color-galaxy: #0f172a;
+  --color-galaxy-card: #1e293b;
+  --color-galaxy-border: #334155;
+
+  --color-slate-750: #293548;
+
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
+  --color-brand-950: #1e1b4b;
+
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-200: #a7f3d0;
+  --color-success-300: #6ee7b7;
+  --color-success-400: #34d399;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+  --color-success-800: #065f46;
+  --color-success-900: #064e3b;
+  --color-success-950: #022c22;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-200: #fecaca;
+  --color-danger-300: #fca5a5;
+  --color-danger-400: #f87171;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+  --color-danger-800: #991b1b;
+  --color-danger-900: #7f1d1d;
+  --color-danger-950: #450a0a;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-warning-300: #fcd34d;
+  --color-warning-400: #fbbf24;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+  --color-warning-800: #92400e;
+  --color-warning-900: #78350f;
+  --color-warning-950: #451a03;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 0.875rem;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  /* Drive page bg/fg from semantic tokens so light/dark responds to .dark.
+     Components that still hardcode bg-slate-*/text-slate-* override this until
+     migrated (see design-system/MIGRATION-REPORT.md). */
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Respect reduced-motion globally, not just for the splash pulse. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  /*
+    Tailwind v4's Preflight no longer sets `cursor: pointer` on buttons.
+    Linearr relied on the v3 default across ~40 button sites, so restore it
+    for enabled buttons and role="button" elements (disabled buttons keep
+    `cursor-not-allowed` from the primitives).
+  */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']):not(:disabled) {
+    cursor: pointer;
+  }
+}
 
 /* SweetAlert2 dark toast overrides */
 .swal-toast-popup {

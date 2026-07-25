@@ -29,6 +29,13 @@ criticality: Internal
 # .releaserc.js, so the standards check will still flag the JSON migration separately.
 versioning_mode: patch-only
 
+# AES profile — which Application Engineering Standard sections apply.
+# See the `aes` skill matrix. web-app: a self-hosted React UI served by the
+# FastAPI backend; held to web-app Mandatory sections (design-system, PWA, SEO,
+# analytics). Declared via /setup-classification.
+profile: web-app
+aes_exceptions: []
+
 # Optional governance fields.
 owner: "@isaiasgv"
 last_reviewed: 2026-06-25
