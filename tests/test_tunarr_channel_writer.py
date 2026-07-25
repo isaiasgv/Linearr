@@ -183,8 +183,27 @@ async def test_save_channel_strips_readonly_keys():
 
 
 @pytest.mark.anyio
+async def test_save_channel_strips_readonly_keys_even_when_in_changes():
+    """The read-only filter must apply to the final merged payload, not just
+    the copy of `current` — otherwise a caller passing a read-only key inside
+    `changes` reintroduces it into the PUT body."""
+    transport, state = _mock_channel_server()
+    async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
+        await main._tunarr_save_channel(
+            client, "http://t.test", CH_UUID,
+            {"name": "X", "programCount": 999, "sessions": [{"id": "sneaky"}]})
+    body = state["put_body"]
+    assert "programCount" not in body, "read-only key smuggled in via changes must still be stripped"
+    assert "sessions" not in body, "read-only key smuggled in via changes must still be stripped"
+
+
+@pytest.mark.anyio
 async def test_save_channel_returns_get_failure_without_putting():
+    calls = {"puts": 0}
+
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT":
+            calls["puts"] += 1
         return httpx.Response(404, json={})
 
     transport = httpx.MockTransport(handler)
@@ -192,6 +211,47 @@ async def test_save_channel_returns_get_failure_without_putting():
         r = await main._tunarr_save_channel(
             client, "http://t.test", CH_UUID, {"name": "X"})
     assert r.status_code == 404
+    assert calls["puts"] == 0, "a failed GET must never be followed by a PUT"
+
+
+@pytest.mark.anyio
+async def test_save_channel_returns_error_when_body_is_not_a_dict():
+    """A 200 GET whose body is valid JSON but not a dict (e.g. a list) must not
+    be mistaken for a successful save — no PUT was ever attempted."""
+    calls = {"puts": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT":
+            calls["puts"] += 1
+            return httpx.Response(200, json={})
+        return httpx.Response(200, json=[{"id": CH_UUID}])
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
+        r = await main._tunarr_save_channel(
+            client, "http://t.test", CH_UUID, {"name": "X"})
+    assert r.status_code not in range(200, 300)
+    assert calls["puts"] == 0, "an unusable GET body must never be followed by a PUT"
+
+
+@pytest.mark.anyio
+async def test_save_channel_returns_error_when_body_is_not_json():
+    """A 200 GET with a non-JSON body must not be mistaken for a successful
+    save — no PUT was ever attempted."""
+    calls = {"puts": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT":
+            calls["puts"] += 1
+            return httpx.Response(200, json={})
+        return httpx.Response(200, content=b"not json at all")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
+        r = await main._tunarr_save_channel(
+            client, "http://t.test", CH_UUID, {"name": "X"})
+    assert r.status_code not in range(200, 300)
+    assert calls["puts"] == 0, "an unusable GET body must never be followed by a PUT"
 
 
 @pytest.mark.anyio

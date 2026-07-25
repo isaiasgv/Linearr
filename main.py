@@ -4389,12 +4389,16 @@ async def _tunarr_save_channel(
     try:
         current = r.json()
     except Exception:
-        return r
+        current = None
     if not isinstance(current, dict):
-        return r
+        return httpx.Response(
+            502,
+            json={"error": "Tunarr returned an unreadable channel body; nothing was written"},
+            request=r.request,
+        )
 
-    payload = {k: v for k, v in current.items() if k not in _TUNARR_READONLY_CHANNEL_KEYS}
-    payload.update(changes)
+    payload = {**current, **changes}
+    payload = {k: v for k, v in payload.items() if k not in _TUNARR_READONLY_CHANNEL_KEYS}
     payload.setdefault("id", tunarr_id)
     return await client.put(f"{url}/api/channels/{tunarr_id}", json=payload)
 
