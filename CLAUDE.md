@@ -231,11 +231,14 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 ### Tunarr
 > **Version support:** tested against Tunarr **1.3.6**; minimum supported **1.2.10**.
 > Support is a floor (`version >= TUNARR_MIN_VERSION`), not a ceiling — see
-> `TUNARR_MIN_VERSION` / `TUNARR_TESTED_VERSION` in `main.py`. The smart-collection
-> search body field is **`filter`** (all versions; `query` is only Tunarr's DB column)
-> and it's optional in Tunarr's schema — so writes must verify the response echoes the
-> rules back, not just trust a 2xx (`_tunarr_write_smart_collection` retries with the
-> other field name on 400/422/500 **or** a rule-dropping 2xx). Tag-based smart
+> `TUNARR_MIN_VERSION` / `TUNARR_TESTED_VERSION` in `main.py`.
+> **`/api/smart_collections` is underscored in every supported version** (verified in
+> Tunarr's `smartCollectionsApi.ts` at v1.2.10 and v1.3.6) — there is no hyphenated
+> alias, so a wrong separator is a plain 404. The smart-collection search body field is
+> **`filter`** (all versions; `query` is only Tunarr's DB column) and it's optional in
+> Tunarr's schema — so writes must verify the response echoes the rules back, not just
+> trust a 2xx (`_tunarr_write_smart_collection` retries with the other field name on
+> 400/422/500 **or** a rule-dropping 2xx). Tag-based smart
 > collections require the Plex collection to exist as a tag in Tunarr's index, so both
 > sync flows run `ScanLibrariesTask` in the foreground *before* writing them.
 > Channel creates try the 1.3 `{"type":"new","channel":{…}}` shape then fall back to the

@@ -5301,14 +5301,17 @@ async def tunarr_filler_list_programs(filler_id: str):
         return []
     return r.json() if isinstance(r.json(), list) else []
 
+# Tunarr's smart-collections route is underscored in every supported version
+# (verified in server/src/api/smartCollectionsApi.ts at v1.2.10 and v1.3.6).
+# There is no hyphenated alias — a wrong separator is a plain 404.
+_TUNARR_SC_PATH = "/api/smart_collections"
+
 @app.get("/api/tunarr/smart-collections")
 async def tunarr_list_smart_collections():
     url = get_tunarr_url()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{url}/api/smart_collections")
-            if r.status_code == 404:
-                r = await client.get(f"{url}/api/smart-collections")
+            r = await client.get(f"{url}{_TUNARR_SC_PATH}")
         if r.status_code != 200:
             raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
         return r.json()
@@ -5380,7 +5383,7 @@ async def tunarr_create_smart_collection(body: dict):
         raise HTTPException(400, 'Provide a structured "filter" object or a simple filterString like: tags = "My Collection"')
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await _tunarr_write_smart_collection(
-            client, url, "/api/smart_collections", name=name, structured=structured)
+            client, url, _TUNARR_SC_PATH, name=name, structured=structured)
     if r is None or r.status_code not in (200, 201):
         raise HTTPException(r.status_code if r is not None else 502,
                             r.text[:300] if r is not None else "No response from Tunarr")
@@ -5400,7 +5403,7 @@ async def tunarr_update_smart_collection(sc_id: str, body: dict):
     async with httpx.AsyncClient(timeout=10.0) as client:
         if structured is not None:
             r = await _tunarr_write_smart_collection(
-                client, url, "/api/smart_collections",
+                client, url, _TUNARR_SC_PATH,
                 name=passthrough.get("name") or "", structured=structured,
                 uuid=sc_id, extra=passthrough)
             if r is not None and r.status_code not in (404,) and r.status_code in (200, 201, 204) \
@@ -5411,7 +5414,7 @@ async def tunarr_update_smart_collection(sc_id: str, body: dict):
                 raise HTTPException(400, 'This filter expression is too complex to translate — use a structured "filter" object, or a simple one like: tags = "My Collection"')
             if not passthrough:
                 raise HTTPException(400, "Nothing to update")
-            r = await client.put(f"{url}/api/smart_collections/{sc_id}", json=passthrough)
+            r = await client.put(f"{url}{_TUNARR_SC_PATH}/{sc_id}", json=passthrough)
     if r is None:
         raise HTTPException(502, "No response from Tunarr")
     if r.status_code == 404:
@@ -5426,7 +5429,7 @@ async def tunarr_update_smart_collection(sc_id: str, body: dict):
 async def tunarr_delete_smart_collection(sc_id: str):
     url = get_tunarr_url()
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.delete(f"{url}/api/smart_collections/{sc_id}")
+        r = await client.delete(f"{url}{_TUNARR_SC_PATH}/{sc_id}")
     if r.status_code == 404:
         raise HTTPException(404, "Smart collection not found in Tunarr")
     if r.status_code not in (200, 204):
@@ -5530,14 +5533,10 @@ async def tunarr_sync_collections(channel_number: int):
 
     url = get_tunarr_url()
 
-    # Resolve the correct smart collections endpoint (underscore vs hyphen varies by Tunarr version)
-    sc_path = "/api/smart_collections"
+    sc_path = _TUNARR_SC_PATH
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{url}{sc_path}")
-            if r.status_code == 404:
-                sc_path = "/api/smart-collections"
-                r = await client.get(f"{url}{sc_path}")
         existing = r.json() if r.status_code == 200 else []
     except Exception as e:
         log.warning("Failed to fetch Tunarr smart collections: %s", e)

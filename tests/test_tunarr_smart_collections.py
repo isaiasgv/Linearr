@@ -174,3 +174,20 @@ async def test_task_run_falls_back_to_empty_object():
         r = await main._tunarr_run_task_request(client, "http://t.test", "ScanLibrariesTask")
     assert r.status_code == 200
     assert seen == [False, True], "must retry once with {} after a bare-400"
+
+
+@pytest.mark.anyio
+async def test_smart_collections_path_is_underscored_only():
+    """The hyphen route does not exist in any supported Tunarr version."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(200, json=[])
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
+        await client.get(f"http://t.test{main._TUNARR_SC_PATH}")
+
+    assert seen == ["/api/smart_collections"]
+    assert main._TUNARR_SC_PATH == "/api/smart_collections"
