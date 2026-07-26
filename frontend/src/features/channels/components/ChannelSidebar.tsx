@@ -10,7 +10,9 @@ import { channelKey, tierNumberColor } from '@/features/channels/utils'
 import {
   channelDropTargetIndex,
   computeReorder,
+  describeNamedReorderChanges,
   describeReorderChanges,
+  hiddenReorderChanges,
 } from '@/features/channels/reorder'
 import type { Channel } from '@/shared/types'
 
@@ -124,7 +126,9 @@ export function ChannelSidebar() {
   // Reordering renumbers, and the drop index is resolved against the FULL
   // lineup — a search-narrowed list would let the user drop "between" two rows
   // that aren't actually adjacent, so drag is off while searching. A tier filter
-  // is fine: it hides rows but every visible row keeps its real lineup position.
+  // still allows it: every visible row keeps its real lineup position, so the
+  // index math holds. The renumber WINDOW is a different matter — it spans the
+  // full lineup, hidden rows included, which is what `handleDrop` confirms.
   const canReorder = !collapsed && !search
   const dragEnabled = canReorder && !reorderChannels.isPending
 
@@ -158,18 +162,36 @@ export function ChannelSidebar() {
 
     const crossTier = moved.tier !== target.tier
     const targetTier = crossTier ? target.tier : null
+    // Preview EVERY drop, not just cross-tier ones: the renumber window spans
+    // the full lineup, so an in-tier drag across a channel of another tier that
+    // sits numerically between the endpoints renumbers that channel too — and
+    // with a tier filter on, the user cannot see it happen.
     const preview = computeReorder(channels, movedNumber, targetIndex, targetTier)
     if (preview.length === 0) return
 
-    // A cross-tier drop changes the channel's tier AND renumbers it into that
-    // tier's range — a bigger change than an in-tier nudge, so confirm it with
-    // the exact number changes. An in-tier nudge must not nag.
-    if (crossTier) {
-      const confirmed = await confirmDialog({
-        title: `Move ${moved.name} to ${target.tier}?`,
-        text: `${preview.length} channel${preview.length === 1 ? '' : 's'} will be renumbered: ${describeReorderChanges(preview)}`,
-        confirmText: 'Move & renumber',
-      })
+    const hidden = hiddenReorderChanges(preview, visibleChannels)
+
+    // Confirm when the change is bigger than what the user can see happening:
+    // a cross-tier drop (it changes the tier AND renumbers into that tier's
+    // range), or any drop that renumbers a channel the current filter hides.
+    // An in-tier nudge that only touches visible rows must not nag.
+    if (crossTier || hidden.length > 0) {
+      const hiddenNote = hidden.length
+        ? ` Includes ${hidden.length} channel${hidden.length === 1 ? '' : 's'} hidden by the current filter: ${describeNamedReorderChanges(hidden, channels)}.`
+        : ''
+      const confirmed = await confirmDialog(
+        crossTier
+          ? {
+              title: `Move ${moved.name} to ${target.tier}?`,
+              text: `${preview.length} channel${preview.length === 1 ? '' : 's'} will be renumbered: ${describeReorderChanges(preview)}.${hiddenNote}`,
+              confirmText: 'Move & renumber',
+            }
+          : {
+              title: `Renumber ${hidden.length} hidden channel${hidden.length === 1 ? '' : 's'}?`,
+              text: `Moving ${moved.name} renumbers every channel between its old and new position — including rows this filter is not showing.${hiddenNote}`,
+              confirmText: 'Renumber',
+            },
+      )
       if (!confirmed) return
     }
 

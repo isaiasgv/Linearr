@@ -132,3 +132,36 @@ export function describeReorderChanges(
   const rest = changes.length - shown.length
   return rest > 0 ? `${shown.join(', ')} … and ${rest} more` : shown.join(', ')
 }
+
+/**
+ * The subset of a reorder preview that touches channels the caller is NOT
+ * currently showing.
+ *
+ * The renumber window spans every channel between the source and the
+ * destination in the FULL lineup, so a drag inside one tier still renumbers any
+ * other-tier channel that happens to sit numerically between the two endpoints —
+ * rows a tier filter has hidden. Those are exactly the changes a user cannot
+ * see, so they are the ones worth confirming.
+ */
+export function hiddenReorderChanges(
+  changes: readonly ChannelReorderChange[],
+  visibleChannels: readonly { number: number }[],
+): ChannelReorderChange[] {
+  const visible = new Set(visibleChannels.map((c) => c.number))
+  return changes.filter((c) => !visible.has(c.old_number))
+}
+
+/** "104 Boomerang → 105, 106 TCM → 107" — names the rows the user cannot see. */
+export function describeNamedReorderChanges(
+  changes: readonly ChannelReorderChange[],
+  channels: readonly { number: number; name: string }[],
+  limit = 8,
+): string {
+  const nameOf = new Map(channels.map((c) => [c.number, c.name]))
+  const shown = changes.slice(0, limit).map((c) => {
+    const name = nameOf.get(c.old_number)
+    return `${c.old_number}${name ? ` ${name}` : ''} → ${c.new_number}`
+  })
+  const rest = changes.length - shown.length
+  return rest > 0 ? `${shown.join(', ')} … and ${rest} more` : shown.join(', ')
+}
