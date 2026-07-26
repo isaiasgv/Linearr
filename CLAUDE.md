@@ -98,9 +98,40 @@ frontend/src/
     ├── tunarr/                 # Tunarr channel links, schedules, smart collections
     ├── settings/               # Plex URL/token, AI keys, OAuth PIN flow
     ├── watermark/              # Per-channel Tunarr watermark config + live preview
-    ├── cable-plex/             # Cable+Plex combined view
+    ├── cable-plex/             # Cable+Plex combined view + add-content picker/tray
     └── generic-blocks/         # Reusable blocks view (no channel context)
 ```
+
+### Cable Plex view
+
+Two layouts — **compact** (card grid) and **expanded** (wide rows with a full
+poster strip). **Expanded is the default**; both the layout and the expanded
+poster size are persisted in `localStorage` via `ui.store.ts`
+(`linearr:cablePlexViewMode`, `linearr:cablePlexPosterSize`), so a stored
+choice always beats the default.
+
+Two ways to add content to a channel, both ending in ONE
+`POST /api/assignments/bulk` (`useBulkAssign`):
+
+- **Add-content modal** — the "+" affordance on a channel card opens the
+  propless, store-driven `addContent` modal (target channel carried in
+  `addContentChannel`). It embeds `PlexBrowser`; a sticky footer adds the whole
+  selection at once.
+- **Plex tray + drag** — the "Plex tray" drawer keeps posters on screen next to
+  the cards. Dragging a poster that is part of the selection drags the whole
+  selection, otherwise just that poster; channel cards are drop targets.
+
+Both reuse one selection primitive: the **optional** `selectedKeys` /
+`onToggleSelect` props on `features/plex/components/PosterGrid.tsx` (passed
+through by `PlexBrowser`). Omit them and `PosterGrid` behaves exactly as it did
+before — no checkboxes, no rings, no drag. Drag is native HTML5 with the
+payload in `ui.store` (`draggingPlexItems` / `plexDropChannelNumber`) — there is
+no drag library in `frontend/package.json` and there must not be one.
+
+`toBulkAssignItem` (`features/assignments/utils.ts`) is the single
+`PlexItem → bulk-assign row` mapping. Never client-filter duplicates — the DB
+uniqueness constraint on `(channel_number, plex_rating_key)` skips them and the
+response reports `{added, skipped}`.
 
 ### Path alias
 `@/` maps to `frontend/src/` (configured in `vite.config.ts`). Use `@/shared/...` and `@/features/...`.
