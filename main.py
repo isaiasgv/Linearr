@@ -624,6 +624,116 @@ class ChannelIn(BaseModel):
     color: str = "blue"
     icon: str | None = None
 
+# ── Channel numbering + reorder math ─────────────────────────────────────────
+#
+# `channels.number` is the PRIMARY KEY, so "reorder" means "renumber". The math
+# lives here as a pure function with no DB and no HTTP so it can be exhaustively
+# tested on its own — the transactional endpoint that consumes it is trivial
+# once the mapping is known to be collision-free.
+
+# Canonical tier -> (low, high) inclusive number range. Mirrors
+# `frontend/src/features/channels/presets/numbering.ts` (`TIER_RANGES`) and the
+# tier structure described to the model in /api/channels/ai-suggest. The `tier`
+# column is free text, so tiers absent from this map are legal — they simply
+# have no preferred range and a move into one falls back to positional
+# renumbering rather than raising.
+TIER_RANGES: dict[str, tuple[int, int]] = {
+    "Galaxy Main": (100, 119),
+    "Classics": (120, 139),
+    "Galaxy Premium": (140, 159),
+}
+
+
+def _compute_reorder(
+    channels: list[dict],
+    moved_number: int,
+    target_index: int,
+    target_tier: str | None = None,
+) -> dict[int, tuple[int, str]]:
+    """Work out the renumbering for a single drag-and-drop move.
+
+    Args:
+        channels: the full lineup; each row needs `number` and `tier`
+            (`sqlite3.Row` or plain dict). Order is irrelevant — it is sorted
+            by number internally.
+        moved_number: the channel being dragged.
+        target_index: the 0-based index the moved channel should occupy in the
+            *resulting* lineup (so `target_index == its current index` is a
+            no-op). Clamped into range.
+        target_tier: destination tier, or None to keep the channel's own tier.
+
+    Returns:
+        `{old_number: (new_number, new_tier)}` containing **only** the channels
+        whose number or tier actually changes. Guaranteed collision-free: no
+        two channels map to the same new number, and no new number collides
+        with a channel that did not move.
+
+    Raises:
+        ValueError: if `moved_number` is not in `channels`.
+
+    Two strategies:
+
+    * **Same tier (or a destination tier with no canonical range)** — rotate
+      the numbers already held by the affected window. The number *sequence* is
+      untouched, only which channel holds each number, so relative gaps are
+      preserved exactly and nothing outside the source..destination window
+      moves.
+    * **Cross tier into a known range** — give the channel the slot right after
+      the last destination-tier channel that ends up ahead of it (or the range
+      floor), then bump the contiguous integer run starting at that slot so the
+      new number is free. If the range is full the run simply extends past
+      `high` rather than raising.
+    """
+    lineup = sorted(
+        ({"number": int(c["number"]), "tier": c["tier"] or ""} for c in channels),
+        key=lambda c: c["number"],
+    )
+    src_index = next(
+        (i for i, c in enumerate(lineup) if c["number"] == moved_number), None
+    )
+    if src_index is None:
+        raise ValueError(f"Channel {moved_number} is not in the lineup")
+
+    moved = lineup[src_index]
+    others = [c for c in lineup if c["number"] != moved_number]
+    dst = max(0, min(int(target_index), len(others)))
+    new_tier = moved["tier"] if target_tier is None else target_tier
+    cross_tier = new_tier != moved["tier"]
+    dest_range = TIER_RANGES.get(new_tier) if cross_tier else None
+
+    if dest_range is None:
+        if dst == src_index and not cross_tier:
+            return {}
+        # Rotate the window's numbers onto the reordered channels.
+        new_order = others[:dst] + [moved] + others[dst:]
+        lo, hi = min(src_index, dst), max(src_index, dst)
+        numbers = [lineup[i]["number"] for i in range(lo, hi + 1)]
+        mapping: dict[int, tuple[int, str]] = {}
+        for offset, ch in enumerate(new_order[lo : hi + 1]):
+            tier = new_tier if ch is moved else ch["tier"]
+            number = numbers[offset]
+            if number != ch["number"] or tier != ch["tier"]:
+                mapping[ch["number"]] = (number, tier)
+        return mapping
+
+    # Cross-tier into a tier with a canonical range.
+    low, high = dest_range
+    ahead = [c["number"] for c in others[:dst] if c["tier"] == new_tier]
+    desired = max(low, ahead[-1] + 1) if ahead else low
+
+    mapping = {moved["number"]: (desired, new_tier)}
+    # Anything at or above `desired` may need to shift. Only an exact hit on
+    # `desired` collides (numbers are integers and the list is sorted), and the
+    # bump then walks the contiguous run until a gap absorbs it.
+    prev_new = desired
+    for ch in (c for c in others if c["number"] >= desired):
+        if ch["number"] > prev_new:
+            break
+        prev_new = ch["number"] + 1
+        mapping[ch["number"]] = (prev_new, ch["tier"])
+    return mapping
+
+
 @app.get("/api/channels")
 def list_channels():
     with get_db() as conn:
