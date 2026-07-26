@@ -182,6 +182,27 @@ def init_db():
             conn.execute("ALTER TABLE channel_collections ADD COLUMN is_smart INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
+        # Did LINEARR create the Plex collection sitting in this slot?
+        #
+        # `source`/`managed` say what Linearr is allowed to *do* with a slot;
+        # this says where the collection came from, and it is the hard gate on
+        # the two destructive paths: pruning during generate, and the
+        # "Edit filters…" / "Delete collection" smart-collection actions. A
+        # collection Linearr did not create is never pruned and never rewritten,
+        # even if its title later matches the owned name.
+        #
+        # Backfill: `managed=1` is only ever written by `generate_collections`,
+        # which resolves its target by owned name — so those rows are Linearr's
+        # own generated collections and must keep their manage rights (losing
+        # them would silently stop pruning on every existing install). Everything
+        # else defaults to 0, which is the safe direction: at worst a slot
+        # becomes additive-only until the next generate re-creates it.
+        try:
+            conn.execute(
+                "ALTER TABLE channel_collections ADD COLUMN linearr_created INTEGER NOT NULL DEFAULT 0")
+            conn.execute("UPDATE channel_collections SET linearr_created=1 WHERE managed=1")
+        except sqlite3.OperationalError:
+            pass
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS tunarr_channel_links (
@@ -2496,31 +2517,45 @@ def get_channel_collections(channel_number: int):
         # before the columns existed.
         d["source"] = d.get("source") or "owned"
         d["is_smart"] = int(d.get("is_smart") or 0)
+        # Whether Linearr created the Plex collection itself. The UI gates the
+        # destructive smart-collection actions on this: Plex cannot read a smart
+        # collection's rules back, so "Edit filters…" opens BLANK and replacing
+        # from it would wipe a user's own rules.
+        d["linearr_created"] = int(d.get("linearr_created") or 0)
         result[d["plex_type"]] = d
     return result
 
 
 def _write_assigned_slot(channel_number: int, plex_type: str, rating_key: str,
-                         title: str, is_smart: bool) -> None:
+                         title: str, is_smart: bool, linearr_created: bool = False) -> None:
     """Point a channel's (type) slot at an existing collection, by REFERENCE.
 
     Writes `source='assigned'`, `managed=0` — Linearr records that the channel
     uses this collection and never reads or edits its members. `UNIQUE(channel_
     number, plex_type)` means assigning replaces whatever held the slot.
+
+    `linearr_created` is True only on the create-and-assign path, where Linearr
+    itself built the collection in Plex. It gates the destructive smart-
+    collection actions ("Edit filters…" replaces the rules from a blank form —
+    Plex cannot read them back — and "Delete collection" is permanent), and it
+    is deliberately reset on every write: re-pointing a slot at a different
+    collection must never inherit the previous one's provenance.
     """
     with get_db() as conn:
         conn.execute(
             """INSERT INTO channel_collections
                  (channel_number, plex_type, collection_rating_key, collection_title,
-                  managed, source, is_smart)
-               VALUES (?, ?, ?, ?, 0, 'assigned', ?)
+                  managed, source, is_smart, linearr_created)
+               VALUES (?, ?, ?, ?, 0, 'assigned', ?, ?)
                ON CONFLICT(channel_number, plex_type) DO UPDATE SET
                    collection_rating_key=excluded.collection_rating_key,
                    collection_title=excluded.collection_title,
                    managed=0,
                    source='assigned',
-                   is_smart=excluded.is_smart""",
-            (channel_number, plex_type, str(rating_key), title, 1 if is_smart else 0),
+                   is_smart=excluded.is_smart,
+                   linearr_created=excluded.linearr_created""",
+            (channel_number, plex_type, str(rating_key), title,
+             1 if is_smart else 0, 1 if linearr_created else 0),
         )
 
 
@@ -2536,11 +2571,26 @@ def assign_channel_collection(channel_number: int, body: ChannelCollectionAssign
     '{Channel} Movies/TV' collections.)
 
     One active source per type: assigning replaces whatever was in that slot.
+
+    The two owned names ('{Channel} Movies' / '{Channel} TV') are RESERVED and
+    rejected: generation resolves its target purely by name, so a collection
+    assigned under an owned name would be found, adopted and — on the second
+    build — pruned down to the channel's assignments. (`linearr_created` is the
+    second, rename-proof half of that guard.)
     """
     if body.plex_type not in _COLLECTION_SUFFIX:
         raise HTTPException(400, "plex_type must be 'movie' or 'show'")
-    if not _get_channel(channel_number):
+    ch = _get_channel(channel_number)
+    if not ch:
         raise HTTPException(404, "Channel not found")
+    if _is_owned_title(body.collection_title, ch.get("name") or ""):
+        raise HTTPException(
+            400,
+            f"'{body.collection_title}' is reserved for the collection Linearr "
+            f"generates for this channel — assigning it would let a later build "
+            f"rewrite its contents. Rename the collection in Plex first, then "
+            f"assign it.",
+        )
     _write_assigned_slot(channel_number, body.plex_type, body.collection_rating_key,
                          body.collection_title, body.is_smart)
     _log_app("collection", f"Assigned collection '{body.collection_title}' to ch {channel_number}",
@@ -2549,7 +2599,8 @@ def assign_channel_collection(channel_number: int, body: ChannelCollectionAssign
     return {"ok": True, "channel_number": channel_number, "plex_type": body.plex_type,
             "collection_rating_key": str(body.collection_rating_key),
             "collection_title": body.collection_title,
-            "source": "assigned", "is_smart": 1 if body.is_smart else 0}
+            "source": "assigned", "is_smart": 1 if body.is_smart else 0,
+            "linearr_created": 0}
 
 
 @app.post("/api/channel-collections/{channel_number}", status_code=200)
@@ -2804,15 +2855,27 @@ async def generate_collections(channel_number: int):
                 created = True
 
             # 4b. Is this collection already managed by Linearr? (fresh-created => owned)
+            #
+            # Pruning requires ALL of: the same rating key as last time, a
+            # managed slot, AND `linearr_created` — Linearr must have created
+            # the Plex collection itself. The name check above is defeated by a
+            # rename (a user's collection renamed to '{Channel} Movies' resolves
+            # here), so provenance is the guard that actually holds: a
+            # collection Linearr merely *adopted* by name stays additive-only
+            # forever and can never lose the user's items.
             with get_db() as conn:
                 prior = conn.execute(
-                    "SELECT collection_rating_key, managed FROM channel_collections "
-                    "WHERE channel_number=? AND plex_type=?",
+                    "SELECT collection_rating_key, managed, linearr_created "
+                    "FROM channel_collections WHERE channel_number=? AND plex_type=?",
                     (channel_number, plex_type),
                 ).fetchone()
+            same_collection = bool(prior and str(prior["collection_rating_key"]) == coll_id)
+            prior_linearr_created = bool(
+                same_collection and (prior["linearr_created"] or 0) == 1)
+            linearr_created = created or prior_linearr_created
             already_managed = bool(
                 created
-                or (prior and prior["managed"] == 1 and str(prior["collection_rating_key"]) == coll_id)
+                or (same_collection and prior["managed"] == 1 and prior_linearr_created)
             )
 
             # 4c. Current items
@@ -2859,15 +2922,17 @@ async def generate_collections(channel_number: int):
                 conn.execute(
                     """INSERT INTO channel_collections
                        (channel_number, plex_type, collection_rating_key, collection_title,
-                        managed, source, is_smart)
-                       VALUES (?, ?, ?, ?, 1, 'owned', 0)
+                        managed, source, is_smart, linearr_created)
+                       VALUES (?, ?, ?, ?, 1, 'owned', 0, ?)
                        ON CONFLICT(channel_number, plex_type) DO UPDATE SET
                            collection_rating_key=excluded.collection_rating_key,
                            collection_title=excluded.collection_title,
                            managed=1,
                            source='owned',
-                           is_smart=0""",
-                    (channel_number, plex_type, coll_id, coll_name),
+                           is_smart=0,
+                           linearr_created=excluded.linearr_created""",
+                    (channel_number, plex_type, coll_id, coll_name,
+                     1 if linearr_created else 0),
                 )
 
             log.info("generate_collections ch %s: %s '%s' +%d/-%d (%d desired, additive_only=%s)",
@@ -3572,8 +3637,18 @@ async def create_and_assign_smart_collection(channel_number: int, body: SmartCol
     """
     if body.type not in _COLLECTION_SUFFIX:
         raise HTTPException(400, "type must be 'movie' or 'show'")
-    if not _get_channel(channel_number):
+    ch = _get_channel(channel_number)
+    if not ch:
         raise HTTPException(404, "Channel not found")
+    # Same reserved-name rule as the plain assign: '{Channel} Movies/TV' is the
+    # name generation resolves by, and a smart collection cannot be added to.
+    # Checked BEFORE anything is created in Plex so nothing is orphaned.
+    if _is_owned_title(body.title, ch.get("name") or ""):
+        raise HTTPException(
+            400,
+            f"'{body.title}' is reserved for the collection Linearr generates "
+            f"for this channel — pick a different name.",
+        )
 
     created = await plex_create_smart_collection(body)
     rating_key = created.get("rating_key")
@@ -3584,7 +3659,8 @@ async def create_and_assign_smart_collection(channel_number: int, body: SmartCol
 
     try:
         _write_assigned_slot(channel_number, body.type, rating_key,
-                             created.get("title") or body.title, is_smart=True)
+                             created.get("title") or body.title, is_smart=True,
+                             linearr_created=True)
     except Exception as e:  # noqa: BLE001 — must roll the Plex side back
         rolled_back = await _best_effort_delete_plex_collection(rating_key)
         with get_db() as conn:
@@ -3607,7 +3683,8 @@ async def create_and_assign_smart_collection(channel_number: int, body: SmartCol
              metadata={"channel": channel_number, "plex_type": body.type,
                        "rating_key": rating_key, "unresolved_genres": created.get("unresolved_genres")})
     return {**created, "assigned": True, "channel_number": channel_number,
-            "plex_type": body.type, "source": "assigned", "is_smart": 1}
+            "plex_type": body.type, "source": "assigned", "is_smart": 1,
+            "linearr_created": 1}
 
 
 @app.put("/api/plex/smart-collections/{rating_key}")

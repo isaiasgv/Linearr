@@ -80,6 +80,53 @@ def test_source_and_is_smart_columns_exist(client):
     assert "is_smart" in cols
 
 
+def test_linearr_created_column_exists(client):
+    with main.get_db() as conn:
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(channel_collections)")}
+    assert "linearr_created" in cols
+
+
+def test_linearr_created_backfill_keeps_managed_rows_manageable(tmp_path, monkeypatch):
+    """Upgrade path for installs that already have `channel_collections` rows.
+
+    `managed=1` is only ever written by `generate_collections`, so those rows
+    are Linearr's own generated collections — they must come out of the
+    migration with `linearr_created=1` or every existing install would silently
+    stop pruning. Everything else defaults to 0 (the safe direction: at worst a
+    slot goes additive-only).
+    """
+    monkeypatch.setattr(main, "DB_PATH", tmp_path / "legacy.db")
+    with main.get_db() as conn:
+        # The pre-migration shape, i.e. channel_collections *without*
+        # linearr_created.
+        conn.executescript("""
+            CREATE TABLE channel_collections (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_number        INTEGER NOT NULL,
+                plex_type             TEXT NOT NULL,
+                collection_rating_key TEXT NOT NULL,
+                collection_title      TEXT NOT NULL,
+                managed               INTEGER NOT NULL DEFAULT 0,
+                source                TEXT NOT NULL DEFAULT 'owned',
+                is_smart              INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(channel_number, plex_type)
+            );
+            INSERT INTO channel_collections
+                (channel_number, plex_type, collection_rating_key, collection_title,
+                 managed, source, is_smart)
+            VALUES (1, 'movie', '500', 'Legacy Movies', 1, 'owned', 0),
+                   (2, 'movie', '777', 'User Sci-Fi',   0, 'assigned', 1);
+        """)
+
+    main.init_db()
+
+    with main.get_db() as conn:
+        rows = {r["channel_number"]: dict(r) for r in
+                conn.execute("SELECT * FROM channel_collections")}
+    assert rows[1]["linearr_created"] == 1, "a generated collection must keep pruning"
+    assert rows[2]["linearr_created"] == 0, "a referenced collection is never Linearr's"
+
+
 def test_existing_rows_default_to_owned(client):
     """Rows written by the pre-existing generate path must read back as 'owned'."""
     with main.get_db() as conn:
@@ -157,6 +204,36 @@ def test_assign_unknown_channel_is_404(auth_client):
     resp = auth_client.post("/api/channel-collections/99999/assign", json={
         "plex_type": "movie", "collection_rating_key": "1", "collection_title": "X"})
     assert resp.status_code == 404
+
+
+# ── The owned names are reserved ──────────────────────────────────────────────
+
+@pytest.mark.parametrize("plex_type,title", [
+    ("movie", "Noir Movies"),
+    ("show", "Noir TV"),
+    # Reserved for the channel regardless of which slot is being filled: either
+    # name is a target `generate_collections` resolves by.
+    ("movie", "Noir TV"),
+])
+def test_assign_rejects_the_reserved_owned_name(auth_client, plex_type, title):
+    """F1: a collection titled exactly '{Channel} Movies'/'{Channel} TV' may not
+    be assigned — generation resolves its target by that name, adopts it, and
+    the next build would prune it down to the channel's assignments."""
+    _seed_channel(915, "Noir")
+    resp = auth_client.post("/api/channel-collections/915/assign", json={
+        "plex_type": plex_type, "collection_rating_key": "777",
+        "collection_title": title, "is_smart": False})
+    assert resp.status_code == 400, resp.text
+    assert "reserved" in resp.json()["detail"].lower()
+    assert _slot(915, plex_type) is None
+
+
+def test_assign_still_accepts_a_merely_similar_name(auth_client):
+    _seed_channel(916, "Noir")
+    resp = auth_client.post("/api/channel-collections/916/assign", json={
+        "plex_type": "movie", "collection_rating_key": "777",
+        "collection_title": "Noir Movies Collection", "is_smart": False})
+    assert resp.status_code == 200, resp.text
 
 
 def test_get_channel_collections_exposes_source_and_is_smart(auth_client):
@@ -251,6 +328,66 @@ def test_generate_never_touches_assigned_collection(auth_client):
 
 
 @respx.mock
+def test_generate_can_never_prune_a_lookalike_collection(auth_client):
+    """F1 regression — the three-step data-loss sequence, end to end.
+
+    1. The user's own Plex collection is literally titled 'Noir Movies' and
+       holds 200 curated items. Assigning it is now REJECTED outright (the name
+       is reserved) — asserted first.
+    2. A rename in Plex reaches the same state without going through assign, so
+       force that state directly and build: generation resolves 'Noir Movies' by
+       name, finds THEIR collection, and adopts the slot.
+    3. Build again, and again. `already_managed` now also requires
+       `linearr_created`, which this collection will never have — so removals
+       stay suppressed forever and not one of the 200 items can be pruned.
+    """
+    _seed_channel(923, "Noir")
+
+    # Step 1 — the front door is shut.
+    rejected = auth_client.post("/api/channel-collections/923/assign", json={
+        "plex_type": "movie", "collection_rating_key": "777",
+        "collection_title": "Noir Movies", "is_smart": False})
+    assert rejected.status_code == 400, rejected.text
+
+    # Step 2 — the state a later rename in Plex would produce anyway.
+    with main.get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO channel_collections "
+            "(channel_number, plex_type, collection_rating_key, collection_title,"
+            " managed, source, is_smart, linearr_created) "
+            "VALUES (923, 'movie', '777', 'Noir Movies', 0, 'assigned', 0, 0)")
+
+    curated = [str(k) for k in range(9000, 9200)]     # 200 curated items
+    assert len(curated) == 200
+    r = respx.mock
+    _base_plex_routes(r, section_collections=[{"title": "Noir Movies", "ratingKey": "777"}],
+                      children=curated)
+    add = r.put(url__regex=rf"{PLEX}/library/collections/777/items").mock(
+        return_value=httpx.Response(200, json={}))
+    prune = r.delete(url__regex=rf"{PLEX}/library/collections/777/items").mock(
+        return_value=httpx.Response(200, json={}))
+    wipe = r.delete(f"{PLEX}/library/collections/777").mock(
+        return_value=httpx.Response(200, json={}))
+
+    # Step 3 — build repeatedly. The old code pruned on the second build.
+    for build in range(1, 4):
+        resp = auth_client.post("/api/collections/generate/923")
+        assert resp.status_code == 200, resp.text
+        movie = resp.json()["movie"]
+        assert movie["additive_only"] is True, f"build {build} entered the pruning path"
+        assert movie["removed"] == 0, f"build {build} removed items"
+
+    assert add.called          # additive is still allowed
+    assert not prune.called, "a collection Linearr did not create must never be pruned"
+    assert not wipe.called
+
+    # The slot is managed now, but provenance stays 0 — it can never flip.
+    row = _slot(923, "movie")
+    assert row["managed"] == 1
+    assert row["linearr_created"] == 0
+
+
+@respx.mock
 def test_generate_refuses_non_owned_title(auth_client):
     """Belt-and-braces: even if a non-owned title were resolved, generation aborts."""
     _seed_channel(922, "Refuse")
@@ -295,6 +432,58 @@ def test_smart_collection_create_and_assign(auth_client):
     assert row["is_smart"] == 1
     assert row["collection_rating_key"] == "4242"
     assert row["collection_title"] == "Neon 80s"
+
+
+@respx.mock
+def test_linearr_created_is_set_only_by_the_create_and_assign_path(auth_client):
+    """F2: 'Edit filters…' / 'Delete collection' are gated on this flag.
+
+    Plex cannot read a smart collection's rules back, so the builder opens
+    BLANK and 'Replace filters' would wipe a hand-built collection's rules. The
+    flag is the only thing that distinguishes a smart collection Linearr made
+    from one the user made — Plex's own `smart` flag cannot.
+    """
+    _seed_channel(933, "Provenance")
+
+    # A plain assign of the user's own (smart) collection: NOT ours.
+    resp = auth_client.post("/api/channel-collections/933/assign", json={
+        "plex_type": "movie", "collection_rating_key": "777",
+        "collection_title": "User Sci-Fi", "is_smart": True})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["linearr_created"] == 0
+    assert _slot(933, "movie")["linearr_created"] == 0
+    body = auth_client.get("/api/channel-collections/933").json()
+    assert body["movie"]["is_smart"] == 1          # smart, but not ours
+    assert body["movie"]["linearr_created"] == 0
+
+    # Create-and-assign: Linearr built it, so the rules are Linearr's to replace.
+    r = respx.mock
+    r.get(f"{PLEX}/identity").mock(return_value=httpx.Response(
+        200, json={"MediaContainer": {"machineIdentifier": "MID"}}))
+    r.post(f"{PLEX}/library/collections").mock(return_value=httpx.Response(
+        201, json={"MediaContainer": {"Metadata": [{"ratingKey": "4444", "title": "Neon 90s"}]}}))
+
+    resp = auth_client.post("/api/channels/933/smart-collection", json=_smart_body("Neon 90s"))
+    assert resp.status_code in (200, 201), resp.text
+    assert resp.json()["linearr_created"] == 1
+    assert _slot(933, "movie")["linearr_created"] == 1
+    assert auth_client.get("/api/channel-collections/933").json()["movie"]["linearr_created"] == 1
+
+    # Re-pointing the slot at someone else's collection must not inherit it.
+    auth_client.post("/api/channel-collections/933/assign", json={
+        "plex_type": "movie", "collection_rating_key": "999",
+        "collection_title": "Someone Else's", "is_smart": True})
+    assert _slot(933, "movie")["linearr_created"] == 0
+
+
+def test_create_and_assign_rejects_the_reserved_owned_name(auth_client):
+    """Creating a smart collection *named* like the owned one is the same hole:
+    generation would resolve it by name. Rejected before anything is created."""
+    _seed_channel(934, "Reserved")
+    resp = auth_client.post("/api/channels/934/smart-collection",
+                            json=_smart_body("Reserved Movies"))
+    assert resp.status_code == 400, resp.text
+    assert _slot(934, "movie") is None
 
 
 @respx.mock
