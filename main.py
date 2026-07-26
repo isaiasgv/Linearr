@@ -3508,6 +3508,78 @@ async def plex_create_smart_collection(body: SmartCollectionIn):
         "unresolved_genres": missing,
     }
 
+async def _best_effort_delete_plex_collection(rating_key: str) -> bool:
+    """Delete a Plex collection without ever raising — used to roll back a
+    just-created collection when the follow-up assign fails."""
+    try:
+        url, token = get_plex_config()
+        if not token:
+            return False
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.delete(f"{url}/library/collections/{rating_key}",
+                                    headers=plex_headers(token))
+        return r.status_code in (200, 204)
+    except Exception as e:  # noqa: BLE001 — rollback must never mask the original error
+        log.warning("Rollback delete of Plex collection %s failed: %s", rating_key, e)
+        return False
+
+
+@app.post("/api/channels/{channel_number}/smart-collection", status_code=201)
+async def create_and_assign_smart_collection(channel_number: int, body: SmartCollectionIn):
+    """Create a Plex smart collection AND assign it to a channel, atomically.
+
+    Reuses `plex_create_smart_collection` (and therefore `_build_smart_uri`) for
+    the Plex side, then records the slot with `source='assigned'`, `is_smart=1`.
+    Either both halves land or neither does:
+      - channel + type are validated BEFORE anything is created in Plex, so a
+        bad request can't orphan a collection;
+      - if the assign write fails, the freshly created collection is deleted
+        again and any partial slot is cleared — no orphaned collection left
+        assigned, no assignment pointing at nothing.
+
+    Assigned means REFERENCE ONLY: Linearr never edits the collection's members
+    (it's a smart collection — Plex keeps it current from its rules).
+    """
+    if body.type not in _COLLECTION_SUFFIX:
+        raise HTTPException(400, "type must be 'movie' or 'show'")
+    if not _get_channel(channel_number):
+        raise HTTPException(404, "Channel not found")
+
+    created = await plex_create_smart_collection(body)
+    rating_key = created.get("rating_key")
+    if not rating_key:
+        # Nothing usable to assign, and nothing to roll back by (no key) — fail
+        # loudly rather than writing a dangling reference.
+        raise HTTPException(502, "Plex created the smart collection but returned no rating key")
+
+    try:
+        _write_assigned_slot(channel_number, body.type, rating_key,
+                             created.get("title") or body.title, is_smart=True)
+    except Exception as e:  # noqa: BLE001 — must roll the Plex side back
+        rolled_back = await _best_effort_delete_plex_collection(rating_key)
+        with get_db() as conn:
+            conn.execute(
+                "DELETE FROM channel_collections WHERE channel_number=? AND plex_type=? "
+                "AND collection_rating_key=?",
+                (channel_number, body.type, str(rating_key)),
+            )
+        log.warning("smart-collection assign failed for ch %s (%s): %s (rolled_back=%s)",
+                    channel_number, rating_key, e, rolled_back)
+        raise HTTPException(
+            500,
+            f"Created the Plex smart collection but could not assign it: {e}. "
+            + ("It was deleted again." if rolled_back
+               else f"It could NOT be deleted — remove '{created.get('title')}' in Plex manually."),
+        )
+
+    _log_app("collection",
+             f"Created + assigned smart collection '{created.get('title')}' to ch {channel_number}",
+             metadata={"channel": channel_number, "plex_type": body.type,
+                       "rating_key": rating_key, "unresolved_genres": created.get("unresolved_genres")})
+    return {**created, "assigned": True, "channel_number": channel_number,
+            "plex_type": body.type, "source": "assigned", "is_smart": 1}
+
+
 @app.put("/api/plex/smart-collections/{rating_key}")
 async def plex_update_smart_collection(rating_key: str, body: SmartCollectionUpdateIn):
     """Update a smart collection's title and/or filter rules."""
