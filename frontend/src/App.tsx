@@ -64,6 +64,11 @@ const AssignCollectionModal = lazy(() =>
     default: m.AssignCollectionModal,
   })),
 )
+const SmartCollectionBuilderModal = lazy(() =>
+  import('@/features/collections/components/SmartCollectionBuilderModal').then((m) => ({
+    default: m.SmartCollectionBuilderModal,
+  })),
+)
 const IconEditorModal = lazy(() =>
   import('@/features/channels/components/IconEditorModal').then((m) => ({
     default: m.IconEditorModal,
@@ -163,6 +168,7 @@ export default function App() {
         <TunarrPreviewModal />
         <TunarrCollectionPickerModal />
         <AssignCollectionModal />
+        <SmartCollectionBuilderModal />
         <IconEditorModal />
         <IconPickerModal />
         <WatermarkEditorModal />
