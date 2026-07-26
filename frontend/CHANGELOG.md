@@ -1,3 +1,65 @@
+## [0.0.1-rc.11](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.10...v0.0.1-rc.11) (2026-07-26)
+
+### Features
+
+* add Oribion brand footer ([bca6a12](https://github.com/isaiasgv/Linearr/commit/bca6a12329288af6970dd213acbd2a89b5630214))
+* **cable-plex:** add-content picker modal for a channel ([c84734a](https://github.com/isaiasgv/Linearr/commit/c84734ad43dd4dca9eb418c021332302451d0b48))
+* **cable-plex:** default to expanded view, persist it, fix thumb perf ([84fcd25](https://github.com/isaiasgv/Linearr/commit/84fcd254403c4206dafa7a8938ff2dac33b4a4ff))
+* **cable-plex:** drag Plex posters onto channel cards to assign ([57304d4](https://github.com/isaiasgv/Linearr/commit/57304d4596a7b23a31f02f94727bec5fd8be8169))
+* **channels:** add a stable `uid` identity to channel rows ([f161518](https://github.com/isaiasgv/Linearr/commit/f161518e6a7a1ee6de7aae23f99a165a9e411882))
+* **channels:** add TIER_RANGES + pure _compute_reorder renumber math ([f2e362d](https://github.com/isaiasgv/Linearr/commit/f2e362dc7484a7725caa95e5596627a513059f4d))
+* **channels:** drag to reorder + direct renumber in the sidebar ([c97bb8f](https://github.com/isaiasgv/Linearr/commit/c97bb8f7b6f239007808f08791f683d0a632cc12))
+* **channels:** transactional POST /api/channels/reorder + shared cascade ([1893caf](https://github.com/isaiasgv/Linearr/commit/1893caf1e04a7deb1e7a6e410ae827b4ab12c42a))
+* **collections:** add AssignCollectionModal ([a2d80cd](https://github.com/isaiasgv/Linearr/commit/a2d80cd8b11252124f6e58b8985cd30d24eb42e5))
+* **collections:** add SmartCollectionBuilderModal ([9926810](https://github.com/isaiasgv/Linearr/commit/99268108d7cd3d3da207312b27074697a637e83f))
+* **collections:** assign an existing collection by reference ([3773f26](https://github.com/isaiasgv/Linearr/commit/3773f26f32bde4770ac8f63cc1fd5a72d4118180))
+* **collections:** create a Plex smart collection and assign it atomically ([a1f942d](https://github.com/isaiasgv/Linearr/commit/a1f942d887b9828ef15764ca39e4d5605b612fc5))
+* **collections:** generating switches an assigned slot back to owned ([1973240](https://github.com/isaiasgv/Linearr/commit/1973240e38e2748b8ac500b929f9912f7242111d))
+* **collections:** show owned vs assigned source in the collections panel ([26a16a8](https://github.com/isaiasgv/Linearr/commit/26a16a80b0b7b936b074f217796bb007bfc72f1a))
+* **collections:** source-aware collection api + hooks ([27707d7](https://github.com/isaiasgv/Linearr/commit/27707d765b0253ee46b94ddd679a0fad92d84345))
+* **design-system:** living showcase (design-system/showcase.html) ([cfda09e](https://github.com/isaiasgv/Linearr/commit/cfda09e495207b531a73cf3d9fea9914864f8bb8))
+* **design-system:** shadcn token layer, QIIUB showcase, Linearr branding ([01f8c45](https://github.com/isaiasgv/Linearr/commit/01f8c451d7f35537f4f7ec56e52df30807d1c50d)), closes [#6366f1](https://github.com/isaiasgv/Linearr/issues/6366f1)
+* **frontend:** migrate to Tailwind CSS v4 + formalize design system ([9a46318](https://github.com/isaiasgv/Linearr/commit/9a463188968e447856e22e1c181fb929fa6944b3))
+* **plex:** optional multi-select + drag source on PosterGrid ([c7af056](https://github.com/isaiasgv/Linearr/commit/c7af056d70628f3ea209b4f2ab40119669164127))
+* **tunarr:** add purge-all for Tunarr smart collections ([e2ee2aa](https://github.com/isaiasgv/Linearr/commit/e2ee2aa77eb2e3380b1e45741ef46fcea0646fc2))
+* **tunarr:** explicit global purge of all Tunarr smart collections ([67a2340](https://github.com/isaiasgv/Linearr/commit/67a2340c1beb50f32d28c97e17d42d2dc6ebc276))
+* **watermark:** frontend api client, types, and hooks ([88d228e](https://github.com/isaiasgv/Linearr/commit/88d228ed21b8be0f5f7a277799d21afa56e85958))
+* **watermark:** host the watermark image on Tunarr ([674c4d9](https://github.com/isaiasgv/Linearr/commit/674c4d97f71b3f38b697eef75ac78666dfa7f165))
+* **watermark:** include the watermark in every Tunarr channel sync ([01059d7](https://github.com/isaiasgv/Linearr/commit/01059d75ffaf4ec85206a250138d8d3c33793f69))
+* **watermark:** per-channel watermark editor with live preview ([1b5d2ca](https://github.com/isaiasgv/Linearr/commit/1b5d2ca6a6ac208e4f7e7226f31f2b05f0bbb7ad))
+* **watermark:** per-channel watermark storage, validation, and CRUD ([587dea0](https://github.com/isaiasgv/Linearr/commit/587dea08c8686fe99f85904575f6c79fa2e140af))
+
+### Bug Fixes
+
+* **channels:** confirm a reorder that renumbers filtered-out channels ([346af2e](https://github.com/isaiasgv/Linearr/commit/346af2e73730b2b1ae26877d796b37bc0836e699))
+* **channels:** key every channel list on the stable `uid` ([eadbb56](https://github.com/isaiasgv/Linearr/commit/eadbb562d5ada21b5f423d9ae0e2d1ee22e8abdd))
+* **channels:** stop cascading ai_logs on channel delete ([9fc769f](https://github.com/isaiasgv/Linearr/commit/9fc769f7ed848c3e4cbca419b246d6b95cf058dd))
+* **collections:** gate smart-collection edit + delete on Linearr provenance ([eca11a2](https://github.com/isaiasgv/Linearr/commit/eca11a2f44571aa0b52e97438d2328f49aefa122))
+* **collections:** never prune a Plex collection Linearr did not create ([3462455](https://github.com/isaiasgv/Linearr/commit/346245518af737b5ad3bf39252475407054da568))
+* **security:** allow-list content types on the Tunarr image proxy ([431ff90](https://github.com/isaiasgv/Linearr/commit/431ff90550fd5857479d1e968c6082fa8694ec50))
+* **tunarr:** channel updates need the full object, not a partial ([59fac53](https://github.com/isaiasgv/Linearr/commit/59fac530cb013b04e8faf494c7f79d50de75bdbc))
+* **tunarr:** clear the channel icon in Tunarr when it is removed ([2ee9183](https://github.com/isaiasgv/Linearr/commit/2ee91838b35b5263e01561a3e45c18f70511952e))
+* **tunarr:** close ambiguous-200 gap and readonly-key leak in channel writer ([721318b](https://github.com/isaiasgv/Linearr/commit/721318b30df9f4e4bb1db929c0061096a34b8a69))
+* **tunarr:** explain an unresolvable transcode config instead of "Tunarr 400" ([9b389cb](https://github.com/isaiasgv/Linearr/commit/9b389cb2b571d28809d9bfc4e50a674f05a90fde))
+* **tunarr:** push an explicit disabled watermark when clearing ([38d43a8](https://github.com/isaiasgv/Linearr/commit/38d43a87546fb31ab2c7bfae7a53476c2e74fe6a))
+* **tunarr:** renumber reordered channels in two phases ([e602df4](https://github.com/isaiasgv/Linearr/commit/e602df4b93e6451cf20c7f39f5745ddfc6d44807))
+* **tunarr:** resolve a real transcode config uuid for channel writes ([68f2c95](https://github.com/isaiasgv/Linearr/commit/68f2c95e46a3d0cdd1b8d290e1c40e646762bbef))
+* **tunarr:** route channel writes through the read-modify-write writer ([ad5e5c3](https://github.com/isaiasgv/Linearr/commit/ad5e5c336d0ffc1e8ac55de6718ecf9e40679ee2))
+* **watermark:** block enabling a watermark that has no image ([92b0877](https://github.com/isaiasgv/Linearr/commit/92b087756c439b0c2168f614888df43172154301))
+* **watermark:** proxy Tunarr images so the live preview actually renders ([42ce9fb](https://github.com/isaiasgv/Linearr/commit/42ce9fbccf2ae391f2b5f121427a1883cd73286e))
+* **watermark:** re-apply the image when a channel's icon changes ([dad26be](https://github.com/isaiasgv/Linearr/commit/dad26be2716e25a289f99c43fd3db77c355a39c4))
+* **watermark:** reject an enabled watermark with no resolved image ([72ceb3d](https://github.com/isaiasgv/Linearr/commit/72ceb3d6fb2ccfc5f8b78098249b34f3f5ea35d6))
+
+### Performance
+
+* **thumbs:** collapse Cable Plex onto the two canonical thumb sizes ([b38d29e](https://github.com/isaiasgv/Linearr/commit/b38d29e80f25e0db7522b217afa36358350ff7be))
+
+### Refactoring
+
+* **design-system:** showcase is now plain self-contained HTML+CSS ([5455272](https://github.com/isaiasgv/Linearr/commit/54552725929db089c0c53bee0a43426ee21281a4))
+* **tunarr:** drop the dead smart-collections hyphen fallback ([1c2cf6b](https://github.com/isaiasgv/Linearr/commit/1c2cf6b46db8e3f021a1143ba23169d80b0258aa))
+* **tunarr:** drop the last smart-collections hyphen retry in generate_collections ([bfc2642](https://github.com/isaiasgv/Linearr/commit/bfc264226cb09135d3db91420447eadf1531a111))
+
 ## [0.0.1-rc.10](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.9...v0.0.1-rc.10) (2026-07-05)
 
 ### Bug Fixes
