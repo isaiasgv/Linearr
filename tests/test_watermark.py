@@ -8,13 +8,27 @@ instead of an opaque 400 from Tunarr:
 import pytest
 
 
-def _make_channel(auth_client, number=701):
+def _make_channel(auth_client, number=701, *, with_image=False):
     r = auth_client.post("/api/channels", json={
         "number": number, "name": f"WM {number}", "tier": "Galaxy Main",
         "vibe": "", "mode": "Shuffle", "style": "", "color": "blue", "icon": None,
     })
     assert r.status_code in (201, 409), r.text
+    if with_image:
+        _set_image_url(number, f"http://tunarr:8000/images/uploads/wm-{number}.png")
     return number
+
+
+def _set_image_url(number: int, url: str | None) -> None:
+    """Set the resolved watermark image directly.
+
+    Enabling a watermark requires one (see `test_enabling_without_an_image_is_rejected`),
+    and the real resolve path needs a live Tunarr to upload to.
+    """
+    import main
+    with main.get_db() as conn:
+        conn.execute("UPDATE channels SET watermark_image_url=? WHERE number=?",
+                     (url, number))
 
 
 def test_watermark_defaults_to_absent(auth_client):
@@ -25,7 +39,7 @@ def test_watermark_defaults_to_absent(auth_client):
 
 
 def test_put_and_get_watermark_roundtrip(auth_client):
-    n = _make_channel(auth_client, 702)
+    n = _make_channel(auth_client, 702, with_image=True)
     payload = {
         "enabled": True, "position": "top-left", "width": 12.5,
         "vertical_margin": 2, "horizontal_margin": 3, "duration": 0,
@@ -43,7 +57,7 @@ def test_put_and_get_watermark_roundtrip(auth_client):
 
 
 def test_delete_watermark_clears_it(auth_client):
-    n = _make_channel(auth_client, 703)
+    n = _make_channel(auth_client, 703, with_image=True)
     auth_client.put(f"/api/channels/{n}/watermark", json={
         "enabled": True, "width": 10, "vertical_margin": 1,
         "horizontal_margin": 1, "position": "bottom-right",
@@ -82,6 +96,47 @@ def test_fade_period_must_be_at_least_one_minute(auth_client):
         "position": "bottom-right", "fade": {"period_mins": 0},
     })
     assert r.status_code == 422
+
+
+def test_enabling_without_an_image_is_rejected(auth_client):
+    """An enabled watermark with no resolved image would be pushed as
+    `url: ""`. Every channel write is a full SaveableChannel PUT, so if Tunarr
+    rejects that, EVERY later save for the channel fails — name/number/tier
+    included. Gate it at the route with an actionable message.
+    """
+    n = _make_channel(auth_client, 706)
+    _set_image_url(n, None)
+    r = auth_client.put(f"/api/channels/{n}/watermark", json={
+        "enabled": True, "width": 10, "vertical_margin": 1,
+        "horizontal_margin": 1, "position": "bottom-right",
+    })
+    assert r.status_code == 400, r.text
+    assert "image" in r.json()["detail"].lower()
+    # Nothing was stored, so the channel is still watermark-free.
+    assert auth_client.get(f"/api/channels/{n}/watermark").json() == {"watermark": None}
+
+
+def test_disabled_watermark_without_an_image_is_still_allowed(auth_client):
+    """The gate is only on `enabled` — saving a draft config is fine."""
+    n = _make_channel(auth_client, 707)
+    _set_image_url(n, None)
+    r = auth_client.put(f"/api/channels/{n}/watermark", json={
+        "enabled": False, "width": 10, "vertical_margin": 1,
+        "horizontal_margin": 1, "position": "top-left",
+    })
+    assert r.status_code == 200, r.text
+    assert auth_client.get(f"/api/channels/{n}/watermark").json()["watermark"]["position"] \
+        == "top-left"
+
+
+def test_enabling_with_a_blank_image_url_is_rejected(auth_client):
+    n = _make_channel(auth_client, 708)
+    _set_image_url(n, "   ")
+    r = auth_client.put(f"/api/channels/{n}/watermark", json={
+        "enabled": True, "width": 10, "vertical_margin": 1,
+        "horizontal_margin": 1, "position": "bottom-right",
+    })
+    assert r.status_code == 400, r.text
 
 
 def test_watermark_404_for_unknown_channel(auth_client):

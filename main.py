@@ -1503,11 +1503,23 @@ def get_channel_watermark(channel_number: int):
 @app.put("/api/channels/{channel_number}/watermark")
 async def put_channel_watermark(channel_number: int, body: WatermarkIn):
     with get_db() as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM channels WHERE number=?", (channel_number,)
+        existing = conn.execute(
+            "SELECT watermark_image_url FROM channels WHERE number=?", (channel_number,)
         ).fetchone()
-        if exists is None:
+        if existing is None:
             raise HTTPException(404, "Channel not found")
+        # An enabled watermark with no resolved image maps to `url: ""`, which
+        # Tunarr may reject — and because every channel write is a full
+        # SaveableChannel PUT, that would then fail EVERY later save for this
+        # channel (name, number, tier included), not just the watermark. The
+        # mapper still emits `url: ""` by design (it has no channel context);
+        # the gate belongs here, where the resolved image is known.
+        if body.enabled and not (existing["watermark_image_url"] or "").strip():
+            raise HTTPException(
+                400, "Set a watermark image before enabling the watermark — "
+                     "Tunarr needs an image URL to draw. Apply the channel icon "
+                     "or an absolute image URL first, then enable it."
+            )
         conn.execute(
             "UPDATE channels SET watermark=? WHERE number=?",
             (json.dumps(body.model_dump()), channel_number),
