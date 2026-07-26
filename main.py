@@ -1168,7 +1168,8 @@ def _disabled_watermark_for_tunarr() -> dict:
     """
     return _watermark_to_tunarr({"enabled": False}, None)
 
-def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None) -> dict:
+def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None,
+                            icon_override: dict | None = None) -> dict:
     """The SaveableChannel keys Linearr owns, for a `channels` row.
 
     Everything else on the Tunarr side is preserved by `_tunarr_save_channel`'s
@@ -1176,8 +1177,10 @@ def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None) ->
     is entitled to overwrite — a renumber has to carry all of them, not just
     `number`, or a reordered channel would keep stale metadata.
 
-    `watermark` is omitted (rather than nulled) when the channel has none, so a
-    watermark configured directly in Tunarr's own UI survives.
+    `icon` and `watermark` are omitted (rather than nulled) when the channel has
+    none, so an icon/watermark configured directly in Tunarr's own UI survives.
+    The two `*_override` arguments are the escape hatch for the one case that
+    cannot express itself that way: Linearr *deliberately* clearing one.
     """
     changes = {
         "name": ch.get("name", ""),
@@ -1185,18 +1188,21 @@ def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None) ->
         "groupTitle": ch.get("tier", "Linearr"),
     }
     icon_data = ch.get("icon")
-    if icon_data and str(icon_data).startswith("data:"):
+    if icon_override is not None:
+        changes["icon"] = icon_override
+    elif icon_data and str(icon_data).startswith("data:"):
         changes["icon"] = _tunarr_icon_obj(icon_data)
     watermark = watermark_override if watermark_override is not None else _watermark_for_tunarr(ch)
     if watermark is not None:
         changes["watermark"] = watermark
     return changes
 
-async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: dict | None = None):
+async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: dict | None = None,
+                                  icon_override: dict | None = None):
     """Sync Cable Plex channel metadata to linked Tunarr channel.
     If no link exists, creates a new Tunarr channel and links it.
-    `watermark_override`, when given, takes precedence over the channel row's
-    stored watermark (used to push an explicit disable on clear).
+    `watermark_override` / `icon_override`, when given, take precedence over the
+    channel row's stored value (used to push an explicit clear).
     Returns {"synced": True/False, "action": "updated"|"created"|"error", ...}"""
     with get_db() as conn:
         ch = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
@@ -1209,7 +1215,7 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
         return {"synced": False, "action": "error", "message": "Tunarr not configured"}
 
     # Only the keys Linearr owns; _tunarr_save_channel preserves everything else.
-    changes = _tunarr_channel_changes(ch, watermark_override)
+    changes = _tunarr_channel_changes(ch, watermark_override, icon_override)
     icon_data = ch.get("icon")
     watermark = changes.get("watermark")
 
@@ -1320,12 +1326,23 @@ async def set_channel_icon(channel_number: int, request: Request):
 
 @app.delete("/api/channels/{channel_number}/icon")
 async def delete_channel_icon(channel_number: int):
-    """Remove channel icon."""
+    """Remove the channel icon, and clear it in Tunarr too.
+
+    Channel writes are read-modify-write and `_tunarr_channel_changes` only
+    emits `icon` when the row holds a `data:` icon — so simply syncing after the
+    local clear sends no `icon` key and the PUT echoes Tunarr's old logo
+    straight back. The only way to switch it off is to write an icon object with
+    an empty path (Tunarr's "none" state), passed as an explicit override.
+
+    The override is used ONLY here; a routine sync for a channel with no icon
+    still sends no icon key, leaving one set directly in Tunarr's own UI alone.
+    """
     with get_db() as conn:
         conn.execute("UPDATE channels SET icon=NULL WHERE number=?", (channel_number,))
     _log_app("channel", f"Removed icon for channel {channel_number}", metadata={"number": channel_number})
-    await _sync_channel_to_tunarr(channel_number)
-    return {"ok": True}
+    sync = await _sync_channel_to_tunarr(
+        channel_number, icon_override=_tunarr_icon_obj(None))
+    return {"ok": True, "tunarr_sync": sync}
 
 # ── Channel watermark ─────────────────────────────────────────────────────────
 
