@@ -6,7 +6,7 @@ import { useTunarrLinks } from '@/features/tunarr/hooks'
 import { usePlexSessions } from '@/features/plex/hooks'
 import { tierColor } from '@/shared/components/ui/TierBadge'
 import { ChannelSkeleton, confirmDialog } from '@/shared/components/ui'
-import { tierNumberColor } from '@/features/channels/utils'
+import { channelKey, tierNumberColor } from '@/features/channels/utils'
 import {
   channelDropTargetIndex,
   computeReorder,
@@ -402,13 +402,8 @@ export function ChannelSidebar() {
           const isSelected = selectedChannel?.number === ch.number
           const isDragging = draggingChannelNumber === ch.number
           const isDragOver = dragOverChannelNumber === ch.number && !isDragging
-          // `uid` is the channel's stable identity (server-side uuid4, additive
-          // only). NOT ch.number: a reorder renumbers, so number-based keys make
-          // React tear down and rebuild every row that moved (and briefly
-          // collide while the cache swaps). NOT tier+name either: `name` has no
-          // unique constraint, so two same-named channels in a tier would share
-          // a key and mis-associate DOM/state/drag attributes.
-          const rowKey = ch.uid ?? `${ch.tier}|${ch.name}|${ch.number}`
+          // Stable `uid` identity, with a safe fallback — see `channelKey`.
+          const rowKey = channelKey(ch)
 
           if (collapsed) {
             return (

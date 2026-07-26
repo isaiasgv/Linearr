@@ -1,6 +1,7 @@
 import { useState, useMemo, memo, useEffect, useCallback } from 'react'
 import Swal from 'sweetalert2'
 import { useChannels } from '@/features/channels/hooks'
+import { channelKey } from '@/features/channels/utils'
 import { useAssignments, useBulkAssign } from '@/features/assignments/hooks'
 import { toBulkAssignItem } from '@/features/assignments/utils'
 import { useUIStore, type CablePlexViewMode } from '@/shared/store/ui.store'
@@ -802,7 +803,7 @@ export function CablePlexView() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {filtered.map((ch) => (
               <ChannelCardCompact
-                key={ch.number}
+                key={channelKey(ch)}
                 channel={ch}
                 assignments={assignments[ch.number] ?? []}
                 onOpen={handleChannelClick}
@@ -819,7 +820,7 @@ export function CablePlexView() {
           <div className="space-y-2">
             {filtered.map((ch) => (
               <ChannelCardExpanded
-                key={ch.number}
+                key={channelKey(ch)}
                 channel={ch}
                 assignments={assignments[ch.number] ?? []}
                 posterSize={posterSize}
@@ -859,7 +860,7 @@ export function CablePlexView() {
                 className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50 max-w-56"
               >
                 {channels.map((c) => (
-                  <option key={c.number} value={c.number}>
+                  <option key={channelKey(c)} value={c.number}>
                     {c.number} · {c.name}
                   </option>
                 ))}

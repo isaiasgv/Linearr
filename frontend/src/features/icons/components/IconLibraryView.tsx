@@ -18,6 +18,7 @@ import {
 } from '../hooks'
 import { iconsApi } from '../api'
 import { useChannels } from '@/features/channels/hooks'
+import { channelKey } from '@/features/channels/utils'
 import { useUIStore } from '@/shared/store/ui.store'
 import { useToastStore } from '@/shared/store/toast.store'
 import type { SavedIcon } from '../api'
@@ -445,7 +446,7 @@ export function IconLibraryView() {
                   >
                     <option value="">Select channel...</option>
                     {channels.map((ch) => (
-                      <option key={ch.number} value={ch.number}>
+                      <option key={channelKey(ch)} value={ch.number}>
                         {ch.number} — {ch.name}
                       </option>
                     ))}

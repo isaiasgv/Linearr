@@ -34,6 +34,7 @@ import {
   useDeleteFillerList,
 } from '@/features/tunarr/hooks'
 import { useChannels } from '@/features/channels/hooks'
+import { channelKey } from '@/features/channels/utils'
 import { use247Suggestions, useAiSuggestChannels } from '@/features/ai/hooks'
 import { useCreateChannel } from '@/features/channels/hooks'
 import { useSettings } from '@/features/settings/hooks'
@@ -1225,7 +1226,7 @@ export function TunarrView() {
                   const isLinked = links.some((l) => l.channel_number === ch.number)
                   return (
                     <label
-                      key={ch.number}
+                      key={channelKey(ch)}
                       className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${isLinked ? 'bg-slate-900/50 border-slate-700/50' : 'bg-slate-900 border-slate-700'}`}
                     >
                       <input
