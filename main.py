@@ -6375,6 +6375,70 @@ async def tunarr_delete_smart_collection(sc_id: str):
     _log_app("tunarr", f"Deleted Tunarr smart collection {sc_id}", level="warn", metadata={"uuid": sc_id})
     return {"ok": True}
 
+@app.post("/api/tunarr/smart-collections/purge")
+async def tunarr_purge_smart_collections():
+    """Delete EVERY Tunarr smart collection and clear `tunarr_collection_links`.
+
+    Destructive and global, so it is an explicit endpoint of its own and is
+    never a side effect of any other action (sync, generate, assign).
+
+    Failures are reported per item rather than aborting the run: one collection
+    Tunarr refuses to delete must not strand the rest. Link rows are cleared for
+    everything that actually went away — a link is retained only when its
+    collection survived in Tunarr, so the local state still matches the server.
+
+    Returns {"deleted": int, "failed": [{"id", "name", "error"}, ...]}.
+    """
+    url = get_tunarr_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{url}{_TUNARR_SC_PATH}")
+            if r.status_code != 200:
+                raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+            data = r.json()
+            items = data if isinstance(data, list) else data.get("data", []) or []
+
+            deleted = 0
+            failed: list[dict] = []
+            failed_ids: list[str] = []
+            for sc in items:
+                sc_id = str(sc.get("uuid") or sc.get("id") or "")
+                name = sc.get("name")
+                if not sc_id:
+                    failed.append({"id": None, "name": name, "error": "no uuid in Tunarr response"})
+                    continue
+                try:
+                    dr = await client.delete(f"{url}{_TUNARR_SC_PATH}/{sc_id}")
+                except Exception as e:  # noqa: BLE001 — keep purging the rest
+                    failed.append({"id": sc_id, "name": name, "error": str(e)[:200]})
+                    failed_ids.append(sc_id)
+                    continue
+                # 404 counts as gone: the goal state is "not in Tunarr".
+                if dr.status_code in (200, 204, 404):
+                    deleted += 1
+                else:
+                    failed.append({"id": sc_id, "name": name,
+                                   "error": f"{dr.status_code}: {dr.text[:200]}"})
+                    failed_ids.append(sc_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Cannot reach Tunarr: {e}")
+
+    with get_db() as conn:
+        if failed_ids:
+            placeholders = ",".join("?" for _ in failed_ids)
+            conn.execute(
+                f"DELETE FROM tunarr_collection_links WHERE tunarr_collection_id NOT IN ({placeholders})",
+                failed_ids,
+            )
+        else:
+            conn.execute("DELETE FROM tunarr_collection_links")
+
+    _log_app("tunarr", f"Purged Tunarr smart collections: {deleted} deleted, {len(failed)} failed",
+             level="warn", metadata={"deleted": deleted, "failed": failed})
+    return {"deleted": deleted, "failed": failed}
+
 # ── Tunarr tasks (guide refresh, library scan) ───────────────────────────────
 
 @app.post("/api/tunarr/tasks/{task_name}")
