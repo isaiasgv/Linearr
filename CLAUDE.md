@@ -165,6 +165,29 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 
 **Schema migrations** use `ALTER TABLE ... ADD COLUMN` wrapped in `try/except sqlite3.OperationalError` — always use this pattern for new columns, never recreate tables.
 
+### `channels.number` is a primary key referenced by value
+
+`channels.number` is the PRIMARY KEY *and* six tables carry a `channel_number` value
+reference to it with **no foreign keys**: `assignments`, `blocks`, `channel_collections`,
+`tunarr_channel_links`, `tunarr_collection_links`, `ai_logs`. (`block_slots` follows
+`blocks` via `block_id`.) That tuple is `_CHANNEL_REF_TABLES` in `main.py` — the single
+source of truth read by `update_channel`, `delete_channel` and the reorder endpoint, so
+the three paths cannot drift apart. `ai_logs` used to be missing from the renumber cascade
+and the delete cleanup; that was a bug and is fixed.
+
+Consequences:
+- **There is no `order_index` — reordering channels means renumbering them.**
+- Any renumber must go through the transactional endpoint (`POST /api/channels/reorder`)
+  or `PUT /api/channels/{n}` — never hand-write `UPDATE channels SET number=…`, which
+  silently orphans rows in all six tables.
+- A renumber is written in **two phases** (`_renumber_channels`): park every affected row
+  at a temporary negative number, then write the finals. A reorder is normally a *cycle*,
+  so a single-phase sequential update collides on the PRIMARY KEY immediately.
+- Frontend: after a renumber, invalidate everything keyed by channel number —
+  `['assignments']`, `['blocks']`, `['channel-collections']`, `['collection-status']`,
+  `['tunarr','links']`, `['tunarr','collection-links']`, `['watermark']` — and never key a
+  React list on `ch.number`.
+
 ---
 
 ## API Routes
@@ -177,6 +200,21 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 - `GET /api/channels` — returns all rows from the SQLite `channels` table (ordered by number)
 - `GET /api/channels/suggest-247` — analyze Plex library, return 24/7 loop channel candidates
 - `POST /api/channels/ai-suggest` — AI-generate channel + package suggestions from DB
+- `POST /api/channels/reorder` — drag-and-drop reorder, i.e. **renumber**.
+  Body `{moved_number, target_index, target_tier}`; `target_index` is the 0-based index the
+  moved channel should occupy in the **resulting** lineup (dropping onto a row = that row's
+  pre-drop index), and `target_tier` is only for a cross-tier move (`null` keeps the tier).
+  Returns `{changed: [{old_number, new_number, tier}], channels: [...full new lineup...],
+  tunarr: {synced, failed: [{number, message, state, parked_number}]}}`.
+  The renumber math is the pure `_compute_reorder` (mirrored client-side in
+  `frontend/src/features/channels/reorder.ts` for the confirm preview only); the write is
+  one all-or-nothing transaction cascading to `_CHANNEL_REF_TABLES`.
+  Tunarr propagation runs **after** the commit and can never undo it — a failure entry's
+  `state` is `unchanged` (Tunarr kept the old number, harmless) or `parked` (the Tunarr
+  channel is stranded on temporary number `parked_number` and needs attention). Never
+  report either as "the reorder failed".
+- `PUT /api/channels/{n}` also renumbers when `body.number` differs from the path number
+  (409 if the target number is taken).
 - `GET|PUT|DELETE /api/channels/{n}/watermark` — per-channel Tunarr watermark config.
   `GET` returns `{watermark: null}` or the stored config plus a server-owned `image_url`;
   `PUT`/`DELETE` also re-sync the channel to Tunarr and return `tunarr_sync`. Validation
@@ -327,6 +365,13 @@ User docs: `docs/MCP.md`.
 ## Channels
 
 Channels are stored in the SQLite `channels` table (fields: `number, name, tier, vibe, mode, style, color, icon`) and managed at runtime via the `POST/PUT/DELETE /api/channels` routes — this is the authoritative source. `channels.py` exports a `CHANNELS` list as a **reference/seed snapshot only**; it is not imported by `main.py` and is excluded from the Docker image. If you wire it back in as a DB seed, un-ignore it in `.dockerignore` first.
+
+Tier ranges (`Galaxy Main [100,119]`, `Classics [120,139]`, `Galaxy Premium [140,159]`) live
+in `TIER_RANGES` — `main.py` and `frontend/src/features/channels/presets/numbering.ts` must
+agree. Ordering is *by number*: there is no separate ordering column, so reordering
+renumbers. See "`channels.number` is a primary key referenced by value" above and
+`POST /api/channels/reorder`. The sidebar (`ChannelSidebar.tsx`) drives it with native
+HTML5 drag-and-drop — no drag library, and none should be added.
 
 ---
 
