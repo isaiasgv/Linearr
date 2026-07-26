@@ -402,11 +402,13 @@ export function ChannelSidebar() {
           const isSelected = selectedChannel?.number === ch.number
           const isDragging = draggingChannelNumber === ch.number
           const isDragOver = dragOverChannelNumber === ch.number && !isDragging
-          // NOT keyed on ch.number: a reorder renumbers, so number-based keys
-          // make React tear down and rebuild every row that moved (and briefly
-          // collide while the cache swaps). Name+tier is stable across a
-          // renumber, which is the mutation this list has to survive.
-          const rowKey = `${ch.tier}|${ch.name}`
+          // `uid` is the channel's stable identity (server-side uuid4, additive
+          // only). NOT ch.number: a reorder renumbers, so number-based keys make
+          // React tear down and rebuild every row that moved (and briefly
+          // collide while the cache swaps). NOT tier+name either: `name` has no
+          // unique constraint, so two same-named channels in a tier would share
+          // a key and mis-associate DOM/state/drag attributes.
+          const rowKey = ch.uid ?? `${ch.tier}|${ch.name}|${ch.number}`
 
           if (collapsed) {
             return (

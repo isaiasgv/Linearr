@@ -1,6 +1,13 @@
 // ── Channels ─────────────────────────────────────────────────────────────────
 
 export interface Channel {
+  /**
+   * Stable server-assigned identity (uuid4). Additive only — no route takes it
+   * and it never replaces `number` as the primary key. Use it as the React key:
+   * `number` is mutated by a reorder and `name` is not unique.
+   * Optional so a response from an older backend still type-checks.
+   */
+  uid?: string
   number: number
   name: string
   tier: 'Galaxy Main' | 'Classics' | 'Galaxy Premium'

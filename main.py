@@ -107,6 +107,28 @@ def get_db():
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
+def _new_channel_uid() -> str:
+    """A fresh stable identity for a `channels` row.
+
+    Every channel-creating path must pass one (see the `uid` migration in
+    `init_db`); the `channels_uid_default` trigger is the safety net, not the
+    intended mechanism.
+    """
+    return str(uuid.uuid4())
+
+
+# uuid4 as a SQL expression, for the `channels_uid_default` trigger. `random() % 4`
+# (rather than `abs(random()) % 4`) keeps the operand away from the one value
+# whose abs() overflows a signed 64-bit int.
+_SQL_UUID4 = (
+    "lower("
+    "hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' ||"
+    " substr(hex(randomblob(2)), 2) || '-' ||"
+    " substr('89ab', abs(random() % 4) + 1, 1) || substr(hex(randomblob(2)), 2) ||"
+    " '-' || hex(randomblob(6)))"
+)
+
+
 def init_db():
     with get_db() as conn:
         conn.executescript("""
@@ -239,17 +261,57 @@ def init_db():
             """)
         except sqlite3.OperationalError:
             pass
+        # Stable per-channel identity, additive only.
+        #
+        # `number` is the PRIMARY KEY but a reorder MUTATES it, so it cannot
+        # identify a row across the very operation that matters most; `name` has
+        # no unique constraint, so two channels can legitimately share one. `uid`
+        # is never part of a route path and never replaces the primary key — it
+        # exists so clients (React keys, drag state, focus) have something that
+        # survives a renumber. A renumber only UPDATEs `number`, so `uid` is
+        # carried through unchanged for free.
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN uid TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # Backfill every row that has no uid yet — existing installs on first
+        # boot after this migration, plus anything a future path inserts without
+        # one. Never recreates the table.
+        try:
+            for (number,) in conn.execute(
+                "SELECT number FROM channels WHERE uid IS NULL OR uid=''"
+            ).fetchall():
+                conn.execute("UPDATE channels SET uid=? WHERE number=?",
+                             (_new_channel_uid(), number))
+        except sqlite3.OperationalError:
+            pass
+        # Belt and braces. SQLite rejects a non-constant DEFAULT in
+        # `ALTER TABLE ... ADD COLUMN`, so the invariant "every channels row has
+        # a uid" is enforced by a trigger instead: any INSERT that omits it gets
+        # one. Covers direct DB writes (tests, manual SQL) and any future code
+        # path that forgets. The app paths still pass one explicitly.
+        try:
+            conn.execute(f"""
+                CREATE TRIGGER IF NOT EXISTS channels_uid_default
+                AFTER INSERT ON channels
+                WHEN NEW.uid IS NULL OR NEW.uid = ''
+                BEGIN
+                    UPDATE channels SET uid = {_SQL_UUID4} WHERE number = NEW.number;
+                END
+            """)
+        except sqlite3.OperationalError:
+            pass
         # Seed a single example channel on fresh install. Users can import
         # the full Galaxy Network lineup via the Cable Plex view if they want.
         try:
             count = conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0]
             if count == 0:
                 conn.execute(
-                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
                     (100, "My First Channel", "Galaxy Main", "Everyday cable comfort",
                      "Shuffle",
                      "Your example channel. Edit this, create new ones, or import the Galaxy Network lineup from Cable Plex.",
-                     "blue"),
+                     "blue", _new_channel_uid()),
                 )
         except sqlite3.OperationalError:
             pass
@@ -1172,8 +1234,9 @@ async def create_channel(body: ChannelIn):
     with get_db() as conn:
         try:
             conn.execute(
-                "INSERT INTO channels (number, name, tier, vibe, mode, style, color, icon) VALUES (?,?,?,?,?,?,?,?)",
-                (body.number, body.name, body.tier, body.vibe, body.mode, body.style, body.color, body.icon)
+                "INSERT INTO channels (number, name, tier, vibe, mode, style, color, icon, uid) VALUES (?,?,?,?,?,?,?,?,?)",
+                (body.number, body.name, body.tier, body.vibe, body.mode, body.style,
+                 body.color, body.icon, _new_channel_uid())
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, f"Channel {body.number} already exists")
@@ -4792,10 +4855,11 @@ def create_channel_package(body: dict):
         for ch in channels_to_create:
             try:
                 conn.execute(
-                    "INSERT INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    "INSERT INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
                     (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"),
                      ch.get("vibe", ""), ch.get("mode", "Shuffle"),
-                     ch.get("description", ""), ch.get("color", "blue"))
+                     ch.get("description", ""), ch.get("color", "blue"),
+                     _new_channel_uid())
                 )
                 created.append(ch["number"])
             except sqlite3.IntegrityError:
@@ -6126,8 +6190,9 @@ async def tunarr_import_channels(body: TunarrImportRequest):
             elif act.action == "create":
                 cp_num = tnum or (max((r["number"] for r in conn.execute("SELECT number FROM channels")), default=99) + 1)
                 conn.execute(
-                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
-                    (cp_num, tname, "Galaxy Main", "", "Shuffle", "", "blue"),
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
+                    (cp_num, tname, "Galaxy Main", "", "Shuffle", "", "blue",
+                     _new_channel_uid()),
                 )
                 results["created"] += 1
             else:
@@ -7189,11 +7254,13 @@ def _import_lineup_data(data: dict, mode: str) -> dict:
 
         for ch in channels:
             try:
+                # An imported channel always gets a LOCAL uid — an exported one
+                # would collide with the source install's identity.
                 conn.execute(
-                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, icon) VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, icon, uid) VALUES (?,?,?,?,?,?,?,?,?)",
                     (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"), ch.get("vibe", ""),
                      ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue"),
-                     ch.get("icon")),
+                     ch.get("icon"), _new_channel_uid()),
                 )
                 stats["channels_added"] += 1
             except Exception:
@@ -7264,10 +7331,12 @@ async def import_lineup(request: Request):
 
         for ch in channels:
             try:
+                # Fresh local uid, never the exported one (see _import_lineup_data).
                 conn.execute(
-                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
                     (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"), ch.get("vibe", ""),
-                     ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue")),
+                     ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue"),
+                     _new_channel_uid()),
                 )
                 stats["channels_added"] += 1
             except Exception:
@@ -7331,10 +7400,17 @@ async def import_channel(request: Request):
     block_slots = data.get("block_slots", [])
 
     with get_db() as conn:
+        # INSERT OR REPLACE deletes the old row, so an existing channel's uid
+        # would be lost — re-importing over a channel must not change its
+        # identity. Keep it when the number is already taken, mint one otherwise.
+        prior = conn.execute(
+            "SELECT uid FROM channels WHERE number=?", (ch["number"],)
+        ).fetchone()
+        uid = (prior["uid"] if prior and prior["uid"] else None) or _new_channel_uid()
         conn.execute(
-            "INSERT OR REPLACE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
             (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"), ch.get("vibe", ""),
-             ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue")),
+             ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue"), uid),
         )
         for a in assignments:
             try:
