@@ -777,12 +777,26 @@ def _compute_reorder(
     return mapping
 
 
-# Every table that carries a `channel_number` value reference to
-# channels(number). There are NO foreign keys, so each of these has to be
-# cascaded by hand on a renumber and cleaned up by hand on a delete. Keep this
-# the single source of truth — `update_channel`, `delete_channel` and the
-# reorder endpoint all read it, so the three paths cannot drift apart again.
-# (`block_slots` is deliberately absent: it follows `blocks` via `block_id`.)
+# ── The two channel_number cascade lists ──────────────────────────────────────
+#
+# THESE TWO LISTS ARE DELIBERATELY DIFFERENT. Do not "unify" them.
+#
+# Every table below carries a `channel_number` value reference to
+# channels(number). There are NO foreign keys, so each has to be handled by
+# hand. But a RENUMBER and a DELETE want different sets:
+#
+#   * RENUMBER (`_CHANNEL_REF_TABLES`) must carry EVERY referencing table, or a
+#     reordered channel silently orphans rows — including `ai_logs`, whose rows
+#     would otherwise point at whatever channel later took that number.
+#   * DELETE (`_CHANNEL_DELETE_TABLES`) must NOT include `ai_logs`. AI
+#     generation history is a write-only audit trail with no other copy, and
+#     the delete confirmation never says it would be destroyed. Deleting a
+#     channel keeps its logs (they carry the number as a label, not a live
+#     reference).
+#
+# `update_channel`, the reorder endpoint (both via `_move_channel_number`) and
+# `delete_channel` are the only readers, so the paths cannot drift apart again.
+# (`block_slots` is absent from both: it follows `blocks` via `block_id`.)
 _CHANNEL_REF_TABLES: tuple[str, ...] = (
     "assignments",
     "blocks",
@@ -792,17 +806,36 @@ _CHANNEL_REF_TABLES: tuple[str, ...] = (
     "ai_logs",
 )
 
+# Renumber list minus the audit trail. See the block comment above.
+_CHANNEL_DELETE_TABLES: tuple[str, ...] = tuple(
+    t for t in _CHANNEL_REF_TABLES if t != "ai_logs"
+)
 
-def _present_ref_tables(conn) -> tuple[str, ...]:
-    """`_CHANNEL_REF_TABLES` filtered to the tables this DB actually has.
 
-    Checked up front rather than swallowing `sqlite3.OperationalError` per
-    statement: on a renumber a swallowed error would silently orphan rows.
+def _present_ref_tables(conn, tables: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    """`tables` (default `_CHANNEL_REF_TABLES`) filtered to what this DB can use.
+
+    Both the table AND the `channel_number` column are checked up front rather
+    than swallowing `sqlite3.OperationalError` per statement: on a renumber a
+    swallowed error would silently orphan rows. Checking the column too means a
+    table added to either list without a `channel_number` column degrades to
+    "skipped" instead of 500-ing every delete and reorder.
     """
+    if tables is None:
+        tables = _CHANNEL_REF_TABLES
     present = {
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
-    return tuple(t for t in _CHANNEL_REF_TABLES if t in present)
+    usable = []
+    for t in tables:
+        if t not in present:
+            continue
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({t})")}
+        if "channel_number" not in cols:
+            log.warning("Table %s has no channel_number column — skipping cascade", t)
+            continue
+        usable.append(t)
+    return tuple(usable)
 
 
 def _move_channel_number(conn, old_number: int, new_number: int) -> None:
@@ -1321,11 +1354,13 @@ def delete_channel(channel_number: int):
             raise HTTPException(404, "Channel not found")
         # No FK constraints tie these tables to channels(number) — clean up
         # explicitly so a reused channel number doesn't inherit ghost data.
+        # `_CHANNEL_DELETE_TABLES`, NOT `_CHANNEL_REF_TABLES`: `ai_logs` is an
+        # audit trail and survives the delete (see the block comment there).
         conn.execute(
             "DELETE FROM block_slots WHERE block_id IN (SELECT id FROM blocks WHERE channel_number=?)",
             (channel_number,),
         )
-        for table in _present_ref_tables(conn):
+        for table in _present_ref_tables(conn, _CHANNEL_DELETE_TABLES):
             conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
     _log_app("channel", f"Deleted channel {channel_number}", level="warn", metadata={"number": channel_number})
     return {"ok": True}

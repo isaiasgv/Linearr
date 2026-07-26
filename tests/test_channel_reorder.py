@@ -1037,10 +1037,47 @@ def test_update_channel_renumber_cascades_ai_logs(auth_client, no_tunarr):
     assert _markers_at(7301) == {t: [] for t in _MARKER_COLUMNS}
 
 
-def test_delete_channel_cleans_up_ai_logs(auth_client, no_tunarr):
+def test_delete_channel_preserves_ai_logs_but_drops_the_rest(auth_client, no_tunarr):
+    """DELETE must NOT cascade `ai_logs`.
+
+    Unifying the delete list into `_CHANNEL_REF_TABLES` (right for a renumber)
+    silently made delete destroy a channel's AI generation history — which has
+    no other copy and is not mentioned in the delete confirmation. Everything
+    else still goes.
+    """
     _seed_full_channel(7311)
     assert _markers_at(7311)["ai_logs"] == ["model-7311"]
 
     r = auth_client.delete("/api/channels/7311")
     assert r.status_code == 200, r.text
-    assert _markers_at(7311) == {t: [] for t in _MARKER_COLUMNS}
+
+    after = _markers_at(7311)
+    assert after["ai_logs"] == ["model-7311"], "AI logs must survive a channel delete"
+    for table in _MARKER_COLUMNS:
+        if table == "ai_logs":
+            continue
+        assert after[table] == [], f"{table} rows must be cleaned up on delete"
+    # And the block's slots went with the block.
+    with main.get_db() as conn:
+        orphan_slots = conn.execute(
+            "SELECT COUNT(*) FROM block_slots WHERE block_id NOT IN (SELECT id FROM blocks)"
+        ).fetchone()[0]
+    assert orphan_slots == 0
+    _clear_channel(7311)
+
+
+def test_delete_and_renumber_cascade_lists_differ_only_by_ai_logs():
+    """The two lists must not silently re-converge."""
+    assert "ai_logs" in main._CHANNEL_REF_TABLES
+    assert "ai_logs" not in main._CHANNEL_DELETE_TABLES
+    assert set(main._CHANNEL_REF_TABLES) - set(main._CHANNEL_DELETE_TABLES) == {"ai_logs"}
+
+
+def test_present_ref_tables_skips_a_table_without_channel_number(client):
+    """A future table listed without a `channel_number` column must degrade to
+    'skipped', not 500 every delete and reorder."""
+    with main.get_db() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS _t_no_chnum (id INTEGER PRIMARY KEY)")
+        usable = main._present_ref_tables(conn, ("assignments", "_t_no_chnum", "nope_missing"))
+        conn.execute("DROP TABLE _t_no_chnum")
+    assert usable == ("assignments",)
