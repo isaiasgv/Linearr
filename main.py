@@ -5441,6 +5441,53 @@ async def _tunarr_upload_image(
     return f"{url.rstrip('/')}{path}"
 
 
+# Tunarr's upload directory — the only prefix `/api/tunarr/image` will fetch, so
+# the route cannot be used as a general-purpose proxy.
+_TUNARR_IMAGE_ALLOWED_PREFIXES = ("/images/",)
+_TUNARR_IMAGE_HEADERS = {"Cache-Control": "public, max-age=604800, immutable"}
+
+
+@app.get("/api/tunarr/image")
+async def tunarr_image(path: str = Query(...)):
+    """Proxy an image hosted by Tunarr, for the BROWSER.
+
+    `watermark_image_url` is stored as an absolute URL on the configured Tunarr
+    base — `http://tunarr:8000/...` on a default Docker deployment — because
+    ffmpeg *inside the Tunarr container* is what fetches it. The user's browser
+    is on the LAN and cannot resolve that container hostname, so rendering the
+    stored value directly in an <img> is a guaranteed broken image. This route is
+    the browser-facing equivalent: same-origin in, server-side fetch out.
+
+    SSRF hardening mirrors `/api/plex/thumb`: `path` is caller-controlled, so only
+    a plain path under Tunarr's `/images/` directory is accepted (no scheme, no
+    `//`, no `@`, no backslash, no `..` traversal) and the Tunarr base URL is
+    prefixed here rather than taken from the caller. Redirects are not followed.
+    """
+    path_only = path.split("?", 1)[0]
+    if (not path.startswith("/") or path.startswith("//") or "://" in path
+            or any(c in path for c in ("@", "\\"))
+            or ".." in path_only
+            or not path_only.startswith(_TUNARR_IMAGE_ALLOWED_PREFIXES)):
+        raise HTTPException(400, "Invalid Tunarr image path")
+    url = get_tunarr_url()
+    if not url:
+        raise HTTPException(400, "Tunarr not configured")
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
+            resp = await client.get(f"{url}{path}")
+    except Exception as e:
+        log.warning("Tunarr image proxy failed for %s: %s", path, e)
+        raise HTTPException(502, "Tunarr image fetch failed")
+    if resp.status_code != 200 or not resp.content:
+        raise HTTPException(resp.status_code if resp.status_code != 200 else 502,
+                            "Tunarr image error")
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("content-type", "image/png"),
+        headers=_TUNARR_IMAGE_HEADERS,
+    )
+
+
 def _watermark_to_tunarr(wm: dict, image_url: str | None) -> dict:
     """Map stored watermark config to Tunarr's WatermarkSchema.
 

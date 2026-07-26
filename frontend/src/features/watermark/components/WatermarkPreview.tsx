@@ -15,9 +15,35 @@ interface WatermarkPreviewProps {
  * which is exactly how a CSS `top`/`left` percentage resolves), and
  * `fixed_size` skips the scale filter entirely so `width` stops applying.
  */
+/**
+ * Browser-safe src for a stored watermark image URL.
+ *
+ * `watermark_image_url` is an absolute URL on the *Tunarr* base — on a default
+ * Docker deployment `http://tunarr:8000/images/uploads/...` — because ffmpeg
+ * inside the Tunarr container is what fetches it. This browser is on the LAN and
+ * cannot resolve that container hostname, so rendering the stored value directly
+ * always yields a broken image. Tunarr-hosted uploads therefore go through the
+ * same-origin `/api/tunarr/image` proxy, which fetches server-side.
+ *
+ * A URL outside Tunarr's `/images/` directory is something the user pasted from
+ * elsewhere (a CDN, say). The browser can fetch that itself, and the proxy
+ * deliberately refuses it, so it is used as-is.
+ */
+export function watermarkPreviewSrc(imageUrl: string): string {
+  try {
+    const { pathname } = new URL(imageUrl, window.location.origin)
+    return pathname.startsWith('/images/')
+      ? `/api/tunarr/image?path=${encodeURIComponent(pathname)}`
+      : imageUrl
+  } catch {
+    return imageUrl
+  }
+}
+
 export function WatermarkPreview({ watermark, imageUrl }: WatermarkPreviewProps) {
   const { position, width, vertical_margin, horizontal_margin, opacity, fixed_size, enabled } =
     watermark
+  const previewSrc = imageUrl ? watermarkPreviewSrc(imageUrl) : null
 
   const isTop = position.startsWith('top')
   const isLeft = position.endsWith('left')
@@ -56,9 +82,9 @@ export function WatermarkPreview({ watermark, imageUrl }: WatermarkPreviewProps)
           <p className="absolute inset-0 grid place-items-center bg-slate-950/70 text-xs text-slate-400">
             Watermark disabled
           </p>
-        ) : imageUrl ? (
+        ) : previewSrc ? (
           <img
-            src={imageUrl}
+            src={previewSrc}
             alt="Watermark preview"
             style={placement}
             className={fixed_size ? 'max-w-[40%]' : undefined}
