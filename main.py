@@ -169,6 +169,19 @@ def init_db():
             conn.execute("ALTER TABLE channel_collections ADD COLUMN managed INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
+        # Which kind of collection fills this (channel_number, plex_type) slot:
+        #   'owned'    — Linearr generated + manages it ('{Channel} Movies/TV')
+        #   'assigned' — an existing collection referenced by the channel; its
+        #                contents are NEVER read or modified by Linearr.
+        # Existing rows default to 'owned', which is what they always were.
+        try:
+            conn.execute("ALTER TABLE channel_collections ADD COLUMN source TEXT NOT NULL DEFAULT 'owned'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE channel_collections ADD COLUMN is_smart INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS tunarr_channel_links (
@@ -529,6 +542,15 @@ class ChannelCollectionIn(BaseModel):
     plex_type: str
     collection_rating_key: str
     collection_title: str
+
+class ChannelCollectionAssignIn(BaseModel):
+    """Assign an EXISTING collection to a channel by reference (never copied,
+    never modified). Distinct from `ChannelCollectionIn`, which drives the
+    import-items route."""
+    plex_type: str
+    collection_rating_key: str
+    collection_title: str
+    is_smart: bool = False
 
 _WATERMARK_POSITIONS = ("top-left", "top-right", "bottom-left", "bottom-right")
 
@@ -2452,8 +2474,65 @@ def get_channel_collections(channel_number: int):
         ).fetchall()
     result = {}
     for r in rows:
-        result[r["plex_type"]] = dict(r)
+        d = dict(r)
+        # Normalize so the UI can always branch on these, even for rows written
+        # before the columns existed.
+        d["source"] = d.get("source") or "owned"
+        d["is_smart"] = int(d.get("is_smart") or 0)
+        result[d["plex_type"]] = d
     return result
+
+
+def _write_assigned_slot(channel_number: int, plex_type: str, rating_key: str,
+                         title: str, is_smart: bool) -> None:
+    """Point a channel's (type) slot at an existing collection, by REFERENCE.
+
+    Writes `source='assigned'`, `managed=0` — Linearr records that the channel
+    uses this collection and never reads or edits its members. `UNIQUE(channel_
+    number, plex_type)` means assigning replaces whatever held the slot.
+    """
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO channel_collections
+                 (channel_number, plex_type, collection_rating_key, collection_title,
+                  managed, source, is_smart)
+               VALUES (?, ?, ?, ?, 0, 'assigned', ?)
+               ON CONFLICT(channel_number, plex_type) DO UPDATE SET
+                   collection_rating_key=excluded.collection_rating_key,
+                   collection_title=excluded.collection_title,
+                   managed=0,
+                   source='assigned',
+                   is_smart=excluded.is_smart""",
+            (channel_number, plex_type, str(rating_key), title, 1 if is_smart else 0),
+        )
+
+
+@app.post("/api/channel-collections/{channel_number}/assign", status_code=200)
+def assign_channel_collection(channel_number: int, body: ChannelCollectionAssignIn):
+    """Assign an existing Plex collection to a channel BY REFERENCE.
+
+    Reference only: this records that the channel uses the collection. It makes
+    no Plex call at all — the collection's members are never read, copied into
+    `assignments`, or modified. (Contrast `POST /api/channel-collections/{n}`,
+    which imports a collection's items into assignments, and
+    `generate_collections`, which builds and manages Linearr's own
+    '{Channel} Movies/TV' collections.)
+
+    One active source per type: assigning replaces whatever was in that slot.
+    """
+    if body.plex_type not in _COLLECTION_SUFFIX:
+        raise HTTPException(400, "plex_type must be 'movie' or 'show'")
+    if not _get_channel(channel_number):
+        raise HTTPException(404, "Channel not found")
+    _write_assigned_slot(channel_number, body.plex_type, body.collection_rating_key,
+                         body.collection_title, body.is_smart)
+    _log_app("collection", f"Assigned collection '{body.collection_title}' to ch {channel_number}",
+             metadata={"channel": channel_number, "plex_type": body.plex_type,
+                       "rating_key": body.collection_rating_key, "is_smart": body.is_smart})
+    return {"ok": True, "channel_number": channel_number, "plex_type": body.plex_type,
+            "collection_rating_key": str(body.collection_rating_key),
+            "collection_title": body.collection_title,
+            "source": "assigned", "is_smart": 1 if body.is_smart else 0}
 
 
 @app.post("/api/channel-collections/{channel_number}", status_code=200)
