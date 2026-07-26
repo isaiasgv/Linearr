@@ -1,12 +1,18 @@
 import { useState, useMemo, type ReactNode } from 'react'
 import { useUIStore, type TierFilter } from '@/shared/store/ui.store'
-import { useChannels } from '@/features/channels/hooks'
+import { useChannels, useReorderChannels } from '@/features/channels/hooks'
 import { useAssignments } from '@/features/assignments/hooks'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
 import { usePlexSessions } from '@/features/plex/hooks'
 import { tierColor } from '@/shared/components/ui/TierBadge'
-import { ChannelSkeleton } from '@/shared/components/ui'
+import { ChannelSkeleton, confirmDialog } from '@/shared/components/ui'
 import { tierNumberColor } from '@/features/channels/utils'
+import {
+  channelDropTargetIndex,
+  computeReorder,
+  describeReorderChanges,
+} from '@/features/channels/reorder'
+import type { Channel } from '@/shared/types'
 
 const TIER_FILTERS: { label: string; value: TierFilter }[] = [
   { label: 'All', value: 'All' },
@@ -55,6 +61,20 @@ function NavButton({
   )
 }
 
+/** Six-dot grip — the drag affordance, matching the block HourGrid's handle. */
+function DragGrip() {
+  return (
+    <svg className="w-3 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="9" cy="6" r="1.5" />
+      <circle cx="15" cy="6" r="1.5" />
+      <circle cx="9" cy="12" r="1.5" />
+      <circle cx="15" cy="12" r="1.5" />
+      <circle cx="9" cy="18" r="1.5" />
+      <circle cx="15" cy="18" r="1.5" />
+    </svg>
+  )
+}
+
 export function ChannelSidebar() {
   const {
     selectedChannel,
@@ -66,9 +86,15 @@ export function ChannelSidebar() {
     openModal,
     setSidebarOpen,
     sidebarCollapsed,
+    draggingChannelNumber,
+    dragOverChannelNumber,
+    setDraggingChannel,
+    setDragOverChannel,
+    clearChannelDrag,
   } = useUIStore()
 
   const { data: channels = [], isLoading: channelsLoading } = useChannels()
+  const reorderChannels = useReorderChannels()
   const { data: assignmentsMap = {} } = useAssignments()
   const { data: tunarrLinks = [] } = useTunarrLinks()
   const { data: plexSessions = [] } = usePlexSessions()
@@ -94,6 +120,65 @@ export function ChannelSidebar() {
   const visibleChannels = collapsed
     ? channels.filter((c) => tierFilter === 'All' || c.tier === tierFilter)
     : filteredChannels
+
+  // Reordering renumbers, and the drop index is resolved against the FULL
+  // lineup — a search-narrowed list would let the user drop "between" two rows
+  // that aren't actually adjacent, so drag is off while searching. A tier filter
+  // is fine: it hides rows but every visible row keeps its real lineup position.
+  const canReorder = !collapsed && !search
+  const dragEnabled = canReorder && !reorderChannels.isPending
+
+  function handleDragStart(e: React.DragEvent, ch: Channel) {
+    // Firefox refuses to start a drag unless dataTransfer carries something.
+    e.dataTransfer.setData('text/plain', String(ch.number))
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggingChannel(ch.number)
+  }
+
+  function handleDragOver(e: React.DragEvent, ch: Channel) {
+    if (draggingChannelNumber === null) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverChannel(ch.number)
+  }
+
+  async function handleDrop(e: React.DragEvent, target: Channel) {
+    e.preventDefault()
+    const movedNumber = draggingChannelNumber
+    clearChannelDrag()
+    if (movedNumber === null || movedNumber === target.number) return
+
+    const moved = channels.find((c) => c.number === movedNumber)
+    if (!moved) return
+
+    // Post-drop index = the pre-drop index of the row we dropped on, in the
+    // full lineup. See `channelDropTargetIndex` for why that holds both ways.
+    const targetIndex = channelDropTargetIndex(channels, target.number)
+    if (targetIndex < 0) return
+
+    const crossTier = moved.tier !== target.tier
+    const targetTier = crossTier ? target.tier : null
+    const preview = computeReorder(channels, movedNumber, targetIndex, targetTier)
+    if (preview.length === 0) return
+
+    // A cross-tier drop changes the channel's tier AND renumbers it into that
+    // tier's range — a bigger change than an in-tier nudge, so confirm it with
+    // the exact number changes. An in-tier nudge must not nag.
+    if (crossTier) {
+      const confirmed = await confirmDialog({
+        title: `Move ${moved.name} to ${target.tier}?`,
+        text: `${preview.length} channel${preview.length === 1 ? '' : 's'} will be renumbered: ${describeReorderChanges(preview)}`,
+        confirmText: 'Move & renumber',
+      })
+      if (!confirmed) return
+    }
+
+    reorderChannels.mutate({
+      moved_number: movedNumber,
+      target_index: targetIndex,
+      target_tier: targetTier,
+    })
+  }
 
   return (
     <>
@@ -298,7 +383,13 @@ export function ChannelSidebar() {
       )}
 
       {/* Channel list */}
-      <div className={`flex-1 overflow-y-auto py-1 ${collapsed ? 'px-1.5' : ''}`}>
+      <div
+        className={`flex-1 overflow-y-auto py-1 ${collapsed ? 'px-1.5' : ''}`}
+        aria-busy={reorderChannels.isPending || undefined}
+      >
+        {reorderChannels.isPending && !collapsed && (
+          <p className="px-3 py-1 text-[10px] text-indigo-300">Renumbering channels…</p>
+        )}
         {channelsLoading &&
           !collapsed &&
           Array.from({ length: 6 }, (_, i) => <ChannelSkeleton key={i} />)}
@@ -309,11 +400,18 @@ export function ChannelSidebar() {
           const assignments = assignmentsMap[ch.number] ?? []
           const isLinked = tunarrLinks.some((l) => l.channel_number === ch.number)
           const isSelected = selectedChannel?.number === ch.number
+          const isDragging = draggingChannelNumber === ch.number
+          const isDragOver = dragOverChannelNumber === ch.number && !isDragging
+          // NOT keyed on ch.number: a reorder renumbers, so number-based keys
+          // make React tear down and rebuild every row that moved (and briefly
+          // collide while the cache swaps). Name+tier is stable across a
+          // renumber, which is the mutation this list has to survive.
+          const rowKey = `${ch.tier}|${ch.name}`
 
           if (collapsed) {
             return (
               <button
-                key={ch.number}
+                key={rowKey}
                 onClick={() => selectChannel(ch)}
                 title={`${ch.number} – ${ch.name}${assignments.length ? ` · ${assignments.length} assigned` : ''}`}
                 className={`relative w-full flex justify-center py-1.5 rounded-lg transition-colors ${
@@ -346,57 +444,78 @@ export function ChannelSidebar() {
           }
 
           return (
-            <button
-              key={ch.number}
-              onClick={() => selectChannel(ch)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+            <div
+              key={rowKey}
+              draggable={dragEnabled}
+              onDragStart={(e) => handleDragStart(e, ch)}
+              onDragEnd={clearChannelDrag}
+              onDragOver={(e) => handleDragOver(e, ch)}
+              onDrop={(e) => void handleDrop(e, ch)}
+              className={`group flex items-center transition-colors ${
                 isSelected
                   ? 'bg-slate-700 border-l-2 border-indigo-500'
                   : 'border-l-2 border-transparent hover:bg-slate-800'
-              }`}
+              } ${isDragging ? 'opacity-40' : ''} ${
+                isDragOver ? 'ring-1 ring-inset ring-indigo-400 bg-indigo-900/25' : ''
+              } ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''}`}
             >
-              {ch.icon ? (
-                <div className="relative shrink-0">
-                  <img
-                    src={ch.icon}
-                    alt=""
-                    className="w-8 h-8 rounded-lg object-cover bg-slate-900"
-                  />
+              {canReorder && (
+                <span
+                  title="Drag to reorder (renumbers the channel)"
+                  className="shrink-0 pl-1 -mr-1 text-slate-700 group-hover:text-slate-500"
+                >
+                  <DragGrip />
+                </span>
+              )}
+              <button
+                onClick={() => selectChannel(ch)}
+                className={`flex-1 min-w-0 flex items-center gap-3 py-2.5 text-left ${
+                  canReorder ? 'pl-2 pr-3' : 'px-3'
+                }`}
+              >
+                {ch.icon ? (
+                  <div className="relative shrink-0">
+                    <img
+                      src={ch.icon}
+                      alt=""
+                      className="w-8 h-8 rounded-lg object-cover bg-slate-900"
+                    />
+                    <span
+                      className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded-sm px-1 leading-tight shadow-sm ${tierNumberColor(ch.tier)}`}
+                    >
+                      {ch.number}
+                    </span>
+                  </div>
+                ) : (
                   <span
-                    className={`absolute -bottom-1 -right-1 text-[9px] font-mono font-bold rounded-sm px-1 leading-tight shadow-sm ${tierNumberColor(ch.tier)}`}
+                    className={`shrink-0 w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}
                   >
                     {ch.number}
                   </span>
-                </div>
-              ) : (
-                <span
-                  className={`shrink-0 w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center ${tierNumberColor(ch.tier)}`}
-                >
-                  {ch.number}
-                </span>
-              )}
+                )}
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-medium text-slate-100 truncate">{ch.name}</span>
-                  {isLinked && (
-                    <span
-                      className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400"
-                      title="Linked to Tunarr"
-                    />
-                  )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-medium text-slate-100 truncate">{ch.name}</span>
+                    {isLinked && (
+                      <span
+                        className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400"
+                        title="Linked to Tunarr"
+                      />
+                    )}
+                  </div>
+                  {ch.vibe && <p className="text-xs text-slate-500 truncate">{ch.vibe}</p>}
                 </div>
-                {ch.vibe && <p className="text-xs text-slate-500 truncate">{ch.vibe}</p>}
-              </div>
 
-              {assignments.length > 0 && (
-                <span
-                  className={`shrink-0 text-xs rounded-full px-1.5 py-0.5 font-medium border ${tierColor(ch.tier)}`}
-                >
-                  {assignments.length}
-                </span>
-              )}
-            </button>
+                {assignments.length > 0 && (
+                  <span
+                    className={`shrink-0 text-xs rounded-full px-1.5 py-0.5 font-medium border ${tierColor(ch.tier)}`}
+                  >
+                    {assignments.length}
+                  </span>
+                )}
+              </button>
+            </div>
           )
         })}
       </div>

@@ -21,6 +21,15 @@ interface UIState {
   tierFilter: TierFilter
   assignedTypeFilter: AssignedTypeFilter
 
+  // Channel drag-to-reorder (native HTML5 DnD — same idiom as the block
+  // HourGrid). Numbers, not Channel objects: a reorder renumbers, so a captured
+  // object would go stale the moment the mutation lands.
+  draggingChannelNumber: number | null
+  dragOverChannelNumber: number | null
+  setDraggingChannel: (number: number | null) => void
+  setDragOverChannel: (number: number | null) => void
+  clearChannelDrag: () => void
+
   // Mobile sidebar drawer
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
@@ -126,6 +135,12 @@ export const useUIStore = create<UIState>((set) => ({
   activeChannelTab: 'content',
   tierFilter: 'All',
   assignedTypeFilter: 'all',
+
+  draggingChannelNumber: null,
+  dragOverChannelNumber: null,
+  setDraggingChannel: (draggingChannelNumber) => set({ draggingChannelNumber }),
+  setDragOverChannel: (dragOverChannelNumber) => set({ dragOverChannelNumber }),
+  clearChannelDrag: () => set({ draggingChannelNumber: null, dragOverChannelNumber: null }),
 
   sidebarOpen: false,
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
