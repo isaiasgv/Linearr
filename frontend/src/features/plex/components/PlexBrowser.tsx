@@ -20,9 +20,15 @@ type Source = 'library' | 'collection'
 
 interface PlexBrowserProps {
   channelNumber: number
+  /**
+   * Optional multi-select pass-through to PosterGrid. Omit both and the
+   * browser behaves exactly as before (single Assign / Add-all only).
+   */
+  selectedKeys?: Set<string>
+  onToggleSelect?: (item: PlexItem) => void
 }
 
-export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
+export function PlexBrowser({ channelNumber, selectedKeys, onToggleSelect }: PlexBrowserProps) {
   const openModal = useUIStore((s) => s.openModal)
   const viewMode = useUIStore((s) => s.browseViewMode)
   const setViewMode = useUIStore((s) => s.setBrowseViewMode)
@@ -407,6 +413,8 @@ export function PlexBrowser({ channelNumber }: PlexBrowserProps) {
             loading={isLoading}
             viewMode={viewMode}
             posterSize={posterSize}
+            selectedKeys={selectedKeys}
+            onToggleSelect={onToggleSelect}
           />
         )}
       </div>

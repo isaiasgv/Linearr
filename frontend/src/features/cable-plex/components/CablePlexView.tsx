@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, useEffect } from 'react'
+import { useState, useMemo, memo, useEffect, useCallback } from 'react'
 import Swal from 'sweetalert2'
 import { useChannels } from '@/features/channels/hooks'
 import { useAssignments } from '@/features/assignments/hooks'
@@ -117,21 +117,79 @@ const COLLAGE_DIMS = { w: 96, h: 160 }
 
 const TIER_FILTERS: TierFilter[] = ['All', 'Galaxy Main', 'Classics', 'Galaxy Premium']
 
+/**
+ * Small "+" affordance that lives INSIDE a channel card. The card itself is a
+ * div[role="button"] (a nested <button> inside a <button> is invalid HTML), and
+ * this stops both click and key events so opening the picker never also
+ * navigates into the channel.
+ */
+function AddContentButton({
+  onAdd,
+  label,
+  className = '',
+}: {
+  onAdd: () => void
+  label?: string
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      aria-label="Add content to this channel"
+      title="Add content"
+      onClick={(e) => {
+        e.stopPropagation()
+        onAdd()
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className={`inline-flex items-center justify-center gap-1 rounded-lg border border-slate-600 bg-slate-900/85 text-slate-200 hover:bg-indigo-600 hover:border-indigo-400 hover:text-white transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${className}`}
+    >
+      <svg
+        className="w-3.5 h-3.5 shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+      {label && <span className="text-xs font-medium">{label}</span>}
+    </button>
+  )
+}
+
 interface ChannelCardCompactProps {
   channel: Channel
   assignments: import('@/shared/types').Assignment[]
-  onClick: () => void
+  onOpen: (channel: Channel) => void
+  onAddContent: (channel: Channel) => void
 }
 
-function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCardCompactProps) {
+function ChannelCardCompact({
+  channel,
+  assignments: items,
+  onOpen,
+  onAddContent,
+}: ChannelCardCompactProps) {
   const shows = items.filter((a) => a.plex_type === 'show')
   const movies = items.filter((a) => a.plex_type === 'movie')
   const thumbItems = items.filter((a) => a.plex_thumb).slice(0, 6)
 
   return (
-    <button
-      onClick={onClick}
-      className="bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl overflow-hidden text-left transition-all hover:bg-slate-800 group flex flex-col"
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Channel ${channel.number} ${channel.name}`}
+      onClick={() => onOpen(channel)}
+      onKeyDown={(e) => {
+        // Ignore keys bubbling from the inner add-content button
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen(channel)
+        }
+      }}
+      className="bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl overflow-hidden text-left transition-all hover:bg-slate-800 group flex flex-col cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
     >
       {/* Poster collage strip */}
       <div className="h-20 relative overflow-hidden bg-slate-950">
@@ -176,6 +234,10 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
             {channel.name}
           </span>
         </div>
+        {/* Add content — top-left, out of the way of the stats badges */}
+        <div className="absolute top-1.5 left-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+          <AddContentButton onAdd={() => onAddContent(channel)} className="w-6 h-6" />
+        </div>
         {/* Stats top-right */}
         <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
           {shows.length > 0 && (
@@ -201,7 +263,7 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
           <p className="text-xs text-slate-600 italic">No content assigned</p>
         ) : null}
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -210,7 +272,8 @@ interface ChannelCardExpandedProps {
   assignments: import('@/shared/types').Assignment[]
   posterSize: PosterSize
   thumbFilter: 'all' | 'shows' | 'movies'
-  onClick: () => void
+  onOpen: (channel: Channel) => void
+  onAddContent: (channel: Channel) => void
 }
 
 const ChannelCardExpanded = memo(function ChannelCardExpanded({
@@ -218,7 +281,8 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
   assignments: items,
   posterSize,
   thumbFilter,
-  onClick,
+  onOpen,
+  onAddContent,
 }: ChannelCardExpandedProps) {
   const shows = items.filter((a) => a.plex_type === 'show')
   const movies = items.filter((a) => a.plex_type === 'movie')
@@ -226,10 +290,20 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
   const thumbItems = filteredItems.filter((a) => a.plex_thumb)
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl text-left transition-all hover:bg-slate-800 overflow-hidden cursor-pointer"
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Channel ${channel.number} ${channel.name}`}
+      onClick={() => onOpen(channel)}
+      onKeyDown={(e) => {
+        // Ignore keys bubbling from the inner add-content button
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen(channel)
+        }
+      }}
+      className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl text-left transition-all hover:bg-slate-800 overflow-hidden cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
       style={{ contentVisibility: 'auto', containIntrinsicHeight: '80px' }}
     >
       <div className="flex items-stretch">
@@ -298,8 +372,12 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
             <span className="text-xs text-slate-700 italic">No posters</span>
           )}
         </div>
+        {/* Add content */}
+        <div className="shrink-0 flex items-center pr-3 pl-1">
+          <AddContentButton onAdd={() => onAddContent(channel)} label="Add" className="px-2 py-1" />
+        </div>
       </div>
-    </button>
+    </div>
   )
 })
 
@@ -308,6 +386,7 @@ export function CablePlexView() {
   const { data: assignments = {} } = useAssignments()
   const selectChannel = useUIStore((s) => s.selectChannel)
   const setActiveView = useUIStore((s) => s.setActiveView)
+  const openModal = useUIStore((s) => s.openModal)
   const addToast = useToastStore((s) => s.addToast)
 
   const [search, setSearch] = useState('')
@@ -332,10 +411,20 @@ export function CablePlexView() {
     })
   }, [channels, tierFilter, search])
 
-  const handleChannelClick = (channel: Channel) => {
-    selectChannel(channel)
-    setActiveView('channel')
-  }
+  const handleChannelClick = useCallback(
+    (channel: Channel) => {
+      selectChannel(channel)
+      setActiveView('channel')
+    },
+    [selectChannel, setActiveView],
+  )
+
+  const handleAddContent = useCallback(
+    (channel: Channel) => {
+      openModal('addContent', { addContentChannel: channel.number })
+    },
+    [openModal],
+  )
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -572,7 +661,8 @@ export function CablePlexView() {
                 key={ch.number}
                 channel={ch}
                 assignments={assignments[ch.number] ?? []}
-                onClick={() => handleChannelClick(ch)}
+                onOpen={handleChannelClick}
+                onAddContent={handleAddContent}
               />
             ))}
           </div>
@@ -585,7 +675,8 @@ export function CablePlexView() {
                 assignments={assignments[ch.number] ?? []}
                 posterSize={posterSize}
                 thumbFilter={thumbFilter}
-                onClick={() => handleChannelClick(ch)}
+                onOpen={handleChannelClick}
+                onAddContent={handleAddContent}
               />
             ))}
           </div>

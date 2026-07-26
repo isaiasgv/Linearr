@@ -84,6 +84,11 @@ const WatermarkEditorModal = lazy(() =>
     default: m.WatermarkEditorModal,
   })),
 )
+const AddContentModal = lazy(() =>
+  import('@/features/cable-plex/components/AddContentModal').then((m) => ({
+    default: m.AddContentModal,
+  })),
+)
 const TunarrView = lazy(() =>
   import('@/features/tunarr/components/TunarrView').then((m) => ({ default: m.TunarrView })),
 )
@@ -172,6 +177,7 @@ export default function App() {
         <IconEditorModal />
         <IconPickerModal />
         <WatermarkEditorModal />
+        <AddContentModal />
       </Suspense>
     </AppLayout>
   )
