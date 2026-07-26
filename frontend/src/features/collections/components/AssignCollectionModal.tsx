@@ -9,7 +9,7 @@ import {
 } from '@/shared/components/ui'
 import { useUIStore } from '@/shared/store/ui.store'
 import { usePlexCollections } from '@/features/plex/hooks'
-import { PlexThumb } from '@/features/plex/components/PlexThumb'
+import { PlexThumb, THUMB_DENSE } from '@/features/plex/components/PlexThumb'
 import { useAssignCollection, useChannelCollections } from '@/features/collections/hooks'
 
 const TYPE_LABEL: Record<'movie' | 'show', string> = { movie: 'Movies', show: 'Shows' }
@@ -149,8 +149,8 @@ export function AssignCollectionModal() {
                     <PlexThumb
                       path={c.thumb}
                       alt=""
-                      w={72}
-                      h={108}
+                      w={THUMB_DENSE.w}
+                      h={THUMB_DENSE.h}
                       className="w-full h-full object-cover"
                     />
                   </div>

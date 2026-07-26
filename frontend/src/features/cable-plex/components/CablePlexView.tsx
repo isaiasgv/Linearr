@@ -8,7 +8,12 @@ import { useToastStore } from '@/shared/store/toast.store'
 import { tierColor } from '@/shared/components/ui/TierBadge'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { Button, EmptyState, IconButton, SegmentedControl } from '@/shared/components/ui'
-import { PlexThumb } from '@/features/plex/components/PlexThumb'
+import {
+  PlexThumb,
+  THUMB_DENSE,
+  THUMB_POSTER,
+  type ThumbSize,
+} from '@/features/plex/components/PlexThumb'
 import { AddContentPanel } from './AddContentPanel'
 import type { Channel } from '@/shared/types'
 
@@ -105,17 +110,22 @@ const POSTER_SIZES: Record<PosterSize, string> = {
   large: 'w-20 h-28',
 }
 
-// Requested transcode dimensions per rendered poster size (~2x CSS for retina).
-// PlexThumb forwards these to /api/plex/thumb so Plex transcodes instead of
-// streaming full-size art — see the performance invariants in CLAUDE.md.
-const POSTER_DIMS: Record<PosterSize, { w: number; h: number }> = {
-  small: { w: 80, h: 112 },
-  medium: { w: 112, h: 160 },
-  large: { w: 160, h: 224 },
+// Requested transcode size per rendered poster size. Only the two CANONICAL
+// sizes are used — a bespoke size per rendering would give every poster size its
+// own key in all three cache layers, so toggling S/M/L would re-download the
+// visible grid and nothing would be shared with the rest of the app. S and M
+// both take the dense size (identical key → toggling between them is free), and
+// L takes the poster size every other view already requests, so an L grid is
+// warm straight from the Content tab. See PlexThumb + CLAUDE.md.
+const POSTER_DIMS: Record<PosterSize, ThumbSize> = {
+  small: THUMB_DENSE, // 40x56 CSS
+  medium: THUMB_DENSE, // 56x80 CSS
+  large: THUMB_POSTER, // 80x112 CSS
 }
 
-// Compact-card collage cells are ~45x80 CSS px.
-const COLLAGE_DIMS = { w: 96, h: 160 }
+// Compact-card collage cells are ~45x80 CSS px — the dense size, same key as
+// the S/M strips above.
+const COLLAGE_DIMS = THUMB_DENSE
 
 const TIER_FILTERS: TierFilter[] = ['All', 'Galaxy Main', 'Classics', 'Galaxy Premium']
 
