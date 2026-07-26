@@ -224,3 +224,183 @@ def test_watermark_for_tunarr_is_none_when_unset():
 def test_watermark_for_tunarr_survives_corrupt_json():
     import main
     assert main._watermark_for_tunarr({"watermark": "{not json"}) is None
+
+
+# ── Clearing a watermark must reach Tunarr ────────────────────────────────────
+#
+# Tunarr offers no way to null the watermark column through its API, and channel
+# writes are read-modify-write — so simply omitting the key means the GET echoes
+# Tunarr's existing watermark straight back and the overlay keeps rendering. The
+# only off switch is writing a watermark object with `enabled: false`.
+#
+# `_sync_channel_to_tunarr` builds its own `httpx.AsyncClient`, so we monkeypatch
+# `main.httpx.AsyncClient` with a factory returning a real client wired to a
+# MockTransport (same pattern as tests/test_tunarr_sync.py).
+
+_WM_CH_UUID = "cccccccc-dddd-eeee-ffff-000000000000"
+
+
+def _install_wm_mock_client(monkeypatch, handler):
+    import main
+    calls: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return handler(request)
+
+    transport = httpx.MockTransport(_handler)
+    # Capture the real class first — `main.httpx` IS the httpx module, so
+    # patching its AsyncClient would otherwise make this factory recurse.
+    real_async_client = httpx.AsyncClient
+
+    def _factory(*args, **kwargs):
+        return real_async_client(transport=transport)
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", _factory)
+    return calls
+
+
+def _seed_wm_channel(number: int, name: str, watermark_json=None, image_url=None,
+                     tunarr_id: str | None = None):
+    import main
+    with main.get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO channels (number, name, tier, watermark, watermark_image_url)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (number, name, "Galaxy Main", watermark_json, image_url),
+        )
+        conn.execute("DELETE FROM tunarr_channel_links WHERE channel_number=?", (number,))
+        if tunarr_id:
+            conn.execute(
+                "INSERT OR REPLACE INTO tunarr_channel_links VALUES (?,?,?,?)",
+                (number, tunarr_id, name, number),
+            )
+
+
+def _existing_wm_tunarr_channel(number: int, watermark: dict | None) -> dict:
+    base = {
+        "id": _WM_CH_UUID,
+        "name": "WM Channel",
+        "number": number,
+        "groupTitle": "Galaxy Main",
+        "duration": 86400000,
+        "startTime": 1700000000000,
+        "stealth": False,
+        "disableFillerOverlay": True,
+        "guideMinimumDuration": 30000,
+        "streamMode": "hls",
+        "subtitlesEnabled": False,
+        "transcodeConfigId": "11111111-2222-3333-4444-555555555555",
+        "icon": {"path": "", "width": 0, "duration": 0, "position": "bottom-right"},
+        "offline": {"mode": "pic"},
+        "onDemand": {"enabled": False},
+    }
+    if watermark is not None:
+        base["watermark"] = watermark
+    return base
+
+
+def test_delete_watermark_disables_it_in_tunarr(monkeypatch, auth_client):
+    """Regression: DELETE must push `watermark.enabled == False` to Tunarr.
+
+    Before the fix the key was absent from `changes`, so the read-modify-write
+    PUT echoed Tunarr's still-enabled watermark back and the overlay survived.
+    """
+    import json as _json
+
+    n = 7101
+    _seed_wm_channel(
+        n, "WM Channel",
+        watermark_json=_json.dumps({
+            "enabled": True, "position": "bottom-right", "width": 10.0,
+            "vertical_margin": 1.0, "horizontal_margin": 1.0, "duration": 0.0,
+            "opacity": 100, "fixed_size": False, "fade": None,
+        }),
+        image_url="http://tunarr:8000/images/uploads/logo.png",
+        tunarr_id=_WM_CH_UUID,
+    )
+
+    live_watermark = {
+        "enabled": True, "position": "bottom-right", "width": 10.0,
+        "verticalMargin": 1.0, "horizontalMargin": 1.0, "duration": 0.0,
+        "opacity": 100, "fixedSize": False,
+        "url": "http://tunarr:8000/images/uploads/logo.png",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == f"/api/channels/{_WM_CH_UUID}":
+            return httpx.Response(200, json=_existing_wm_tunarr_channel(n, live_watermark))
+        if request.method == "PUT" and request.url.path == f"/api/channels/{_WM_CH_UUID}":
+            return httpx.Response(200, json=_json.loads(request.content or b"{}"))
+        return httpx.Response(404, json={})
+
+    calls = _install_wm_mock_client(monkeypatch, handler)
+
+    r = auth_client.delete(f"/api/channels/{n}/watermark")
+    assert r.status_code == 200, r.text
+    assert r.json()["tunarr_sync"] == {
+        "synced": True, "action": "updated", "tunarr_id": _WM_CH_UUID}
+
+    put_req = next(c for c in calls
+                   if c.method == "PUT" and c.url.path == f"/api/channels/{_WM_CH_UUID}")
+    put_body = _json.loads(put_req.content or b"{}")
+    assert "watermark" in put_body, "clearing must send a watermark object, not omit the key"
+    assert put_body["watermark"]["enabled"] is False
+    # Must still satisfy Tunarr's validation even while disabled.
+    assert put_body["watermark"]["width"] > 0
+    assert 0 <= put_body["watermark"]["verticalMargin"] <= 100
+    assert 0 <= put_body["watermark"]["horizontalMargin"] <= 100
+    assert put_body["watermark"]["duration"] >= 0
+    assert 0 <= put_body["watermark"]["opacity"] <= 100
+    assert "animated" not in put_body["watermark"]
+
+
+@pytest.mark.anyio
+async def test_sync_without_watermark_does_not_send_the_key(monkeypatch, client):
+    """A routine sync for a channel Linearr has no watermark for must leave a
+    Tunarr-side watermark alone: no `watermark` key in `changes`, and the
+    read-modify-write PUT echoes Tunarr's own watermark back untouched."""
+    import json as _json
+
+    import main
+
+    n = 7102
+    _seed_wm_channel(n, "No WM Channel", watermark_json=None, tunarr_id=_WM_CH_UUID)
+
+    live_watermark = {
+        "enabled": True, "position": "top-left", "width": 20.0,
+        "verticalMargin": 2.0, "horizontalMargin": 2.0, "duration": 0.0,
+        "opacity": 90, "fixedSize": False,
+        "url": "http://tunarr:8000/images/uploads/user-set.png",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == f"/api/channels/{_WM_CH_UUID}":
+            return httpx.Response(200, json=_existing_wm_tunarr_channel(n, live_watermark))
+        if request.method == "PUT" and request.url.path == f"/api/channels/{_WM_CH_UUID}":
+            return httpx.Response(200, json=_json.loads(request.content or b"{}"))
+        return httpx.Response(404, json={})
+
+    calls = _install_wm_mock_client(monkeypatch, handler)
+
+    # Spy on the changes dict handed to the writer — that is where "don't touch
+    # the watermark" actually lives.
+    seen: list[dict] = []
+    real_save = main._tunarr_save_channel
+
+    async def _spy(client_, url, tunarr_id, changes):
+        seen.append(dict(changes))
+        return await real_save(client_, url, tunarr_id, changes)
+
+    monkeypatch.setattr(main, "_tunarr_save_channel", _spy)
+
+    result = await main._sync_channel_to_tunarr(n)
+    assert result == {"synced": True, "action": "updated", "tunarr_id": _WM_CH_UUID}
+
+    assert seen, "the update branch should have been taken"
+    assert "watermark" not in seen[0], "a routine sync must not write a watermark key"
+
+    put_req = next(c for c in calls
+                   if c.method == "PUT" and c.url.path == f"/api/channels/{_WM_CH_UUID}")
+    put_body = _json.loads(put_req.content or b"{}")
+    assert put_body["watermark"] == live_watermark

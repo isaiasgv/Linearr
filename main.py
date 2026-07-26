@@ -672,9 +672,24 @@ def _watermark_for_tunarr(ch: dict) -> dict | None:
         return None
     return _watermark_to_tunarr(wm, ch.get("watermark_image_url"))
 
-async def _sync_channel_to_tunarr(channel_number: int):
+def _disabled_watermark_for_tunarr() -> dict:
+    """A valid watermark payload that turns the overlay off.
+
+    Tunarr cannot null its watermark column through the API, so the only way to
+    switch one off is to write an object with `enabled: false`. It is still
+    validated while disabled (`width` > 0, margins 0-100), hence the defaults.
+
+    Used ONLY when Linearr is explicitly clearing a watermark — never as the
+    fallback for an unset channel, which must leave a Tunarr-side watermark
+    the user configured directly in Tunarr's own UI untouched.
+    """
+    return _watermark_to_tunarr({"enabled": False}, None)
+
+async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: dict | None = None):
     """Sync Cable Plex channel metadata to linked Tunarr channel.
     If no link exists, creates a new Tunarr channel and links it.
+    `watermark_override`, when given, takes precedence over the channel row's
+    stored watermark (used to push an explicit disable on clear).
     Returns {"synced": True/False, "action": "updated"|"created"|"error", ...}"""
     with get_db() as conn:
         ch = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
@@ -696,7 +711,7 @@ async def _sync_channel_to_tunarr(channel_number: int):
     if icon_data and icon_data.startswith("data:"):
         changes["icon"] = _tunarr_icon_obj(icon_data)
 
-    watermark = _watermark_for_tunarr(ch)
+    watermark = watermark_override if watermark_override is not None else _watermark_for_tunarr(ch)
     if watermark is not None:
         changes["watermark"] = watermark
 
@@ -864,12 +879,15 @@ async def put_channel_watermark(channel_number: int, body: WatermarkIn):
 
 @app.delete("/api/channels/{channel_number}/watermark")
 async def delete_channel_watermark(channel_number: int):
-    """Clear the watermark.
+    """Clear the watermark and switch it off in Tunarr.
 
-    Tunarr has no way to null the watermark column via its API. Clearing it
-    here removes Linearr's copy and stops Linearr from sending a watermark on
-    subsequent syncs; because channel writes are read-modify-write, a watermark
-    Tunarr already holds is echoed back untouched until it is disabled there.
+    Tunarr has no way to null the watermark column via its API, and channel
+    writes are read-modify-write — omitting the key would echo Tunarr's
+    existing watermark straight back and the overlay would keep rendering. So
+    the sync is given an explicit `enabled: false` payload as an override. That
+    override is only used here; a routine sync for a channel with no watermark
+    configured still sends no watermark key, leaving one set directly in
+    Tunarr's own UI untouched.
     """
     with get_db() as conn:
         cur = conn.execute(
@@ -880,7 +898,8 @@ async def delete_channel_watermark(channel_number: int):
         raise HTTPException(404, "Channel not found")
     _log_app("channel", f"Cleared watermark for channel {channel_number}",
              level="warn", metadata={"number": channel_number})
-    sync = await _sync_channel_to_tunarr(channel_number)
+    sync = await _sync_channel_to_tunarr(
+        channel_number, watermark_override=_disabled_watermark_for_tunarr())
     return {"ok": True, "tunarr_sync": sync}
 
 
