@@ -117,6 +117,7 @@ const defaultModals: Record<ModalName, boolean> = {
   tunarrCollectionPicker: false,
   iconEditor: false,
   iconPicker: false,
+  watermarkEditor: false,
 }
 
 export const useUIStore = create<UIState>((set) => ({

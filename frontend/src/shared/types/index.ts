@@ -300,3 +300,4 @@ export type ModalName =
   | 'tunarrCollectionPicker'
   | 'iconEditor'
   | 'iconPicker'
+  | 'watermarkEditor'

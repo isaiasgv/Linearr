@@ -172,6 +172,25 @@ export function ChannelDetail() {
                 <button
                   onClick={() => {
                     setMenuOpen(false)
+                    openModal('watermarkEditor')
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                >
+                  <svg
+                    className="w-3.5 h-3.5 text-sky-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                  >
+                    <rect x="2.5" y="4.5" width="19" height="15" rx="2" />
+                    <rect x="14" y="12" width="5.5" height="5" rx="1" />
+                  </svg>
+                  Watermark
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false)
                     openModal('channelForm', { editingChannel: ch })
                   }}
                   className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"

@@ -69,6 +69,11 @@ const IconPickerModal = lazy(() =>
     default: m.IconPickerModal,
   })),
 )
+const WatermarkEditorModal = lazy(() =>
+  import('@/features/watermark/components/WatermarkEditorModal').then((m) => ({
+    default: m.WatermarkEditorModal,
+  })),
+)
 const TunarrView = lazy(() =>
   import('@/features/tunarr/components/TunarrView').then((m) => ({ default: m.TunarrView })),
 )
@@ -154,6 +159,7 @@ export default function App() {
         <TunarrCollectionPickerModal />
         <IconEditorModal />
         <IconPickerModal />
+        <WatermarkEditorModal />
       </Suspense>
     </AppLayout>
   )
