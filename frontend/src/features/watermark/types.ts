@@ -7,12 +7,7 @@
  */
 
 /** Tunarr's four watermark corners — it supports no other placement. */
-export const WATERMARK_POSITIONS = [
-  'top-left',
-  'top-right',
-  'bottom-left',
-  'bottom-right',
-] as const
+export const WATERMARK_POSITIONS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const
 
 export type WatermarkPosition = (typeof WATERMARK_POSITIONS)[number]
 
