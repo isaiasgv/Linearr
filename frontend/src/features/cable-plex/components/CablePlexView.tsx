@@ -2,10 +2,12 @@ import { useState, useMemo, memo, useEffect } from 'react'
 import Swal from 'sweetalert2'
 import { useChannels } from '@/features/channels/hooks'
 import { useAssignments } from '@/features/assignments/hooks'
-import { useUIStore } from '@/shared/store/ui.store'
+import { useUIStore, type CablePlexViewMode } from '@/shared/store/ui.store'
 import { useToastStore } from '@/shared/store/toast.store'
 import { tierColor } from '@/shared/components/ui/TierBadge'
 import { Spinner } from '@/shared/components/ui/Spinner'
+import { SegmentedControl } from '@/shared/components/ui'
+import { PlexThumb } from '@/features/plex/components/PlexThumb'
 import type { Channel } from '@/shared/types'
 
 // Preset lineup picker — only renders if user has dropped JSON files in ./data/presets/
@@ -92,7 +94,7 @@ function PresetLineupButton() {
   )
 }
 
-type ViewMode = 'compact' | 'expanded'
+type ViewMode = CablePlexViewMode
 type TierFilter = 'All' | 'Galaxy Main' | 'Classics' | 'Galaxy Premium'
 type PosterSize = 'small' | 'medium' | 'large'
 const POSTER_SIZES: Record<PosterSize, string> = {
@@ -100,6 +102,18 @@ const POSTER_SIZES: Record<PosterSize, string> = {
   medium: 'w-14 h-20',
   large: 'w-20 h-28',
 }
+
+// Requested transcode dimensions per rendered poster size (~2x CSS for retina).
+// PlexThumb forwards these to /api/plex/thumb so Plex transcodes instead of
+// streaming full-size art — see the performance invariants in CLAUDE.md.
+const POSTER_DIMS: Record<PosterSize, { w: number; h: number }> = {
+  small: { w: 80, h: 112 },
+  medium: { w: 112, h: 160 },
+  large: { w: 160, h: 224 },
+}
+
+// Compact-card collage cells are ~45x80 CSS px.
+const COLLAGE_DIMS = { w: 96, h: 160 }
 
 const TIER_FILTERS: TierFilter[] = ['All', 'Galaxy Main', 'Classics', 'Galaxy Premium']
 
@@ -125,14 +139,12 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
           <div className="absolute inset-0 flex">
             {thumbItems.map((a, i) => (
               <div key={i} className="flex-1 min-w-0 relative">
-                <img
-                  src={`/api/plex/thumb?path=${encodeURIComponent(a.plex_thumb!)}`}
+                <PlexThumb
+                  path={a.plex_thumb}
                   alt=""
-                  loading="lazy"
+                  w={COLLAGE_DIMS.w}
+                  h={COLLAGE_DIMS.h}
                   className="absolute inset-0 w-full h-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
                 />
               </div>
             ))}
@@ -273,15 +285,12 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
               className={`${POSTER_SIZES[posterSize]} shrink-0 rounded-sm overflow-hidden bg-slate-800 relative`}
               title={a.plex_title}
             >
-              <img
-                src={`/api/plex/thumb?path=${encodeURIComponent(a.plex_thumb!)}`}
+              <PlexThumb
+                path={a.plex_thumb}
                 alt={a.plex_title}
-                loading="lazy"
-                decoding="async"
+                w={POSTER_DIMS[posterSize].w}
+                h={POSTER_DIMS[posterSize].h}
                 className="absolute inset-0 w-full h-full object-cover"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
               />
             </div>
           ))}
@@ -304,8 +313,12 @@ export function CablePlexView() {
   const [search, setSearch] = useState('')
   const [exporting, setExporting] = useState(false)
   const [tierFilter, setTierFilter] = useState<TierFilter>('All')
-  const [viewMode, setViewMode] = useState<ViewMode>('compact')
-  const [posterSize, setPosterSize] = useState<PosterSize>('medium')
+  // View mode + poster size are persisted preferences (expanded is the default
+  // for a first-time visitor; a stored choice always wins).
+  const viewMode = useUIStore((s) => s.cablePlexViewMode)
+  const setViewMode = useUIStore((s) => s.setCablePlexViewMode)
+  const posterSize = useUIStore((s) => s.cablePlexPosterSize)
+  const setPosterSize = useUIStore((s) => s.setCablePlexPosterSize)
   const [thumbFilter, setThumbFilter] = useState<'all' | 'shows' | 'movies'>('all')
 
   const filtered = useMemo(() => {
@@ -359,90 +372,41 @@ export function CablePlexView() {
           </div>
 
           {/* View toggle */}
-          <div className="flex gap-1 bg-slate-900 border border-slate-700 rounded-lg p-1 ml-auto">
-            <button
-              onClick={() => setViewMode('compact')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'compact'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              <svg
-                className="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
-              Compact
-            </button>
-            <button
-              onClick={() => setViewMode('expanded')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'expanded'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              <svg
-                className="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
-              </svg>
-              Expanded
-            </button>
-          </div>
+          <SegmentedControl<ViewMode>
+            className="ml-auto"
+            options={[
+              { value: 'compact', label: 'Compact' },
+              { value: 'expanded', label: 'Expanded' },
+            ]}
+            value={viewMode}
+            onChange={setViewMode}
+          />
 
           {/* Expanded view controls */}
           {viewMode === 'expanded' && (
             <>
               {/* Content type filter */}
-              <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
-                {[
-                  { v: 'all' as const, l: 'All' },
-                  { v: 'shows' as const, l: 'Shows' },
-                  { v: 'movies' as const, l: 'Movies' },
-                ].map(({ v, l }) => (
-                  <button
-                    key={v}
-                    onClick={() => setThumbFilter(v)}
-                    className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                      thumbFilter === v
-                        ? 'bg-slate-600 text-white'
-                        : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl<'all' | 'shows' | 'movies'>
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'shows', label: 'Shows' },
+                  { value: 'movies', label: 'Movies' },
+                ]}
+                value={thumbFilter}
+                onChange={setThumbFilter}
+                tone="neutral"
+              />
               {/* Poster size toggle */}
-              <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
-                {(['small', 'medium', 'large'] as PosterSize[]).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setPosterSize(s)}
-                    title={s.charAt(0).toUpperCase() + s.slice(1)}
-                    className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                      posterSize === s
-                        ? 'bg-slate-600 text-white'
-                        : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    {s.charAt(0).toUpperCase()}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl<PosterSize>
+                options={[
+                  { value: 'small', label: 'S' },
+                  { value: 'medium', label: 'M' },
+                  { value: 'large', label: 'L' },
+                ]}
+                value={posterSize}
+                onChange={setPosterSize}
+                tone="neutral"
+              />
             </>
           )}
         </div>

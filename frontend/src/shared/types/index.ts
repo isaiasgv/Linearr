@@ -365,3 +365,4 @@ export type ModalName =
   | 'iconEditor'
   | 'iconPicker'
   | 'watermarkEditor'
+  | 'addContent'

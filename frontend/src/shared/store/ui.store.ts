@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Channel, Block, ModalName } from '@/shared/types'
+import type { Channel, Block, ModalName, PlexItem } from '@/shared/types'
 
 export type ActiveView =
   | 'channel'
@@ -36,6 +36,15 @@ interface UIState {
   setDragOverChannel: (number: number | null) => void
   clearChannelDrag: () => void
 
+  // Plex item drag-to-assign (native HTML5 DnD — same idiom as the block
+  // HourGrid). The dragged payload is the caller's whole selection when the
+  // grabbed poster is part of it, otherwise just that one poster.
+  draggingPlexItems: PlexItem[] | null
+  plexDropChannelNumber: number | null
+  setDraggingPlexItems: (items: PlexItem[] | null) => void
+  setPlexDropChannel: (number: number | null) => void
+  clearPlexDrag: () => void
+
   // Mobile sidebar drawer
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
@@ -62,6 +71,8 @@ interface UIState {
   smartBuilderEdit: SmartBuilderEditTarget | null
   itemDetailRatingKey: string | null
   aiContentAdvisorChannel: number | null
+  /** Channel the add-content picker adds to (carried, never inferred). */
+  addContentChannel: number | null
   tunarrPreviewData: unknown | null
   iconPickerCallback: ((dataUrl: string) => void) | null
   iconEditorCallback: ((dataUrl: string, composition?: unknown) => void) | null
@@ -81,6 +92,13 @@ interface UIState {
   setBrowseViewMode: (mode: BrowseViewMode) => void
   browsePosterSize: BrowsePosterSize
   setBrowsePosterSize: (size: BrowsePosterSize) => void
+
+  // Cable Plex view preferences (persisted) — defaults to the expanded layout,
+  // but a previously persisted choice always wins.
+  cablePlexViewMode: CablePlexViewMode
+  setCablePlexViewMode: (mode: CablePlexViewMode) => void
+  cablePlexPosterSize: BrowsePosterSize
+  setCablePlexPosterSize: (size: BrowsePosterSize) => void
 
   openModal: (name: ModalName, data?: Partial<UIState>) => void
   closeModal: (name: ModalName) => void
@@ -107,9 +125,12 @@ function writeCollapsed(collapsed: boolean): void {
 
 const BROWSE_VIEW_KEY = 'linearr:browseViewMode'
 const BROWSE_SIZE_KEY = 'linearr:browsePosterSize'
+const CABLE_PLEX_VIEW_KEY = 'linearr:cablePlexViewMode'
+const CABLE_PLEX_SIZE_KEY = 'linearr:cablePlexPosterSize'
 
 type BrowseViewMode = 'wall' | 'grid' | 'list'
 type BrowsePosterSize = 'small' | 'medium' | 'large'
+export type CablePlexViewMode = 'compact' | 'expanded'
 
 function readLS<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -142,6 +163,7 @@ const defaultModals: Record<ModalName, boolean> = {
   iconEditor: false,
   iconPicker: false,
   watermarkEditor: false,
+  addContent: false,
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -156,6 +178,12 @@ export const useUIStore = create<UIState>((set) => ({
   setDraggingChannel: (draggingChannelNumber) => set({ draggingChannelNumber }),
   setDragOverChannel: (dragOverChannelNumber) => set({ dragOverChannelNumber }),
   clearChannelDrag: () => set({ draggingChannelNumber: null, dragOverChannelNumber: null }),
+
+  draggingPlexItems: null,
+  plexDropChannelNumber: null,
+  setDraggingPlexItems: (draggingPlexItems) => set({ draggingPlexItems }),
+  setPlexDropChannel: (plexDropChannelNumber) => set({ plexDropChannelNumber }),
+  clearPlexDrag: () => set({ draggingPlexItems: null, plexDropChannelNumber: null }),
 
   sidebarOpen: false,
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
@@ -183,6 +211,7 @@ export const useUIStore = create<UIState>((set) => ({
   smartBuilderEdit: null,
   itemDetailRatingKey: null,
   aiContentAdvisorChannel: null,
+  addContentChannel: null,
   tunarrPreviewData: null,
   iconPickerCallback: null,
   iconEditorCallback: null,
@@ -217,6 +246,25 @@ export const useUIStore = create<UIState>((set) => ({
   setBrowsePosterSize: (browsePosterSize) => {
     writeLS(BROWSE_SIZE_KEY, browsePosterSize)
     set({ browsePosterSize })
+  },
+
+  cablePlexViewMode: readLS<CablePlexViewMode>(
+    CABLE_PLEX_VIEW_KEY,
+    ['compact', 'expanded'],
+    'expanded',
+  ),
+  setCablePlexViewMode: (cablePlexViewMode) => {
+    writeLS(CABLE_PLEX_VIEW_KEY, cablePlexViewMode)
+    set({ cablePlexViewMode })
+  },
+  cablePlexPosterSize: readLS<BrowsePosterSize>(
+    CABLE_PLEX_SIZE_KEY,
+    ['small', 'medium', 'large'],
+    'medium',
+  ),
+  setCablePlexPosterSize: (cablePlexPosterSize) => {
+    writeLS(CABLE_PLEX_SIZE_KEY, cablePlexPosterSize)
+    set({ cablePlexPosterSize })
   },
 
   openModal: (name, data) =>
