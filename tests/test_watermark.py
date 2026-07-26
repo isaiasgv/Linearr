@@ -355,6 +355,54 @@ def test_delete_watermark_disables_it_in_tunarr(monkeypatch, auth_client):
     assert "animated" not in put_body["watermark"]
 
 
+def test_put_watermark_enables_it_in_tunarr(monkeypatch, auth_client):
+    """The other half of the clear test: PUT must push an ENABLED watermark.
+
+    Without this, only "cleared" and "absent" were covered — nothing proved a
+    configured watermark ever reaches Tunarr at all.
+    """
+    import json as _json
+
+    n = 7103
+    _seed_wm_channel(n, "WM On", watermark_json=None,
+                     image_url="http://tunarr:8000/images/uploads/on.png",
+                     tunarr_id=_WM_CH_UUID)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == f"/api/channels/{_WM_CH_UUID}":
+            return httpx.Response(200, json=_existing_wm_tunarr_channel(n, None))
+        if request.method == "PUT" and request.url.path == f"/api/channels/{_WM_CH_UUID}":
+            return httpx.Response(200, json=_json.loads(request.content or b"{}"))
+        return httpx.Response(404, json={})
+
+    calls = _install_wm_mock_client(monkeypatch, handler)
+
+    r = auth_client.put(f"/api/channels/{n}/watermark", json={
+        "enabled": True, "position": "top-right", "width": 12.5,
+        "vertical_margin": 2, "horizontal_margin": 3, "duration": 0,
+        "opacity": 80, "fixed_size": False,
+        "fade": {"period_mins": 5, "leading_edge": True},
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["tunarr_sync"] == {
+        "synced": True, "action": "updated", "tunarr_id": _WM_CH_UUID}
+
+    put_req = next(c for c in calls
+                   if c.method == "PUT" and c.url.path == f"/api/channels/{_WM_CH_UUID}")
+    put_body = _json.loads(put_req.content or b"{}")
+    assert "watermark" in put_body, "enabling must send a watermark object"
+    wm = put_body["watermark"]
+    assert wm["enabled"] is True
+    assert wm["position"] == "top-right"
+    assert wm["width"] == 12.5
+    assert wm["verticalMargin"] == 2.0
+    assert wm["horizontalMargin"] == 3.0
+    assert wm["opacity"] == 80 and isinstance(wm["opacity"], int)
+    assert wm["url"] == "http://tunarr:8000/images/uploads/on.png"
+    assert wm["fadeConfig"] == [{"periodMins": 5, "leadingEdge": True}]
+    assert "animated" not in wm
+
+
 @pytest.mark.anyio
 async def test_sync_without_watermark_does_not_send_the_key(monkeypatch, client):
     """A routine sync for a channel Linearr has no watermark for must leave a

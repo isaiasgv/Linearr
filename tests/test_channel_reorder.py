@@ -786,11 +786,27 @@ def test_tunarr_rotation_never_writes_a_transient_duplicate(auth_client, monkeyp
 
 def test_tunarr_reorder_still_pushes_name_group_and_watermark(auth_client, monkeypatch):
     """The number is not the only thing that has to land: the final write must
-    still carry the metadata `_sync_channel_to_tunarr` normally pushes."""
+    still carry the metadata `_sync_channel_to_tunarr` normally pushes.
+
+    CH7951 carries a real watermark blob, so the assertions below actually
+    exercise `_watermark_for_tunarr` — with `channels.watermark` unset the key
+    is omitted entirely and this test would pass even if watermark support were
+    deleted outright.
+    """
     for n in (7951, 7952):
         _seed_full_channel(n)
+    watermark = {
+        "enabled": True, "position": "top-left", "width": 15.0,
+        "vertical_margin": 2.0, "horizontal_margin": 3.0, "duration": 0.0,
+        "opacity": 90, "fixed_size": False, "fade": None,
+    }
+    wm_url = "http://tunarr:8000/images/uploads/ch7951.png"
     with main.get_db() as conn:
         conn.execute("UPDATE channels SET tier='Classics' WHERE number IN (7951, 7952)")
+        conn.execute(
+            "UPDATE channels SET watermark=?, watermark_image_url=? WHERE number=7951",
+            (json.dumps(watermark), wm_url),
+        )
     fake = _install_fake_tunarr(monkeypatch, {"tid-7951": 7951, "tid-7952": 7952})
 
     target = _index_of(auth_client, 7952)
@@ -809,6 +825,20 @@ def test_tunarr_reorder_still_pushes_name_group_and_watermark(auth_client, monke
     # Values Linearr must never compute are echoed back untouched.
     assert by_number[7952]["guideMinimumDuration"] == 30000
     assert by_number[7952]["duration"] == 86400000
+
+    # The watermark travelled with CH7951 to its new number, enabled, mapped to
+    # Tunarr's field names and pointing at the uploaded image.
+    pushed_wm = by_number[7952]["watermark"]
+    assert pushed_wm["enabled"] is True
+    assert pushed_wm["url"] == wm_url
+    assert pushed_wm["position"] == "top-left"
+    assert pushed_wm["width"] == 15.0
+    assert pushed_wm["verticalMargin"] == 2.0
+    assert pushed_wm["horizontalMargin"] == 3.0
+    assert pushed_wm["opacity"] == 90
+    assert "animated" not in pushed_wm
+    # CH7952 has no watermark of its own, so no key was written for it.
+    assert "watermark" not in by_number[7951]
 
 
 def test_tunarr_unlinked_channel_is_skipped_and_never_written(auth_client, monkeypatch):
