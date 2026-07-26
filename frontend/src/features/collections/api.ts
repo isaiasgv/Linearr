@@ -49,6 +49,8 @@ export interface AssignCollectionResult {
   collection_title: string
   source: 'assigned'
   is_smart: number
+  /** Always 0 here — assigning references someone else's collection. */
+  linearr_created: number
 }
 
 /**
@@ -80,6 +82,8 @@ export interface CreateSmartCollectionResult {
   plex_type: 'movie' | 'show'
   source: 'assigned'
   is_smart: number
+  /** Always 1 here — Linearr created it, so its rules are Linearr's to replace. */
+  linearr_created: number
 }
 
 /** Create a Plex smart collection AND assign it to the channel, atomically. */

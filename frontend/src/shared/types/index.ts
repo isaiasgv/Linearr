@@ -141,6 +141,17 @@ export interface ChannelCollection {
   source: CollectionSource
   /** 0/1 — whether an assigned collection is a Plex smart collection. */
   is_smart: number
+  /**
+   * 0/1 — whether LINEARR created this Plex collection (only the
+   * create-and-assign smart-collection path sets it).
+   *
+   * Gates the two destructive smart-collection actions. Plex exposes no way to
+   * read a smart collection's rules back, so "Edit filters…" always opens a
+   * BLANK builder — replacing from it wipes whatever rules the collection had.
+   * That is only acceptable for rules Linearr itself wrote. Plex's own `smart`
+   * flag cannot tell the two apart, which is why this exists.
+   */
+  linearr_created: number
   assigned?: { added: number; skipped: number }
 }
 

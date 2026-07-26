@@ -177,6 +177,11 @@ function CollectionTypeStatus({
 
   const isAssigned = collection?.source === 'assigned'
   const isSmart = isAssigned && Boolean(collection?.is_smart)
+  // Rule editing and deletion are only offered for a smart collection LINEARR
+  // created. Plex cannot read a smart collection's rules back, so the builder
+  // opens blank — "Replace filters" on a user's own collection would swap their
+  // rules for an empty filter set that matches the whole library, with no undo.
+  const isOwnSmart = isSmart && Boolean(collection?.linearr_created)
   // Owned slots may not exist in Plex yet — the generator names them, so the
   // status endpoint still knows the name to show.
   const title = isAssigned ? collection!.collection_title : (status?.name ?? '—')
@@ -262,7 +267,7 @@ function CollectionTypeStatus({
         <MenuItem onClick={onNewSmart} disabled={busy} description="Created in Plex, then assigned">
           New smart collection…
         </MenuItem>
-        {isSmart && (
+        {isOwnSmart && (
           <>
             <div className="my-1 border-t border-slate-700" />
             <MenuItem
@@ -455,6 +460,17 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
     })
   }
 
+  /**
+   * Defence in depth for the two destructive smart-collection actions. The menu
+   * already hides both unless Linearr created the collection (see
+   * `isOwnSmart`); these guards make a stray call a no-op rather than a
+   * rules-wipe or a permanent delete of a collection that isn't ours.
+   */
+  function handleEditFilters(plexType: 'movie' | 'show', collection?: ChannelCollection) {
+    if (!collection?.linearr_created) return
+    openSmartBuilder(plexType, collection)
+  }
+
   async function handleUnassign(plexType: 'movie' | 'show', collection: ChannelCollection) {
     const confirmed = await confirmDialog({
       title: `Unassign “${collection.collection_title}”?`,
@@ -465,6 +481,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
   }
 
   async function handleDeleteCollection(collection: ChannelCollection) {
+    if (!collection.linearr_created) return
     const confirmed = await confirmDialog({
       title: `Delete “${collection.collection_title}” from Plex?`,
       text: 'This permanently deletes the collection on your Plex server and unassigns it from every channel that references it. The media itself is not deleted.',
@@ -540,7 +557,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 pushPending={syncCollections.isPending}
                 onAssign={() => openAssign('movie')}
                 onNewSmart={() => openSmartBuilder('movie')}
-                onEditFilters={() => movieCollection && openSmartBuilder('movie', movieCollection)}
+                onEditFilters={() => handleEditFilters('movie', movieCollection)}
                 onDeleteCollection={() =>
                   movieCollection && void handleDeleteCollection(movieCollection)
                 }
@@ -572,7 +589,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 pushPending={syncCollections.isPending}
                 onAssign={() => openAssign('show')}
                 onNewSmart={() => openSmartBuilder('show')}
-                onEditFilters={() => showCollection && openSmartBuilder('show', showCollection)}
+                onEditFilters={() => handleEditFilters('show', showCollection)}
                 onDeleteCollection={() =>
                   showCollection && void handleDeleteCollection(showCollection)
                 }
