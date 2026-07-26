@@ -194,3 +194,33 @@ async def test_upload_image_returns_none_on_rejection():
         got = await main._tunarr_upload_image(
             client, "http://tunarr:8000", b"nope", "image/png", "logo.png")
     assert got is None
+
+
+def test_watermark_for_tunarr_reads_the_channel_row():
+    import json as _json
+
+    import main
+    ch = {
+        "watermark": _json.dumps({
+            "enabled": True, "position": "top-left", "width": 15.0,
+            "vertical_margin": 2.0, "horizontal_margin": 2.0, "duration": 0.0,
+            "opacity": 90, "fixed_size": False, "fade": None,
+        }),
+        "watermark_image_url": "http://tunarr:8000/images/uploads/a.png",
+    }
+    out = main._watermark_for_tunarr(ch)
+    assert out is not None
+    assert out["enabled"] is True
+    assert out["position"] == "top-left"
+    assert out["url"] == "http://tunarr:8000/images/uploads/a.png"
+
+
+def test_watermark_for_tunarr_is_none_when_unset():
+    import main
+    assert main._watermark_for_tunarr({"watermark": None}) is None
+    assert main._watermark_for_tunarr({}) is None
+
+
+def test_watermark_for_tunarr_survives_corrupt_json():
+    import main
+    assert main._watermark_for_tunarr({"watermark": "{not json"}) is None

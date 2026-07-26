@@ -655,6 +655,23 @@ def _tunarr_write_error(status: int) -> str:
     hint = " — the channel number may already be in use in Tunarr" if status >= 500 else ""
     return f"Tunarr {status}{hint}"
 
+def _watermark_for_tunarr(ch: dict) -> dict | None:
+    """Tunarr watermark payload for a channel row, or None when unset.
+
+    Corrupt JSON is treated as unset rather than raised: a bad blob must not
+    break channel metadata sync.
+    """
+    stored = ch.get("watermark")
+    if not stored:
+        return None
+    try:
+        wm = json.loads(stored) if isinstance(stored, str) else stored
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(wm, dict):
+        return None
+    return _watermark_to_tunarr(wm, ch.get("watermark_image_url"))
+
 async def _sync_channel_to_tunarr(channel_number: int):
     """Sync Cable Plex channel metadata to linked Tunarr channel.
     If no link exists, creates a new Tunarr channel and links it.
@@ -679,6 +696,10 @@ async def _sync_channel_to_tunarr(channel_number: int):
     if icon_data and icon_data.startswith("data:"):
         changes["icon"] = _tunarr_icon_obj(icon_data)
 
+    watermark = _watermark_for_tunarr(ch)
+    if watermark is not None:
+        changes["watermark"] = watermark
+
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             if link:
@@ -701,6 +722,7 @@ async def _sync_channel_to_tunarr(channel_number: int):
                     group_title=ch.get("tier", "Linearr"),
                     transcode_id=transcode_id,
                     icon_data=icon_data if (icon_data and icon_data.startswith("data:")) else None,
+                    watermark=watermark,
                 )
                 r = await _tunarr_create_channel(client, url, channel_obj)
                 if r.status_code in (200, 201):
@@ -4578,7 +4600,8 @@ def _tunarr_icon_obj(data_uri: str | None) -> dict:
 
 def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
                         channel_id: str | None = None, transcode_id: str | None = None,
-                        icon_data: str | None = None) -> dict:
+                        icon_data: str | None = None,
+                        watermark: dict | None = None) -> dict:
     """Build a Tunarr channel object for create/update using fields valid across 1.2.x–1.3.x."""
     obj = {
         "name": name,
@@ -4594,6 +4617,8 @@ def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
         "streamMode": "hls",
         "subtitlesEnabled": False,
     }
+    if watermark is not None:
+        obj["watermark"] = watermark
     if channel_id:
         obj["id"] = channel_id
     if transcode_id:
