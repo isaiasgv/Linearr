@@ -124,6 +124,19 @@ function deleteSmartCollection(uuid: string): Promise<void> {
   return del<void>(`/api/tunarr/smart-collections/${encodeURIComponent(uuid)}`)
 }
 
+export interface PurgeSmartCollectionsResult {
+  deleted: number
+  failed: Array<{ id: string | null; name: string | null; error: string }>
+}
+
+/**
+ * Delete EVERY smart collection in Tunarr — including ones Linearr never made —
+ * and clear all Tunarr collection links. Destructive and global.
+ */
+function purgeSmartCollections(): Promise<PurgeSmartCollectionsResult> {
+  return post<PurgeSmartCollectionsResult>('/api/tunarr/smart-collections/purge')
+}
+
 function syncCollections(channelNumber: number): Promise<{ created: string[]; updated: string[] }> {
   return post<{ created: string[]; updated: string[] }>(
     `/api/tunarr/channel-links/${channelNumber}/sync-collections`,
@@ -293,6 +306,7 @@ export const tunarrApi = {
   getCustomShows,
   updateSmartCollection,
   deleteSmartCollection,
+  purgeSmartCollections,
   syncCollections,
   pushSchedule,
   getGuide,

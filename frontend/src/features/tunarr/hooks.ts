@@ -289,6 +289,43 @@ export function useDeleteSmartCollection() {
   })
 }
 
+/**
+ * Delete every Tunarr smart collection. Global and destructive — the caller
+ * owns the confirmation; this hook only reports the outcome.
+ */
+export function usePurgeTunarrSmartCollections() {
+  const queryClient = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+
+  return useMutation({
+    mutationFn: () => tunarrApi.purgeSmartCollections(),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ['tunarr', 'smart-collections'] })
+      void queryClient.invalidateQueries({ queryKey: ['tunarr', 'collection-links'] })
+      const failed = data.failed?.length ?? 0
+      if (failed > 0) {
+        const names = data.failed
+          .slice(0, 3)
+          .map((f) => f.name || f.id || 'unknown')
+          .join(', ')
+        addToast(
+          `Purged ${data.deleted} collection${data.deleted !== 1 ? 's' : ''}; ${failed} failed (${names}${failed > 3 ? '…' : ''})`,
+          true,
+        )
+      } else {
+        addToast(
+          data.deleted > 0
+            ? `Purged ${data.deleted} Tunarr smart collection${data.deleted !== 1 ? 's' : ''}`
+            : 'No Tunarr smart collections to purge',
+        )
+      }
+    },
+    onError: (error: Error) => {
+      addToast(error.message || 'Failed to purge Tunarr collections', true)
+    },
+  })
+}
+
 export function useImportPreview() {
   return useMutation({
     mutationFn: (channelIds?: string[]) => tunarrApi.importPreview(channelIds),
