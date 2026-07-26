@@ -13,6 +13,12 @@ export type ActiveChannelTab = 'content' | 'blocks' | 'tunarr'
 export type TierFilter = 'All' | 'Galaxy Main' | 'Classics' | 'Galaxy Premium'
 export type AssignedTypeFilter = 'all' | 'tv' | 'movies'
 
+/** Payload for editing an existing smart collection's filters in the builder. */
+export interface SmartBuilderEditTarget {
+  ratingKey: string
+  title: string
+}
+
 interface UIState {
   // Navigation
   selectedChannel: Channel | null
@@ -47,6 +53,13 @@ interface UIState {
   editingChannel: Channel | null
   editingBlock: Block | null
   collectionPickerType: 'movie' | 'show' | null
+  // Per-channel collection slot modals (assign existing / smart builder). The
+  // channel is carried explicitly rather than read from selectedChannel so the
+  // modal can never act on a different channel than the one it was opened from.
+  collectionSlotChannel: number | null
+  collectionSlotType: 'movie' | 'show' | null
+  /** Non-null → the smart builder edits this collection's filters instead of creating one. */
+  smartBuilderEdit: SmartBuilderEditTarget | null
   itemDetailRatingKey: string | null
   aiContentAdvisorChannel: number | null
   tunarrPreviewData: unknown | null
@@ -124,6 +137,8 @@ const defaultModals: Record<ModalName, boolean> = {
   tunarrPreview: false,
   templatesLibrary: false,
   tunarrCollectionPicker: false,
+  assignCollection: false,
+  smartCollectionBuilder: false,
   iconEditor: false,
   iconPicker: false,
   watermarkEditor: false,
@@ -163,6 +178,9 @@ export const useUIStore = create<UIState>((set) => ({
   editingChannel: null,
   editingBlock: null,
   collectionPickerType: null,
+  collectionSlotChannel: null,
+  collectionSlotType: null,
+  smartBuilderEdit: null,
   itemDetailRatingKey: null,
   aiContentAdvisorChannel: null,
   tunarrPreviewData: null,

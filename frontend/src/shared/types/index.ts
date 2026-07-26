@@ -88,6 +88,10 @@ export interface PlexCollection {
   child_count: number
   thumb: string | null
   type: 'movie' | 'show'
+  /** Rule-based (self-updating) Plex collection */
+  smart?: boolean
+  /** Library section the collection lives in — needed to rebuild its filter URI */
+  section_id?: string
 }
 
 // ── Blocks ────────────────────────────────────────────────────────────────────
@@ -118,12 +122,70 @@ export interface BlockSlot {
 
 // ── Collections ───────────────────────────────────────────────────────────────
 
+/**
+ * Which kind of collection currently holds a channel's (movie|show) slot.
+ *
+ * - `owned`    — the `{Channel} Movies` / `{Channel} TV` collection Linearr
+ *                generates and maintains from the channel's assignments.
+ * - `assigned` — a pre-existing Plex collection the user pointed the channel
+ *                at. Referenced only: Linearr never edits its contents.
+ */
+export type CollectionSource = 'owned' | 'assigned'
+
 export interface ChannelCollection {
   channel_number: number
   plex_type: 'movie' | 'show'
   collection_rating_key: string
   collection_title: string
+  /** Backend normalizes legacy rows to 'owned', so this is always present. */
+  source: CollectionSource
+  /** 0/1 — whether an assigned collection is a Plex smart collection. */
+  is_smart: number
   assigned?: { added: number; skipped: number }
+}
+
+// Plex smart-collection rules — mirrors `SmartCollectionFilters` in main.py.
+export interface SmartCollectionFilters {
+  /** Genre names (resolved to Plex tag IDs server-side) */
+  genres: string[]
+  /** Inclusive */
+  year_min: number | null
+  /** Inclusive */
+  year_max: number | null
+  /** e.g. 1980 */
+  decade: number | null
+  unwatched: boolean
+  /** e.g. "PG", "TV-14" */
+  content_rating: string | null
+  title_contains: string | null
+}
+
+export type SmartCollectionSort =
+  | 'title_asc'
+  | 'title_desc'
+  | 'year_asc'
+  | 'year_desc'
+  | 'added_desc'
+  | 'random'
+
+/** Body of POST /api/channels/{n}/smart-collection and POST /api/plex/smart-collections. */
+export interface SmartCollectionInput {
+  section_id: string
+  type: 'movie' | 'show'
+  title: string
+  filters: SmartCollectionFilters
+  sort: SmartCollectionSort | null
+  limit: number | null
+}
+
+/** Body of PUT /api/plex/smart-collections/{rating_key} — title and/or filters. */
+export interface SmartCollectionUpdateInput {
+  section_id: string
+  type: 'movie' | 'show'
+  title?: string | null
+  filters?: SmartCollectionFilters | null
+  sort?: SmartCollectionSort | null
+  limit?: number | null
 }
 
 export interface CollectionStatusEntry {
@@ -298,6 +360,8 @@ export type ModalName =
   | 'tunarrPreview'
   | 'templatesLibrary'
   | 'tunarrCollectionPicker'
+  | 'assignCollection'
+  | 'smartCollectionBuilder'
   | 'iconEditor'
   | 'iconPicker'
   | 'watermarkEditor'
