@@ -9,7 +9,9 @@ split in two halves matching the two build steps:
            the shared `_CHANNEL_REF_TABLES` cascade, and Tunarr propagation.
 """
 import itertools
+import sqlite3
 
+import httpx
 import pytest
 
 import main
@@ -282,3 +284,455 @@ def test_sweep_cross_tier_lands_inside_the_destination_range(tier, index):
         assert low <= new_number <= high, (
             f"moving CH{c['number']} to index {index} of {tier} gave {new_number}"
         )
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Part 2 â€” POST /api/channels/reorder (transactional two-phase renumber)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+# Channel numbers live in the 7xxx range so nothing here collides with the other
+# test files sharing the session-scoped SQLite file.
+
+def _clear_channel(number: int) -> None:
+    with main.get_db() as conn:
+        conn.execute("DELETE FROM channels WHERE number=?", (number,))
+        for table in ("assignments", "blocks", "channel_collections",
+                      "tunarr_channel_links", "tunarr_collection_links", "ai_logs"):
+            conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (number,))
+
+
+def _seed_full_channel(number: int, tier: str = "Galaxy Main") -> None:
+    """Seed a channel plus one identifiable row in every referencing table.
+
+    Each row carries the ORIGINAL number in a marker column, so after a
+    renumber we can prove the row followed rather than merely that a row of the
+    right shape exists.
+    """
+    _clear_channel(number)
+    with main.get_db() as conn:
+        conn.execute(
+            "INSERT INTO channels (number, name, tier) VALUES (?,?,?)",
+            (number, f"CH{number}", tier),
+        )
+        conn.execute(
+            "INSERT INTO assignments (channel_number, plex_rating_key, plex_title, plex_type)"
+            " VALUES (?,?,?,?)",
+            (number, f"rk-{number}", f"Item {number}", "movie"),
+        )
+        conn.execute("INSERT INTO blocks (name, channel_number) VALUES (?,?)",
+                     (f"block-{number}", number))
+        conn.execute(
+            "INSERT INTO channel_collections (channel_number, plex_type,"
+            " collection_rating_key, collection_title) VALUES (?,?,?,?)",
+            (number, "movie", f"coll-{number}", f"Coll {number}"),
+        )
+        conn.execute("INSERT INTO tunarr_channel_links VALUES (?,?,?,?)",
+                     (number, f"tid-{number}", f"CH{number}", number))
+        conn.execute("INSERT INTO tunarr_collection_links VALUES (?,?,?,?)",
+                     (number, "movie", f"tcoll-{number}", f"TColl {number}"))
+        conn.execute("INSERT INTO ai_logs (channel_number, model) VALUES (?,?)",
+                     (number, f"model-{number}"))
+
+
+_MARKER_COLUMNS = {
+    "assignments": "plex_rating_key",
+    "blocks": "name",
+    "channel_collections": "collection_rating_key",
+    "tunarr_channel_links": "tunarr_id",
+    "tunarr_collection_links": "tunarr_collection_id",
+    "ai_logs": "model",
+}
+
+
+def _markers_at(number: int) -> dict[str, list[str]]:
+    """Marker values currently filed under `channel_number = number`, per table."""
+    with main.get_db() as conn:
+        return {
+            table: sorted(
+                r[0] for r in conn.execute(
+                    f"SELECT {col} FROM {table} WHERE channel_number=?", (number,)
+                )
+            )
+            for table, col in _MARKER_COLUMNS.items()
+        }
+
+
+def _expected_markers(original: int) -> dict[str, list[str]]:
+    return {
+        "assignments": [f"rk-{original}"],
+        "blocks": [f"block-{original}"],
+        "channel_collections": [f"coll-{original}"],
+        "tunarr_channel_links": [f"tid-{original}"],
+        "tunarr_collection_links": [f"tcoll-{original}"],
+        "ai_logs": [f"model-{original}"],
+    }
+
+
+def _lineup(auth_client) -> list[dict]:
+    r = auth_client.get("/api/channels")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _index_of(auth_client, number: int) -> int:
+    """Index of a channel in the live lineup. Computed rather than hard-coded
+    because the session DB carries channels seeded by other test files."""
+    return next(i for i, c in enumerate(_lineup(auth_client)) if c["number"] == number)
+
+
+def _numbers(auth_client) -> list[int]:
+    return [c["number"] for c in _lineup(auth_client)]
+
+
+@pytest.fixture()
+def no_tunarr(monkeypatch):
+    """An unconfigured Tunarr â€” the reorder must skip propagation entirely
+    instead of reporting a failure per changed channel."""
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "")
+
+
+# â”€â”€ Shared cascade constant â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def test_channel_ref_tables_lists_all_six_including_ai_logs():
+    assert set(main._CHANNEL_REF_TABLES) == {
+        "assignments",
+        "blocks",
+        "channel_collections",
+        "tunarr_channel_links",
+        "tunarr_collection_links",
+        "ai_logs",
+    }
+    assert len(main._CHANNEL_REF_TABLES) == 6
+
+
+# â”€â”€ Why the write has to be two-phase â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def test_single_phase_sequential_update_collides(client):
+    """The hazard the two-phase write exists to avoid: the moment two channels
+    transiently share a number, the PRIMARY KEY rejects the write."""
+    _seed_full_channel(7601)
+    _seed_full_channel(7602)
+    with pytest.raises(sqlite3.IntegrityError):
+        with main.get_db() as conn:
+            conn.execute("UPDATE channels SET number=7602 WHERE number=7601")
+    # ...and the failed transaction left both rows alone.
+    with main.get_db() as conn:
+        got = [r[0] for r in conn.execute(
+            "SELECT number FROM channels WHERE number IN (7601, 7602) ORDER BY number")]
+    assert got == [7601, 7602]
+
+
+def test_two_phase_renumber_survives_a_full_reversal(client):
+    """Worst case: every channel takes another channel's number, in a permutation
+    with no safe starting point. Only a park-then-write pass survives."""
+    originals = [7501, 7502, 7503, 7504]
+    for n in originals:
+        _seed_full_channel(n)
+    before = {n: _expected_markers(n) for n in originals}
+
+    # Full reversal: 7501<->7504, 7502<->7503.
+    mapping = {
+        7501: (7504, "Galaxy Main"),
+        7502: (7503, "Galaxy Main"),
+        7503: (7502, "Galaxy Main"),
+        7504: (7501, "Galaxy Main"),
+    }
+    with main.get_db() as conn:
+        main._renumber_channels(conn, mapping)
+
+    with main.get_db() as conn:
+        names = {r["number"]: r["name"] for r in conn.execute(
+            "SELECT number, name FROM channels WHERE number IN (7501,7502,7503,7504)")}
+    assert names == {7504: "CH7501", 7503: "CH7502", 7502: "CH7503", 7501: "CH7504"}
+
+    # Every referencing row followed its channel across the reversal.
+    for old, (new, _tier) in mapping.items():
+        assert _markers_at(new) == before[old], f"refs for {old} did not follow to {new}"
+
+    # No temporary parking number survived the commit.
+    with main.get_db() as conn:
+        leftovers = conn.execute("SELECT COUNT(*) FROM channels WHERE number < 0").fetchone()[0]
+    assert leftovers == 0
+
+
+def test_renumber_leaves_no_parked_rows_in_referencing_tables(client):
+    _seed_full_channel(7511)
+    _seed_full_channel(7512)
+    with main.get_db() as conn:
+        main._renumber_channels(conn, {7511: (7512, "Galaxy Main"), 7512: (7511, "Galaxy Main")})
+    with main.get_db() as conn:
+        for table in main._CHANNEL_REF_TABLES:
+            n = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE channel_number < 0").fetchone()[0]
+            assert n == 0, f"{table} still holds parked rows"
+
+
+def test_renumber_writes_the_new_tier(client):
+    _seed_full_channel(7521, tier="Galaxy Main")
+    with main.get_db() as conn:
+        main._renumber_channels(conn, {7521: (7522, "Classics")})
+    with main.get_db() as conn:
+        row = conn.execute("SELECT * FROM channels WHERE number=7522").fetchone()
+    assert row["name"] == "CH7521"
+    assert row["tier"] == "Classics"
+    _clear_channel(7522)
+
+
+# â”€â”€ The endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def test_reorder_requires_auth(client):
+    r = client.post("/api/channels/reorder", json={"moved_number": 100, "target_index": 0})
+    assert r.status_code == 401
+
+
+def test_reorder_unknown_channel_is_404(auth_client, no_tunarr):
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 999999, "target_index": 0})
+    assert r.status_code == 404
+
+
+def test_reorder_noop_returns_empty_changed_and_skips_tunarr(auth_client, no_tunarr):
+    _seed_full_channel(7701)
+    idx = _index_of(auth_client, 7701)
+    before = _numbers(auth_client)
+
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7701, "target_index": idx})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["changed"] == []
+    assert body["tunarr"] == {"synced": 0, "failed": []}
+    assert [c["number"] for c in body["channels"]] == before
+    assert _numbers(auth_client) == before
+
+
+def test_reorder_cascades_every_referencing_table_including_ai_logs(auth_client, no_tunarr):
+    for n in (7201, 7202, 7203):
+        _seed_full_channel(n)
+    before = {n: _expected_markers(n) for n in (7201, 7202, 7203)}
+    untouched = _numbers(auth_client)
+
+    # Drag 7201 down to where 7203 sits -> a 3-cycle rotation of their numbers.
+    target = _index_of(auth_client, 7203)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7201, "target_index": target})
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    changed = {c["old_number"]: c["new_number"] for c in body["changed"]}
+    assert changed == {7201: 7203, 7202: 7201, 7203: 7202}
+
+    # Names prove which channel now holds which number.
+    with main.get_db() as conn:
+        names = {r["number"]: r["name"] for r in conn.execute(
+            "SELECT number, name FROM channels WHERE number IN (7201,7202,7203)")}
+    assert names == {7203: "CH7201", 7201: "CH7202", 7202: "CH7203"}
+
+    for old, new in changed.items():
+        assert _markers_at(new) == before[old], f"refs for {old} did not follow to {new}"
+
+    # The response carries the full new lineup, and nothing else was renumbered.
+    assert [c["number"] for c in body["channels"]] == untouched
+    assert _numbers(auth_client) == untouched
+
+
+def test_reorder_cross_tier_updates_tier_and_number(auth_client, no_tunarr):
+    _seed_full_channel(7801, tier="Galaxy Main")
+    _seed_full_channel(7802, tier="Galaxy Main")
+    target = _index_of(auth_client, 7802)
+
+    r = auth_client.post("/api/channels/reorder", json={
+        "moved_number": 7801, "target_index": target, "target_tier": "Classics"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    entry = next(c for c in body["changed"] if c["old_number"] == 7801)
+    assert entry["tier"] == "Classics"
+    low, high = main.TIER_RANGES["Classics"]
+    assert low <= entry["new_number"] <= high
+
+    with main.get_db() as conn:
+        row = conn.execute("SELECT * FROM channels WHERE number=?", (entry["new_number"],)).fetchone()
+    assert row["name"] == "CH7801"
+    assert row["tier"] == "Classics"
+    assert _markers_at(entry["new_number"]) == _expected_markers(7801)
+    _clear_channel(entry["new_number"])
+
+
+# â”€â”€ Rollback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def test_midflight_failure_rolls_back_the_whole_renumber(auth_client, no_tunarr, monkeypatch):
+    for n in (7401, 7402, 7403):
+        _seed_full_channel(n)
+    before_numbers = _numbers(auth_client)
+    with main.get_db() as conn:
+        before_names = {r["number"]: r["name"] for r in conn.execute("SELECT number, name FROM channels")}
+    before_markers = {n: _markers_at(n) for n in (7401, 7402, 7403)}
+
+    real_move = main._move_channel_number
+    calls = {"n": 0}
+
+    def _flaky(conn, old, new):
+        calls["n"] += 1
+        # Phase 1 parks 3 channels; blow up on the first phase-2 write, i.e.
+        # with every affected row sitting at a temporary negative number.
+        if calls["n"] == 4:
+            raise RuntimeError("simulated mid-flight failure")
+        return real_move(conn, old, new)
+
+    monkeypatch.setattr(main, "_move_channel_number", _flaky)
+
+    target = _index_of(auth_client, 7403)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7401, "target_index": target})
+    assert r.status_code == 500
+    assert calls["n"] == 4  # it really did fail mid-flight
+
+    # Nothing persisted â€” no half-renumbered lineup, no parked rows.
+    assert _numbers(auth_client) == before_numbers
+    with main.get_db() as conn:
+        after_names = {r["number"]: r["name"] for r in conn.execute("SELECT number, name FROM channels")}
+        parked = conn.execute("SELECT COUNT(*) FROM channels WHERE number < 0").fetchone()[0]
+    assert after_names == before_names
+    assert parked == 0
+    for n in (7401, 7402, 7403):
+        assert _markers_at(n) == before_markers[n]
+    with main.get_db() as conn:
+        for table in main._CHANNEL_REF_TABLES:
+            neg = conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE channel_number < 0").fetchone()[0]
+            assert neg == 0, f"{table} kept a parked row after rollback"
+
+
+# â”€â”€ Tunarr propagation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def _install_mock_client(monkeypatch, handler):
+    """Same idiom as tests/test_tunarr_sync.py â€” a real AsyncClient over a
+    MockTransport, so `async with httpx.AsyncClient(...)` is untouched."""
+    calls: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return handler(request)
+
+    transport = httpx.MockTransport(_handler)
+    real_async_client = httpx.AsyncClient
+
+    def _factory(*args, **kwargs):
+        return real_async_client(transport=transport)
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", _factory)
+    return calls
+
+
+def _tunarr_channel_payload(tunarr_id: str, number: int) -> dict:
+    return {
+        "id": tunarr_id, "name": "Whatever", "number": number, "groupTitle": "G",
+        "duration": 86400000, "startTime": 1700000000000, "stealth": False,
+        "disableFillerOverlay": True, "guideMinimumDuration": 30000,
+        "streamMode": "hls", "subtitlesEnabled": False,
+        "transcodeConfigId": "11111111-2222-3333-4444-555555555555",
+        "icon": {"path": "", "width": 0, "duration": 0, "position": "bottom-right"},
+        "offline": {"mode": "pic"}, "onDemand": {"enabled": False},
+    }
+
+
+def test_tunarr_failure_does_not_roll_back_the_local_reorder(auth_client, monkeypatch):
+    for n in (7901, 7902):
+        _seed_full_channel(n)
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path.startswith("/api/channels/"):
+            tid = request.url.path.rsplit("/", 1)[-1]
+            return httpx.Response(200, json=_tunarr_channel_payload(tid, 1))
+        if request.method == "PUT" and request.url.path.startswith("/api/channels/"):
+            return httpx.Response(500, json={})
+        return httpx.Response(404, json={})
+
+    _install_mock_client(monkeypatch, handler)
+
+    target = _index_of(auth_client, 7902)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7901, "target_index": target})
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    # Local renumber committed regardless of Tunarr.
+    changed = {c["old_number"]: c["new_number"] for c in body["changed"]}
+    assert changed == {7901: 7902, 7902: 7901}
+    with main.get_db() as conn:
+        names = {r["number"]: r["name"] for r in conn.execute(
+            "SELECT number, name FROM channels WHERE number IN (7901,7902)")}
+    assert names == {7902: "CH7901", 7901: "CH7902"}
+
+    # ...and each failure is reported per channel.
+    assert body["tunarr"]["synced"] == 0
+    failed_numbers = sorted(f["number"] for f in body["tunarr"]["failed"])
+    assert failed_numbers == [7901, 7902]
+    assert all("500" in f["message"] for f in body["tunarr"]["failed"])
+
+
+def test_tunarr_success_is_counted(auth_client, monkeypatch):
+    for n in (7911, 7912):
+        _seed_full_channel(n)
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path.startswith("/api/channels/"):
+            tid = request.url.path.rsplit("/", 1)[-1]
+            return httpx.Response(200, json=_tunarr_channel_payload(tid, 1))
+        if request.method == "PUT" and request.url.path.startswith("/api/channels/"):
+            return httpx.Response(200, json={})
+        return httpx.Response(404, json={})
+
+    _install_mock_client(monkeypatch, handler)
+
+    target = _index_of(auth_client, 7912)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7911, "target_index": target})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["tunarr"]["failed"] == []
+    assert body["tunarr"]["synced"] == 2
+
+
+def test_reorder_never_creates_new_tunarr_channels(auth_client, monkeypatch):
+    """A drag must not provision channels in Tunarr as a side effect â€” only
+    already-linked channels are pushed."""
+    for n in (7921, 7922):
+        _seed_full_channel(n)
+    with main.get_db() as conn:  # drop the links: these channels are Linearr-only
+        conn.execute("DELETE FROM tunarr_channel_links WHERE channel_number IN (7921, 7922)")
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected Tunarr call: {request.method} {request.url}")
+
+    _install_mock_client(monkeypatch, handler)
+
+    target = _index_of(auth_client, 7922)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7921, "target_index": target})
+    assert r.status_code == 200, r.text
+    assert r.json()["tunarr"] == {"synced": 0, "failed": []}
+
+
+# â”€â”€ The two paths that shared the cascade list get ai_logs too â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def test_update_channel_renumber_cascades_ai_logs(auth_client, no_tunarr):
+    _seed_full_channel(7301)
+    _clear_channel(7302)
+
+    r = auth_client.put("/api/channels/7301", json={"number": 7302, "name": "CH7301"})
+    assert r.status_code == 200, r.text
+    assert _markers_at(7302) == _expected_markers(7301)
+    assert _markers_at(7301) == {t: [] for t in _MARKER_COLUMNS}
+
+
+def test_delete_channel_cleans_up_ai_logs(auth_client, no_tunarr):
+    _seed_full_channel(7311)
+    assert _markers_at(7311)["ai_logs"] == ["model-7311"]
+
+    r = auth_client.delete("/api/channels/7311")
+    assert r.status_code == 200, r.text
+    assert _markers_at(7311) == {t: [] for t in _MARKER_COLUMNS}

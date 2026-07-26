@@ -734,6 +734,196 @@ def _compute_reorder(
     return mapping
 
 
+# Every table that carries a `channel_number` value reference to
+# channels(number). There are NO foreign keys, so each of these has to be
+# cascaded by hand on a renumber and cleaned up by hand on a delete. Keep this
+# the single source of truth — `update_channel`, `delete_channel` and the
+# reorder endpoint all read it, so the three paths cannot drift apart again.
+# (`block_slots` is deliberately absent: it follows `blocks` via `block_id`.)
+_CHANNEL_REF_TABLES: tuple[str, ...] = (
+    "assignments",
+    "blocks",
+    "channel_collections",
+    "tunarr_channel_links",
+    "tunarr_collection_links",
+    "ai_logs",
+)
+
+
+def _present_ref_tables(conn) -> tuple[str, ...]:
+    """`_CHANNEL_REF_TABLES` filtered to the tables this DB actually has.
+
+    Checked up front rather than swallowing `sqlite3.OperationalError` per
+    statement: on a renumber a swallowed error would silently orphan rows.
+    """
+    present = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    return tuple(t for t in _CHANNEL_REF_TABLES if t in present)
+
+
+def _move_channel_number(conn, old_number: int, new_number: int) -> None:
+    """Move one channel to a new number, cascading to every referencing table.
+
+    Caller owns the transaction. The target number must already be free —
+    `channels.number` is the PRIMARY KEY, so a collision raises
+    `sqlite3.IntegrityError` and aborts the whole renumber.
+    """
+    conn.execute("UPDATE channels SET number=? WHERE number=?", (new_number, old_number))
+    for table in _present_ref_tables(conn):
+        conn.execute(
+            f"UPDATE {table} SET channel_number=? WHERE channel_number=?",
+            (new_number, old_number),
+        )
+
+
+def _renumber_channels(conn, mapping: dict[int, tuple[int, str]]) -> None:
+    """Apply a `_compute_reorder` mapping as a two-phase, collision-safe write.
+
+    Must run inside a transaction (`with get_db() as conn:` gives one — sqlite3
+    opens it implicitly before the first DML statement and rolls back on any
+    exception leaving the block).
+
+    Phase 1 parks every affected channel at a temporary negative number,
+    cascading to all referencing tables. Phase 2 writes the final numbers and
+    tiers, cascading again. A single-phase sequential update is wrong: a
+    reorder is normally a *cycle* (A takes B's number, B takes C's, C takes
+    A's), so the very first write would collide on the PRIMARY KEY.
+
+    The parking numbers are taken from below `-max(abs(number))` rather than
+    being a plain `-number`, so they cannot collide with each other *or* with
+    a channel that legitimately holds a negative number.
+    """
+    if not mapping:
+        return
+    numbers = [int(r[0]) for r in conn.execute("SELECT number FROM channels")]
+    park_base = max([abs(n) for n in numbers] + [0]) + 1
+    parked = {old: -(park_base + i) for i, old in enumerate(sorted(mapping))}
+
+    for old, tmp in parked.items():                      # phase 1 — park
+        _move_channel_number(conn, old, tmp)
+    for old, (new_number, new_tier) in mapping.items():  # phase 2 — final
+        _move_channel_number(conn, parked[old], new_number)
+        conn.execute("UPDATE channels SET tier=? WHERE number=?", (new_tier, new_number))
+
+
+class ChannelReorderIn(BaseModel):
+    moved_number: int
+    target_index: int
+    target_tier: str | None = None
+
+
+@app.post("/api/channels/reorder")
+async def reorder_channels(body: ChannelReorderIn):
+    """Drag-and-drop reorder: renumber `moved_number` into `target_index`,
+    shifting whatever it displaces.
+
+    `target_index` is the 0-based index the channel should occupy in the
+    resulting lineup (the same lineup `GET /api/channels` returns). Pass
+    `target_tier` only for a cross-tier move.
+
+    The local renumber is all-or-nothing. Tunarr propagation runs *after* the
+    commit and can never undo it — per-channel failures come back in
+    `tunarr.failed` and the caller must not read them as "the reorder failed".
+    """
+    with get_db() as conn:
+        lineup = [dict(r) for r in conn.execute("SELECT * FROM channels ORDER BY number")]
+    if not any(c["number"] == body.moved_number for c in lineup):
+        raise HTTPException(404, f"Channel {body.moved_number} not found")
+
+    try:
+        mapping = _compute_reorder(
+            lineup, body.moved_number, body.target_index, body.target_tier
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    if not mapping:
+        return {"changed": [], "channels": lineup, "tunarr": {"synced": 0, "failed": []}}
+
+    try:
+        with get_db() as conn:
+            _renumber_channels(conn, mapping)
+            channels = [dict(r) for r in conn.execute("SELECT * FROM channels ORDER BY number")]
+    except Exception as e:
+        # `with get_db()` already rolled the whole thing back — the lineup is
+        # exactly as it was.
+        log.exception("Channel reorder failed and was rolled back")
+        raise HTTPException(500, f"Reorder failed and was rolled back: {e}")
+
+    changed = [
+        {"old_number": old, "new_number": new_number, "tier": new_tier}
+        for old, (new_number, new_tier) in sorted(mapping.items())
+    ]
+    _log_app(
+        "channel",
+        f"Reordered channel {body.moved_number} -> {mapping[body.moved_number][0]} "
+        f"({len(changed)} renumbered)",
+        metadata={"moved": body.moved_number, "changed": changed},
+    )
+
+    tunarr = await _push_reorder_to_tunarr(changed)
+    return {"changed": changed, "channels": channels, "tunarr": tunarr}
+
+
+async def _push_reorder_to_tunarr(changed: list[dict]) -> dict:
+    """Propagate a committed renumber to Tunarr. Never raises — the local
+    lineup is already the source of truth, so every problem is reported as a
+    per-channel entry in `failed`.
+
+    Only channels that are *already linked* are pushed. A drag must not
+    provision brand-new Tunarr channels as a side effect, and an unlinked
+    channel has nothing to propagate.
+
+    Writes are ordered so a channel's target number is free before it is used
+    wherever that is possible. Tunarr has no bulk renumber and rejects a
+    duplicate number with a 500, so a pure cycle (the shape a same-tier drag
+    produces) will still collide on at least one channel — that surfaces in
+    `failed` rather than being hidden.
+    """
+    result = {"synced": 0, "failed": []}
+    if not changed or not get_tunarr_url():
+        return result
+
+    with get_db() as conn:
+        linked = {
+            int(r[0]) for r in conn.execute("SELECT channel_number FROM tunarr_channel_links")
+        }
+    pending = [c for c in changed if c["new_number"] in linked]
+    if not pending:
+        return result
+
+    # Greedy safe ordering: write a channel once no other pending channel still
+    # occupies its target number.
+    occupied = {c["old_number"] for c in pending}
+    order: list[dict] = []
+    while pending:
+        ready = [c for c in pending if c["new_number"] not in occupied
+                 or c["new_number"] == c["old_number"]]
+        if not ready:                 # true cycle — no safe order exists
+            order.extend(pending)
+            break
+        for c in ready:
+            occupied.discard(c["old_number"])
+            pending.remove(c)
+        order.extend(ready)
+
+    for entry in order:
+        number = entry["new_number"]
+        try:
+            sync = await _sync_channel_to_tunarr(number)
+        except Exception as e:        # defensive: must not undo the commit
+            log.warning("Tunarr reorder sync raised for CH %s: %s", number, e)
+            sync = {"synced": False, "message": str(e)}
+        if sync.get("synced"):
+            result["synced"] += 1
+        else:
+            result["failed"].append(
+                {"number": number, "message": sync.get("message", "Tunarr sync failed")}
+            )
+    return result
+
+
 @app.get("/api/channels")
 def list_channels():
     with get_db() as conn:
@@ -875,17 +1065,13 @@ async def update_channel(channel_number: int, body: ChannelIn):
                WHERE number=?""",
             (body.name, body.tier, body.vibe, body.mode, body.style, body.color, body.icon, channel_number)
         )
-        # If channel number changed, update all related tables
+        # If channel number changed, cascade to every table that references it
+        # by value (there are no foreign keys) — see _CHANNEL_REF_TABLES.
         if body.number != channel_number:
             try:
-                conn.execute("UPDATE channels SET number=? WHERE number=?", (body.number, channel_number))
+                _move_channel_number(conn, channel_number, body.number)
             except sqlite3.IntegrityError:
                 raise HTTPException(409, f"Channel number {body.number} is already in use")
-            for table in ("assignments", "blocks", "channel_collections", "tunarr_channel_links", "tunarr_collection_links"):
-                try:
-                    conn.execute(f"UPDATE {table} SET channel_number=? WHERE channel_number=?", (body.number, channel_number))
-                except sqlite3.OperationalError:
-                    pass
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
     result = dict(row)
     _log_app("channel", f"Updated channel {channel_number}", metadata={"old_number": channel_number, "new_number": body.number, "name": body.name})
@@ -914,12 +1100,8 @@ def delete_channel(channel_number: int):
             "DELETE FROM block_slots WHERE block_id IN (SELECT id FROM blocks WHERE channel_number=?)",
             (channel_number,),
         )
-        for table in ("assignments", "blocks", "channel_collections",
-                      "tunarr_channel_links", "tunarr_collection_links"):
-            try:
-                conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
-            except sqlite3.OperationalError:
-                pass
+        for table in _present_ref_tables(conn):
+            conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
     _log_app("channel", f"Deleted channel {channel_number}", level="warn", metadata={"number": channel_number})
     return {"ok": True}
 
