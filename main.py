@@ -825,6 +825,9 @@ async def reorder_channels(body: ChannelReorderIn):
     The local renumber is all-or-nothing. Tunarr propagation runs *after* the
     commit and can never undo it — per-channel failures come back in
     `tunarr.failed` and the caller must not read them as "the reorder failed".
+    Tunarr is renumbered with the same two-phase park-then-land write the local
+    transaction uses (`_tunarr_renumber_channels`), because a same-tier drag is
+    a rotation and Tunarr rejects a duplicate number with a 500.
     """
     with get_db() as conn:
         lineup = [dict(r) for r in conn.execute("SELECT * FROM channels ORDER BY number")]
@@ -866,6 +869,157 @@ async def reorder_channels(body: ChannelReorderIn):
     return {"changed": changed, "channels": channels, "tunarr": tunarr}
 
 
+async def _tunarr_try_save_channel(
+    client: "httpx.AsyncClient", url: str, tunarr_id: str, changes: dict
+) -> tuple[bool, str]:
+    """`_tunarr_save_channel` reduced to `(ok, message)`. Never raises — a
+    renumber pass must keep going after one channel fails."""
+    try:
+        r = await _tunarr_save_channel(client, url, tunarr_id, changes)
+    except Exception as e:
+        return False, str(e)
+    if r.status_code in (200, 204):
+        return True, ""
+    return False, _tunarr_write_error(r.status_code)
+
+
+async def _tunarr_current_channel_numbers(client: "httpx.AsyncClient", url: str) -> dict[str, int]:
+    """`{tunarr_id: number}` for every channel Tunarr currently has.
+
+    Read live rather than assumed: the parking band has to clear channels
+    Linearr does not manage as well as the ones it does.
+    """
+    r = await client.get(f"{url}/api/channels")
+    if r.status_code != 200:
+        raise RuntimeError(_tunarr_write_error(r.status_code))
+    data = r.json()
+    if not isinstance(data, list):
+        raise RuntimeError("Tunarr returned an unreadable channel list")
+    numbers: dict[str, int] = {}
+    for ch in data:
+        if not isinstance(ch, dict) or ch.get("id") is None:
+            continue
+        try:
+            numbers[str(ch["id"])] = int(ch.get("number") or 0)
+        except (TypeError, ValueError):
+            numbers[str(ch["id"])] = 0
+    return numbers
+
+
+async def _tunarr_renumber_channels(
+    client: "httpx.AsyncClient", url: str, moves: list[dict]
+) -> dict:
+    """Renumber a set of already-linked Tunarr channels, collision-free.
+
+    `moves` is `[{"tunarr_id", "number" (final), "changes"}]` where `changes`
+    is the full set of SaveableChannel keys Linearr owns (`number` included —
+    it is overwritten with the final number here).
+
+    This is the Tunarr-side twin of `_renumber_channels`. A reorder is normally
+    a *rotation* (A takes B's number, B takes C's, C takes A's); Tunarr enforces
+    a unique channel number, rejects a duplicate with a **500** (its channel API
+    has no 409 anywhere) and offers no bulk or reorder endpoint, so writing a
+    rotation sequentially always collides on at least one channel.
+
+    So: same two phases the local transaction uses.
+
+    * **Phase 1 — park.** Every channel whose number is actually changing is
+      moved to a temporary number taken from a band starting one above the
+      highest number *currently present in Tunarr* and the highest *target*
+      number. Reading the live list matters — a fixed band could land on a
+      channel Linearr does not manage.
+    * **Phase 2 — land.** Each channel is written to its final number along
+      with the rest of its metadata. Every target is free by then.
+
+    A channel whose number is not changing skips phase 1 entirely: every
+    successful write regenerates Tunarr's M3U (and possibly its XMLTV), so the
+    parking round-trip is only paid where it buys something.
+
+    Both phases go through `_tunarr_save_channel`, never a partial PUT —
+    Tunarr's `PUT /api/channels/:id` body is the FULL SaveableChannel, and the
+    read-modify-write is what echoes `guideMinimumDuration` and `duration` back
+    untouched.
+
+    Returns `{"ok": [final numbers written], "failed": [{number, message,
+    state, parked_number?}]}` where `state` is:
+
+    * `"unchanged"` — the write failed before the channel moved. Harmless: it
+      still holds its old number in Tunarr.
+    * `"parked"` — the channel is **stranded on a temporary number**. This is
+      user-visible breakage, so it is called out explicitly with the number it
+      is sitting on.
+
+    A phase-1 failure never aborts the pass: everything that did park is still
+    landed by phase 2.
+    """
+    outcome: dict = {"ok": [], "failed": []}
+    if not moves:
+        return outcome
+
+    try:
+        current = await _tunarr_current_channel_numbers(client, url)
+    except Exception as e:
+        # Without the live list there is no number known to be free, so writing
+        # anything risks a collision. Touch nothing.
+        log.warning("Tunarr reorder aborted — could not read the channel list: %s", e)
+        for m in moves:
+            outcome["failed"].append({
+                "number": m["number"],
+                "state": "unchanged",
+                "message": f"Could not read Tunarr's channel list, so nothing was renumbered ({e})",
+            })
+        return outcome
+
+    park_next = max(
+        list(current.values()) + [int(m["number"]) for m in moves] + [0]
+    ) + 1
+
+    parked: dict[str, int] = {}     # tunarr_id -> parking number
+    to_land: list[dict] = []
+    for m in moves:                                          # phase 1 — park
+        tunarr_id = m["tunarr_id"]
+        if current.get(tunarr_id) == int(m["number"]):
+            to_land.append(m)       # already on its number; metadata write only
+            continue
+        tmp = park_next
+        park_next += 1
+        ok, message = await _tunarr_try_save_channel(client, url, tunarr_id, {"number": tmp})
+        if ok:
+            parked[tunarr_id] = tmp
+            to_land.append(m)
+        else:
+            outcome["failed"].append({
+                "number": m["number"],
+                "state": "unchanged",
+                "message": f"Tunarr still holds its old number — the parking write failed ({message})",
+            })
+
+    for m in to_land:                                        # phase 2 — land
+        tunarr_id = m["tunarr_id"]
+        changes = {**m["changes"], "number": int(m["number"])}
+        ok, message = await _tunarr_try_save_channel(client, url, tunarr_id, changes)
+        if ok:
+            outcome["ok"].append(m["number"])
+        elif tunarr_id in parked:
+            outcome["failed"].append({
+                "number": m["number"],
+                "state": "parked",
+                "parked_number": parked[tunarr_id],
+                "message": (
+                    f"Tunarr channel is stranded at temporary number {parked[tunarr_id]} — "
+                    f"the write to {m['number']} failed ({message}). "
+                    "Re-run the reorder or set the number in Tunarr."
+                ),
+            })
+        else:
+            outcome["failed"].append({
+                "number": m["number"],
+                "state": "unchanged",
+                "message": f"Tunarr write failed ({message})",
+            })
+    return outcome
+
+
 async def _push_reorder_to_tunarr(changed: list[dict]) -> dict:
     """Propagate a committed renumber to Tunarr. Never raises — the local
     lineup is already the source of truth, so every problem is reported as a
@@ -873,54 +1027,61 @@ async def _push_reorder_to_tunarr(changed: list[dict]) -> dict:
 
     Only channels that are *already linked* are pushed. A drag must not
     provision brand-new Tunarr channels as a side effect, and an unlinked
-    channel has nothing to propagate.
+    channel has nothing to propagate. (`tunarr_channel_links.channel_number`
+    was cascaded by the local renumber, so it is keyed by the **new** number.)
 
-    Writes are ordered so a channel's target number is free before it is used
-    wherever that is possible. Tunarr has no bulk renumber and rejects a
-    duplicate number with a 500, so a pure cycle (the shape a same-tier drag
-    produces) will still collide on at least one channel — that surfaces in
-    `failed` rather than being hidden.
+    The write itself is `_tunarr_renumber_channels` — two-phase, because a
+    rotation cannot be written sequentially without colliding.
     """
-    result = {"synced": 0, "failed": []}
-    if not changed or not get_tunarr_url():
+    result: dict = {"synced": 0, "failed": []}
+    url = get_tunarr_url()
+    if not changed or not url:
         return result
 
     with get_db() as conn:
-        linked = {
-            int(r[0]) for r in conn.execute("SELECT channel_number FROM tunarr_channel_links")
+        links = {
+            int(r["channel_number"]): r["tunarr_id"]
+            for r in conn.execute("SELECT channel_number, tunarr_id FROM tunarr_channel_links")
         }
-    pending = [c for c in changed if c["new_number"] in linked]
-    if not pending:
+        rows = {
+            int(r["number"]): dict(r) for r in conn.execute("SELECT * FROM channels")
+        }
+
+    moves = [
+        {
+            "number": c["new_number"],
+            "tunarr_id": links[c["new_number"]],
+            "changes": _tunarr_channel_changes(rows[c["new_number"]]),
+        }
+        for c in changed
+        if c["new_number"] in links and c["new_number"] in rows
+    ]
+    if not moves:
         return result
 
-    # Greedy safe ordering: write a channel once no other pending channel still
-    # occupies its target number.
-    occupied = {c["old_number"] for c in pending}
-    order: list[dict] = []
-    while pending:
-        ready = [c for c in pending if c["new_number"] not in occupied
-                 or c["new_number"] == c["old_number"]]
-        if not ready:                 # true cycle — no safe order exists
-            order.extend(pending)
-            break
-        for c in ready:
-            occupied.discard(c["old_number"])
-            pending.remove(c)
-        order.extend(ready)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            outcome = await _tunarr_renumber_channels(client, url, moves)
+    except Exception as e:            # defensive: must never undo the commit
+        log.warning("Tunarr reorder propagation raised: %s", e)
+        return {
+            "synced": 0,
+            "failed": [
+                {"number": m["number"], "state": "unchanged", "message": str(e)}
+                for m in moves
+            ],
+        }
 
-    for entry in order:
-        number = entry["new_number"]
-        try:
-            sync = await _sync_channel_to_tunarr(number)
-        except Exception as e:        # defensive: must not undo the commit
-            log.warning("Tunarr reorder sync raised for CH %s: %s", number, e)
-            sync = {"synced": False, "message": str(e)}
-        if sync.get("synced"):
-            result["synced"] += 1
-        else:
-            result["failed"].append(
-                {"number": number, "message": sync.get("message", "Tunarr sync failed")}
-            )
+    if outcome["ok"]:
+        with get_db() as conn:
+            for number in outcome["ok"]:
+                conn.execute(
+                    "UPDATE tunarr_channel_links SET tunarr_name=?, tunarr_number=?"
+                    " WHERE channel_number=?",
+                    (rows[number].get("name"), number, number),
+                )
+    result["synced"] = len(outcome["ok"])
+    result["failed"] = outcome["failed"]
     return result
 
 
@@ -985,6 +1146,30 @@ def _disabled_watermark_for_tunarr() -> dict:
     """
     return _watermark_to_tunarr({"enabled": False}, None)
 
+def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None) -> dict:
+    """The SaveableChannel keys Linearr owns, for a `channels` row.
+
+    Everything else on the Tunarr side is preserved by `_tunarr_save_channel`'s
+    read-modify-write, so this is deliberately the *whole* set of fields Linearr
+    is entitled to overwrite — a renumber has to carry all of them, not just
+    `number`, or a reordered channel would keep stale metadata.
+
+    `watermark` is omitted (rather than nulled) when the channel has none, so a
+    watermark configured directly in Tunarr's own UI survives.
+    """
+    changes = {
+        "name": ch.get("name", ""),
+        "number": ch.get("number", 0),
+        "groupTitle": ch.get("tier", "Linearr"),
+    }
+    icon_data = ch.get("icon")
+    if icon_data and str(icon_data).startswith("data:"):
+        changes["icon"] = _tunarr_icon_obj(icon_data)
+    watermark = watermark_override if watermark_override is not None else _watermark_for_tunarr(ch)
+    if watermark is not None:
+        changes["watermark"] = watermark
+    return changes
+
 async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: dict | None = None):
     """Sync Cable Plex channel metadata to linked Tunarr channel.
     If no link exists, creates a new Tunarr channel and links it.
@@ -1002,18 +1187,9 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
         return {"synced": False, "action": "error", "message": "Tunarr not configured"}
 
     # Only the keys Linearr owns; _tunarr_save_channel preserves everything else.
-    changes = {
-        "name": ch.get("name", ""),
-        "number": ch.get("number", 0),
-        "groupTitle": ch.get("tier", "Linearr"),
-    }
+    changes = _tunarr_channel_changes(ch, watermark_override)
     icon_data = ch.get("icon")
-    if icon_data and icon_data.startswith("data:"):
-        changes["icon"] = _tunarr_icon_obj(icon_data)
-
-    watermark = watermark_override if watermark_override is not None else _watermark_for_tunarr(ch)
-    if watermark is not None:
-        changes["watermark"] = watermark
+    watermark = changes.get("watermark")
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:

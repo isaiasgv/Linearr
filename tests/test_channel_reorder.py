@@ -9,6 +9,7 @@ split in two halves matching the two build steps:
            the shared `_CHANNEL_REF_TABLES` cascade, and Tunarr propagation.
 """
 import itertools
+import json
 import sqlite3
 
 import httpx
@@ -636,20 +637,214 @@ def _tunarr_channel_payload(tunarr_id: str, number: int) -> dict:
     }
 
 
+class _FakeTunarr:
+    """A Tunarr stand-in that enforces the one constraint that makes reordering
+    hard: **channel numbers are unique**, and a duplicate is rejected with a
+    500 (Tunarr's channel API has no 409 anywhere).
+
+    Holds `id -> channel object`, echoes the saved object back on a successful
+    PUT, and records every PUT *with a snapshot of the numbers in force at that
+    moment* so a test can assert the no-transient-duplicate invariant directly
+    rather than inferring it from the absence of a 500.
+    """
+
+    def __init__(self, numbers: dict[str, int]):
+        self.channels = {tid: _tunarr_channel_payload(tid, n) for tid, n in numbers.items()}
+        self.puts: list[dict] = []
+        self.reject: "callable | None" = None  # (tid, payload) -> status | None
+        self.list_status = 200                 # GET /api/channels
+
+    # -- helpers ------------------------------------------------------------
+    @property
+    def numbers(self) -> dict[str, int]:
+        return {tid: int(c["number"]) for tid, c in self.channels.items()}
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path == "/api/channels":
+            if self.list_status != 200:
+                return httpx.Response(self.list_status, json={})
+            return httpx.Response(200, json=list(self.channels.values()))
+        if request.method == "GET" and path.startswith("/api/channels/"):
+            tid = path.rsplit("/", 1)[-1]
+            if tid not in self.channels:
+                return httpx.Response(404, json={})
+            return httpx.Response(200, json=self.channels[tid])
+        if request.method == "PUT" and path.startswith("/api/channels/"):
+            tid = path.rsplit("/", 1)[-1]
+            payload = json.loads(request.content or b"{}")
+            self.puts.append({
+                "id": tid,
+                "number": int(payload.get("number", -1)),
+                "name": payload.get("name"),
+                "groupTitle": payload.get("groupTitle"),
+                # Numbers held by every channel *before* this write lands.
+                "before": self.numbers,
+            })
+            if tid not in self.channels:
+                return httpx.Response(404, json={})
+            forced = self.reject(tid, payload) if self.reject else None
+            if forced:
+                return httpx.Response(forced, json={})
+            wanted = int(payload.get("number", -1))
+            for other, ch in self.channels.items():
+                if other != tid and int(ch["number"]) == wanted:
+                    return httpx.Response(500, json={})   # duplicate -> 500
+            self.channels[tid] = {**self.channels[tid], **payload, "id": tid}
+            return httpx.Response(200, json=self.channels[tid])
+        return httpx.Response(404, json={})
+
+
+def _install_fake_tunarr(monkeypatch, numbers: dict[str, int]) -> _FakeTunarr:
+    fake = _FakeTunarr(numbers)
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
+    _install_mock_client(monkeypatch, fake.handler)
+    return fake
+
+
+def _assert_no_transient_duplicates(fake: _FakeTunarr) -> None:
+    """No PUT ever asked for a number another channel still held at that
+    instant. This is the property the parking band buys — it is stronger than
+    "nothing 500'd", because it also rules out a lucky ordering."""
+    for i, put in enumerate(fake.puts):
+        clash = [tid for tid, num in put["before"].items()
+                 if tid != put["id"] and num == put["number"]]
+        assert not clash, (
+            f"PUT #{i} moved {put['id']} to number {put['number']} while "
+            f"{clash} still held it (sequence: "
+            f"{[(p['id'], p['number']) for p in fake.puts]})"
+        )
+
+
+def test_tunarr_rotation_of_three_linked_channels_fully_propagates(auth_client, monkeypatch):
+    """THE defect. A same-tier drag is a rotation: 7931->7933, 7932->7931,
+    7933->7932. Tunarr rejects a duplicate number with a 500 and has no bulk or
+    reorder endpoint, so any sequential write collides on at least one channel.
+    All three must land on their final numbers with nothing in `failed`."""
+    for n in (7931, 7932, 7933):
+        _seed_full_channel(n)
+    fake = _install_fake_tunarr(monkeypatch, {
+        "tid-7931": 7931, "tid-7932": 7932, "tid-7933": 7933,
+        "tid-other": 7999,          # an unrelated Tunarr channel, must not move
+    })
+
+    target = _index_of(auth_client, 7933)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7931, "target_index": target})
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    changed = {c["old_number"]: c["new_number"] for c in body["changed"]}
+    assert changed == {7931: 7933, 7932: 7931, 7933: 7932}
+
+    assert body["tunarr"]["failed"] == [], body["tunarr"]["failed"]
+    assert body["tunarr"]["synced"] == 3
+
+    # All three ended on their final numbers in Tunarr.
+    assert fake.numbers == {
+        "tid-7931": 7933, "tid-7932": 7931, "tid-7933": 7932, "tid-other": 7999,
+    }
+    # Nothing was left parked above the lineup.
+    assert not [n for n in fake.numbers.values() if n > 7999]
+    _assert_no_transient_duplicates(fake)
+
+
+def test_tunarr_rotation_never_writes_a_transient_duplicate(auth_client, monkeypatch):
+    """Record every PUT body in order and check the invariant across the whole
+    sequence: at the moment of each write, no other channel holds the number
+    being written. Also pins the parking band above everything in play."""
+    for n in (7941, 7942, 7943, 7944):
+        _seed_full_channel(n)
+    fake = _install_fake_tunarr(monkeypatch, {
+        "tid-7941": 7941, "tid-7942": 7942, "tid-7943": 7943, "tid-7944": 7944,
+        "tid-high": 8500,           # forces the parking band above 8500
+    })
+
+    target = _index_of(auth_client, 7944)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7941, "target_index": target})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["tunarr"]["failed"] == []
+    assert body["tunarr"]["synced"] == 4
+
+    _assert_no_transient_duplicates(fake)
+
+    # Phase 1 parked above every number present AND every target number.
+    parking = [p["number"] for p in fake.puts if p["number"] > 8500]
+    assert len(parking) == 4, [(p["id"], p["number"]) for p in fake.puts]
+    assert len(set(parking)) == 4        # parking slots are distinct
+    # ...and phase 2 brought every one of them back down.
+    assert fake.numbers == {
+        "tid-7941": 7944, "tid-7942": 7941, "tid-7943": 7942, "tid-7944": 7943,
+        "tid-high": 8500,
+    }
+    # Two writes per changed channel and not one more — every successful write
+    # regenerates Tunarr's M3U.
+    assert len(fake.puts) == 8
+
+
+def test_tunarr_reorder_still_pushes_name_group_and_watermark(auth_client, monkeypatch):
+    """The number is not the only thing that has to land: the final write must
+    still carry the metadata `_sync_channel_to_tunarr` normally pushes."""
+    for n in (7951, 7952):
+        _seed_full_channel(n)
+    with main.get_db() as conn:
+        conn.execute("UPDATE channels SET tier='Classics' WHERE number IN (7951, 7952)")
+    fake = _install_fake_tunarr(monkeypatch, {"tid-7951": 7951, "tid-7952": 7952})
+
+    target = _index_of(auth_client, 7952)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7951, "target_index": target})
+    assert r.status_code == 200, r.text
+    assert r.json()["tunarr"]["failed"] == []
+
+    # CH7951 now holds number 7952 — the object under that number must carry
+    # its name and tier, not just the digit.
+    by_number = {int(c["number"]): c for c in fake.channels.values()}
+    assert by_number[7952]["name"] == "CH7951"
+    assert by_number[7952]["groupTitle"] == "Classics"
+    assert by_number[7951]["name"] == "CH7952"
+    assert by_number[7951]["groupTitle"] == "Classics"
+    # Values Linearr must never compute are echoed back untouched.
+    assert by_number[7952]["guideMinimumDuration"] == 30000
+    assert by_number[7952]["duration"] == 86400000
+
+
+def test_tunarr_unlinked_channel_is_skipped_and_never_written(auth_client, monkeypatch):
+    """A rotation where the middle channel has no `tunarr_channel_links` row:
+    it must be skipped entirely (never provisioned, never written) while the
+    two linked channels still land correctly."""
+    for n in (7961, 7962, 7963):
+        _seed_full_channel(n)
+    with main.get_db() as conn:
+        conn.execute("DELETE FROM tunarr_channel_links WHERE channel_number=7962")
+    fake = _install_fake_tunarr(monkeypatch, {"tid-7961": 7961, "tid-7963": 7963})
+
+    target = _index_of(auth_client, 7963)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7961, "target_index": target})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["tunarr"]["failed"] == []
+
+    # 7961 -> 7963, 7962 -> 7961, 7963 -> 7962. The link rows travel with the
+    # channels, so after the move `tid-7961` is filed under 7963 and `tid-7963`
+    # under 7962; 7961 (formerly CH7962) has no link and is skipped.
+    assert body["tunarr"]["synced"] == 2
+    written = {p["id"] for p in fake.puts}
+    assert written == {"tid-7961", "tid-7963"}
+    assert fake.numbers == {"tid-7961": 7963, "tid-7963": 7962}
+    # No channel was created.
+    assert set(fake.channels) == {"tid-7961", "tid-7963"}
+    _assert_no_transient_duplicates(fake)
+
+
 def test_tunarr_failure_does_not_roll_back_the_local_reorder(auth_client, monkeypatch):
     for n in (7901, 7902):
         _seed_full_channel(n)
-    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET" and request.url.path.startswith("/api/channels/"):
-            tid = request.url.path.rsplit("/", 1)[-1]
-            return httpx.Response(200, json=_tunarr_channel_payload(tid, 1))
-        if request.method == "PUT" and request.url.path.startswith("/api/channels/"):
-            return httpx.Response(500, json={})
-        return httpx.Response(404, json={})
-
-    _install_mock_client(monkeypatch, handler)
+    fake = _install_fake_tunarr(monkeypatch, {"tid-7901": 7901, "tid-7902": 7902})
+    fake.reject = lambda tid, payload: 500          # every write fails
 
     target = _index_of(auth_client, 7902)
     r = auth_client.post("/api/channels/reorder",
@@ -664,36 +859,119 @@ def test_tunarr_failure_does_not_roll_back_the_local_reorder(auth_client, monkey
         names = {r["number"]: r["name"] for r in conn.execute(
             "SELECT number, name FROM channels WHERE number IN (7901,7902)")}
     assert names == {7902: "CH7901", 7901: "CH7902"}
+    # ...and the response still carries the committed lineup.
+    assert {c["number"] for c in body["channels"]} >= {7901, 7902}
 
     # ...and each failure is reported per channel.
     assert body["tunarr"]["synced"] == 0
     failed_numbers = sorted(f["number"] for f in body["tunarr"]["failed"])
     assert failed_numbers == [7901, 7902]
     assert all("500" in f["message"] for f in body["tunarr"]["failed"])
+    # Nothing was parked, so nothing is stranded.
+    assert all(f["state"] == "unchanged" for f in body["tunarr"]["failed"])
+    assert fake.numbers == {"tid-7901": 7901, "tid-7902": 7902}
 
 
-def test_tunarr_success_is_counted(auth_client, monkeypatch):
-    for n in (7911, 7912):
+def test_tunarr_phase_two_failure_reports_the_stranded_parking_number(auth_client, monkeypatch):
+    """The one genuinely bad state: a channel parked in phase 1 whose final
+    write fails is left on a temporary number. The rest must still complete,
+    and the report has to name the parking number unambiguously."""
+    for n in (7971, 7972):
         _seed_full_channel(n)
-    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
+    fake = _install_fake_tunarr(monkeypatch, {"tid-7971": 7971, "tid-7972": 7972})
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET" and request.url.path.startswith("/api/channels/"):
-            tid = request.url.path.rsplit("/", 1)[-1]
-            return httpx.Response(200, json=_tunarr_channel_payload(tid, 1))
-        if request.method == "PUT" and request.url.path.startswith("/api/channels/"):
-            return httpx.Response(200, json={})
-        return httpx.Response(404, json={})
+    def reject(tid, payload):
+        # Let both park, then refuse tid-7971's final write only. The parking
+        # write is a bare number change (the read-modify-write echoes Tunarr's
+        # own name back); only the landing write carries Linearr's metadata.
+        if tid == "tid-7971" and payload.get("name") == "CH7971":
+            return 500
+        return None
 
-    _install_mock_client(monkeypatch, handler)
+    fake.reject = reject
 
-    target = _index_of(auth_client, 7912)
+    target = _index_of(auth_client, 7972)
     r = auth_client.post("/api/channels/reorder",
-                         json={"moved_number": 7911, "target_index": target})
+                         json={"moved_number": 7971, "target_index": target})
+    assert r.status_code == 200, r.text
+    tunarr = r.json()["tunarr"]
+
+    # The other channel still completed — a partial failure is not abandonment.
+    assert tunarr["synced"] == 1
+    assert fake.numbers["tid-7972"] == 7971
+
+    assert len(tunarr["failed"]) == 1
+    fail = tunarr["failed"][0]
+    assert fail["number"] == 7972          # CH7971 now lives at number 7972
+    assert fail["state"] == "parked"
+    parked_at = fake.numbers["tid-7971"]
+    assert parked_at > 7972                # really still on a parking number
+    assert fail["parked_number"] == parked_at
+    assert str(parked_at) in fail["message"]
+    assert "7972" in fail["message"]
+
+
+def test_tunarr_phase_one_failure_leaves_that_channel_alone(auth_client, monkeypatch):
+    """A failed parking write means that channel never moved. Say so — and do
+    not claim the channels it blocks succeeded either."""
+    for n in (7981, 7982):
+        _seed_full_channel(n)
+    fake = _install_fake_tunarr(monkeypatch, {"tid-7981": 7981, "tid-7982": 7982})
+    fake.reject = lambda tid, payload: 500 if tid == "tid-7981" else None
+
+    target = _index_of(auth_client, 7982)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7981, "target_index": target})
+    assert r.status_code == 200, r.text
+    tunarr = r.json()["tunarr"]
+
+    # tid-7981 never left 7981, so tid-7982 cannot take that number either.
+    assert fake.numbers["tid-7981"] == 7981
+    assert tunarr["synced"] == 0
+    states = {f["number"]: f["state"] for f in tunarr["failed"]}
+    assert states == {7982: "unchanged", 7981: "parked"}
+    # The blocked channel is stranded at its parking number, and says so.
+    stranded = next(f for f in tunarr["failed"] if f["state"] == "parked")
+    assert fake.numbers["tid-7982"] == stranded["parked_number"]
+
+
+def test_tunarr_reorder_skips_channels_whose_number_is_unchanged(auth_client, monkeypatch):
+    """A tier-only change still has to reach Tunarr (groupTitle), but it must
+    not be parked — every write regenerates the M3U."""
+    _seed_full_channel(7991, tier="Galaxy Main")
+    fake = _install_fake_tunarr(monkeypatch, {"tid-7991": 7991})
+
+    idx = _index_of(auth_client, 7991)
+    r = auth_client.post("/api/channels/reorder", json={
+        "moved_number": 7991, "target_index": idx, "target_tier": "Totally Made Up Tier"})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["tunarr"]["failed"] == []
-    assert body["tunarr"]["synced"] == 2
+    assert body["changed"] == [
+        {"old_number": 7991, "new_number": 7991, "tier": "Totally Made Up Tier"}]
+    assert body["tunarr"] == {"synced": 1, "failed": []}
+
+    assert len(fake.puts) == 1                       # no parking round-trip
+    assert fake.puts[0]["number"] == 7991
+    assert fake.channels["tid-7991"]["groupTitle"] == "Totally Made Up Tier"
+
+
+def test_tunarr_unreadable_channel_list_fails_every_channel_safely(auth_client, monkeypatch):
+    """The parking band is derived from Tunarr's live channel list. If that
+    read fails there is no number known to be free, so nothing may be written."""
+    for n in (7861, 7862):
+        _seed_full_channel(n, tier="Galaxy Main")
+    fake = _install_fake_tunarr(monkeypatch, {"tid-7861": 7861, "tid-7862": 7862})
+    fake.list_status = 503
+
+    target = _index_of(auth_client, 7862)
+    r = auth_client.post("/api/channels/reorder",
+                         json={"moved_number": 7861, "target_index": target})
+    assert r.status_code == 200, r.text
+    tunarr = r.json()["tunarr"]
+    assert tunarr["synced"] == 0
+    assert sorted(f["number"] for f in tunarr["failed"]) == [7861, 7862]
+    assert all(f["state"] == "unchanged" for f in tunarr["failed"])
+    assert fake.puts == []                            # nothing was written
 
 
 def test_reorder_never_creates_new_tunarr_channels(auth_client, monkeypatch):
