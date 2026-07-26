@@ -188,6 +188,10 @@ channel_collections  -- user-linked Plex collections per channel+type
 channels             -- TV channels (authoritative source; channels.py is a seed snapshot)
   (number PK)
   fields: name, tier, vibe, mode, style, color, icon (data URI),
+          uid (uuid4 — STABLE identity for clients; `number` is mutated by a
+          reorder and `name` is not unique. Additive only: no route takes it,
+          every creation path must supply one, and a trigger backfills any
+          insert that doesn't),
           watermark (JSON blob, NULL = none), watermark_image_url (absolute URL
           Tunarr fetches — ffmpeg cannot read the data URI icons are stored as)
 
@@ -201,10 +205,14 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 `channels.number` is the PRIMARY KEY *and* six tables carry a `channel_number` value
 reference to it with **no foreign keys**: `assignments`, `blocks`, `channel_collections`,
 `tunarr_channel_links`, `tunarr_collection_links`, `ai_logs`. (`block_slots` follows
-`blocks` via `block_id`.) That tuple is `_CHANNEL_REF_TABLES` in `main.py` — the single
-source of truth read by `update_channel`, `delete_channel` and the reorder endpoint, so
-the three paths cannot drift apart. `ai_logs` used to be missing from the renumber cascade
-and the delete cleanup; that was a bug and is fixed.
+`blocks` via `block_id`.) That tuple is `_CHANNEL_REF_TABLES` in `main.py`, read by
+`update_channel` and the reorder endpoint via `_move_channel_number`.
+
+**`delete_channel` uses a different list on purpose** — `_CHANNEL_DELETE_TABLES`, which is
+`_CHANNEL_REF_TABLES` minus `ai_logs`. A renumber must carry the AI logs (otherwise they
+end up pointing at whatever channel later takes that number); a delete must NOT destroy
+them (write-only audit trail, no other copy, not mentioned in the confirmation). Do not
+re-unify the two lists.
 
 Consequences:
 - **There is no `order_index` — reordering channels means renumbering them.**
@@ -217,7 +225,8 @@ Consequences:
 - Frontend: after a renumber, invalidate everything keyed by channel number —
   `['assignments']`, `['blocks']`, `['channel-collections']`, `['collection-status']`,
   `['tunarr','links']`, `['tunarr','collection-links']`, `['watermark']` — and never key a
-  React list on `ch.number`.
+  React list on `ch.number`. Key on `ch.uid` (see the `channels` schema above): `name` is
+  not unique either, so `tier|name` is not an identity.
 
 ---
 
@@ -359,6 +368,10 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 - `GET /api/tunarr/smart-collections`
 - `PUT /api/tunarr/smart-collections/{uuid}`
 - `DELETE /api/tunarr/smart-collections/{uuid}`
+- `GET /api/tunarr/image?path=` — proxies a Tunarr-hosted image (`/images/…` only) for the
+  **browser**. Stored watermark URLs point at the Tunarr container (`http://tunarr:8000`),
+  which a LAN browser cannot resolve; keeps the 7-day immutable cache headers like
+  `/api/plex/thumb`.
 - `POST /api/tunarr/test` — body: `{url}`, returns `{ok, latency_ms}`
 - `POST /api/tunarr/tasks/UpdateXmlTvTask`
 - `POST /api/tunarr/tasks/ScanLibrariesTask`
@@ -395,7 +408,7 @@ User docs: `docs/MCP.md`.
 
 ## Channels
 
-Channels are stored in the SQLite `channels` table (fields: `number, name, tier, vibe, mode, style, color, icon`) and managed at runtime via the `POST/PUT/DELETE /api/channels` routes — this is the authoritative source. `channels.py` exports a `CHANNELS` list as a **reference/seed snapshot only**; it is not imported by `main.py` and is excluded from the Docker image. If you wire it back in as a DB seed, un-ignore it in `.dockerignore` first.
+Channels are stored in the SQLite `channels` table (fields: `number, name, tier, vibe, mode, style, color, icon, uid, watermark, watermark_image_url`) and managed at runtime via the `POST/PUT/DELETE /api/channels` routes — this is the authoritative source. `channels.py` exports a `CHANNELS` list as a **reference/seed snapshot only**; it is not imported by `main.py` and is excluded from the Docker image. If you wire it back in as a DB seed, un-ignore it in `.dockerignore` first.
 
 Tier ranges (`Galaxy Main [100,119]`, `Classics [120,139]`, `Galaxy Premium [140,159]`) live
 in `TIER_RANGES` — `main.py` and `frontend/src/features/channels/presets/numbering.ts` must
