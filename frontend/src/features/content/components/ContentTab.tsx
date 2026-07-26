@@ -3,15 +3,17 @@ import { useChannelAssignments, usePurgeChannel } from '@/features/assignments/h
 import {
   useChannelCollections,
   useCollectionStatus,
+  useDeletePlexCollection,
   useGenerateCollections,
   useUnlinkCollection,
 } from '@/features/collections/hooks'
-import { useTunarrCollectionLinks } from '@/features/tunarr/hooks'
+import { useSyncCollections, useTunarrCollectionLinks } from '@/features/tunarr/hooks'
 import { PlexBrowser } from '@/features/plex/components/PlexBrowser'
 import { AssignmentGrid } from '@/features/assignments/components/AssignmentGrid'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { StatusDot, confirmDialog } from '@/shared/components/ui'
-import type { CollectionStatusEntry } from '@/shared/types'
+import { useUIStore } from '@/shared/store/ui.store'
+import type { ChannelCollection, CollectionStatusEntry } from '@/shared/types'
 
 type ContentSubTab = 'browse' | 'assigned'
 
@@ -19,34 +21,204 @@ interface ContentTabProps {
   channelNumber: number
 }
 
-/** One per-type (movie/show) collection status line: Plex existence + Tunarr linkage + link/unlink. */
+/** Small pill used for the owned/assigned/smart source badges. */
+function Badge({
+  tone,
+  title,
+  children,
+}: {
+  tone: 'owned' | 'assigned' | 'smart'
+  title: string
+  children: ReactNode
+}) {
+  const TONES: Record<typeof tone, string> = {
+    owned: 'bg-indigo-900/40 border-indigo-700/60 text-indigo-300',
+    assigned: 'bg-amber-900/30 border-amber-700/60 text-amber-300',
+    smart: 'bg-cyan-900/40 border-cyan-700/60 text-cyan-300',
+  }
+  return (
+    <span
+      title={title}
+      className={`shrink-0 text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded border ${TONES[tone]}`}
+    >
+      {children}
+    </span>
+  )
+}
+
+/** Dropdown of the slot actions that don't fit inline. */
+function SlotMenu({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref} onClick={() => setOpen(false)}>
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        className="flex items-center px-1 py-0.5 text-slate-500 hover:text-slate-200 border border-slate-700 hover:border-slate-500 rounded transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
+      >
+        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="5" cy="12" r="2" />
+          <circle cx="12" cy="12" r="2" />
+          <circle cx="19" cy="12" r="2" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 top-full mt-1 z-20 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-1"
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MenuItem({
+  onClick,
+  disabled,
+  danger,
+  description,
+  children,
+}: {
+  onClick: () => void
+  disabled?: boolean
+  danger?: boolean
+  description?: string
+  children: ReactNode
+}) {
+  return (
+    <button
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full text-left px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed focus:outline-hidden ${
+        danger
+          ? 'text-red-400 hover:bg-red-950/50 focus-visible:bg-red-950/50'
+          : 'text-slate-300 hover:bg-slate-700 focus-visible:bg-slate-700'
+      }`}
+    >
+      {children}
+      {description && (
+        <span className="block text-[10px] text-slate-500 mt-0.5">{description}</span>
+      )}
+    </button>
+  )
+}
+
+/**
+ * One per-type (movie/show) collection slot.
+ *
+ * A channel has exactly ONE active source per type, and which kind it is
+ * decides what you can do with it:
+ *   owned    — `{Channel} Movies` / `{Channel} TV`, generated and maintained by
+ *              Linearr from the channel's assignments.
+ *   assigned — a pre-existing Plex collection, referenced only. Linearr never
+ *              edits its contents; "Build collections" switches the slot back
+ *              to owned (the assigned collection is left untouched in Plex).
+ */
 function CollectionTypeStatus({
-  plexType,
   label,
   icon,
   status,
-  linkedTitle,
+  collection,
   tunarrLinked,
-  onLink,
-  onUnlink,
+  onAssign,
+  onNewSmart,
+  onEditFilters,
+  onDeleteCollection,
+  onImportItems,
+  onUnassign,
+  onPushToTunarr,
+  pushPending,
+  busy,
 }: {
-  plexType: 'movie' | 'show'
   label: string
   icon: ReactNode
   status?: CollectionStatusEntry
-  linkedTitle?: string
+  collection?: ChannelCollection
   tunarrLinked: boolean
-  onLink: () => void
-  onUnlink: () => void
+  onAssign: () => void
+  onNewSmart: () => void
+  onEditFilters: () => void
+  onDeleteCollection: () => void
+  onImportItems: () => void
+  onUnassign: () => void
+  onPushToTunarr: () => void
+  pushPending: boolean
+  busy: boolean
 }) {
   const plexExists = Boolean(status?.exists)
   const plexCount = status?.plex_count ?? 0
+
+  const isAssigned = collection?.source === 'assigned'
+  const isSmart = isAssigned && Boolean(collection?.is_smart)
+  // Rule editing and deletion are only offered for a smart collection LINEARR
+  // created. Plex cannot read a smart collection's rules back, so the builder
+  // opens blank — "Replace filters" on a user's own collection would swap their
+  // rules for an empty filter set that matches the whole library, with no undo.
+  const isOwnSmart = isSmart && Boolean(collection?.linearr_created)
+  // Owned slots may not exist in Plex yet — the generator names them, so the
+  // status endpoint still knows the name to show.
+  const title = isAssigned ? collection!.collection_title : (status?.name ?? '—')
 
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="flex items-center gap-1 text-slate-300 font-medium">
         {icon}
         {label}
+      </span>
+
+      {/* Active source: kind + title */}
+      <span className="flex items-center gap-1.5 min-w-0">
+        {isAssigned ? (
+          <Badge
+            tone="assigned"
+            title="A pre-existing Plex collection this channel references. Linearr never changes its contents."
+          >
+            assigned
+          </Badge>
+        ) : (
+          <Badge
+            tone="owned"
+            title="Linearr generates and maintains this collection from the channel's assigned items."
+          >
+            owned
+          </Badge>
+        )}
+        {isSmart && (
+          <Badge tone="smart" title="Rule-based collection — Plex keeps it current automatically">
+            smart
+          </Badge>
+        )}
+        <span className="truncate max-w-44 text-slate-300" title={title}>
+          {title}
+        </span>
+        {!isAssigned && <span className="text-slate-600">(generated)</span>}
       </span>
 
       {/* Plex existence */}
@@ -66,56 +238,74 @@ function CollectionTypeStatus({
       </span>
 
       {/* Tunarr linkage */}
-      <span
-        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 rounded-sm px-1.5 py-0.5"
-        title={tunarrLinked ? 'Collection synced to Tunarr' : 'Not on Tunarr'}
+      <button
+        onClick={onPushToTunarr}
+        disabled={pushPending}
+        title={
+          tunarrLinked
+            ? 'Synced to Tunarr — click to push again'
+            : 'Push this channel’s collections to Tunarr'
+        }
+        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 hover:border-slate-500 rounded-sm px-1.5 py-0.5 transition-colors disabled:opacity-50 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
       >
         <img src="/tunarr.svg" alt="Tunarr" className="w-3 h-3 rounded-xs" />
-        <StatusDot state={tunarrLinked ? 'ok' : 'unknown'} pulse={false} />
+        {pushPending ? (
+          <Spinner size="sm" />
+        ) : (
+          <StatusDot state={tunarrLinked ? 'ok' : 'unknown'} pulse={false} />
+        )}
         <span className={tunarrLinked ? 'text-slate-300' : 'text-slate-500'}>
-          {tunarrLinked ? 'synced' : '—'}
+          {tunarrLinked ? 'synced' : 'push'}
         </span>
-      </span>
+      </button>
 
-      {/* Link / unlink */}
-      {linkedTitle ? (
-        <button
-          onClick={onUnlink}
-          title={`Unlink ${linkedTitle}`}
-          className="flex items-center gap-1 text-slate-500 hover:text-red-400 transition-colors"
+      {/* Actions */}
+      <SlotMenu label={`${label} collection actions`}>
+        <MenuItem onClick={onAssign} disabled={busy} description="Reference it — never modified">
+          Assign existing collection…
+        </MenuItem>
+        <MenuItem onClick={onNewSmart} disabled={busy} description="Created in Plex, then assigned">
+          New smart collection…
+        </MenuItem>
+        {isOwnSmart && (
+          <>
+            <div className="my-1 border-t border-slate-700" />
+            <MenuItem
+              onClick={onEditFilters}
+              disabled={busy}
+              description="Replaces this collection's rules"
+            >
+              Edit filters…
+            </MenuItem>
+            <MenuItem
+              onClick={onDeleteCollection}
+              disabled={busy}
+              danger
+              description="Removes it from Plex for good"
+            >
+              Delete collection from Plex…
+            </MenuItem>
+          </>
+        )}
+        <div className="my-1 border-t border-slate-700" />
+        <MenuItem
+          onClick={onImportItems}
+          disabled={busy}
+          description="Copies a collection's items into assignments"
         >
-          <span className="truncate max-w-28 text-slate-400">{linkedTitle}</span>
-          <svg
-            className="w-3 h-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2.5}
+          Import items from a collection…
+        </MenuItem>
+        {isAssigned && (
+          <MenuItem
+            onClick={onUnassign}
+            disabled={busy}
+            danger
+            description="Drops the link only — Plex is untouched"
           >
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
-      ) : (
-        <button
-          onClick={onLink}
-          className={`flex items-center gap-1 border border-dashed rounded px-1.5 py-0.5 transition-colors ${
-            plexType === 'movie'
-              ? 'border-slate-600 hover:border-purple-600 text-slate-500 hover:text-purple-400'
-              : 'border-slate-600 hover:border-blue-600 text-slate-500 hover:text-blue-400'
-          }`}
-        >
-          <svg
-            className="w-3 h-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Add from collection
-        </button>
-      )}
+            Unassign
+          </MenuItem>
+        )}
+      </SlotMenu>
     </div>
   )
 }
@@ -236,6 +426,9 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
   const { data: tunarrCollectionLinks = [] } = useTunarrCollectionLinks()
   const generateCollections = useGenerateCollections()
   const unlinkCollection = useUnlinkCollection()
+  const deletePlexCollection = useDeletePlexCollection()
+  const syncCollections = useSyncCollections()
+  const openModal = useUIStore((s) => s.openModal)
 
   const movieCollection = channelCollections?.movie
   const showCollection = channelCollections?.show
@@ -246,6 +439,78 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
   const showTunarrLinked = tunarrCollectionLinks.some(
     (l) => l.channel_number === channelNumber && l.plex_type === 'show',
   )
+
+  const busy =
+    generateCollections.isPending || unlinkCollection.isPending || deletePlexCollection.isPending
+
+  function openAssign(plexType: 'movie' | 'show') {
+    openModal('assignCollection', {
+      collectionSlotChannel: channelNumber,
+      collectionSlotType: plexType,
+    })
+  }
+
+  function openSmartBuilder(plexType: 'movie' | 'show', collection?: ChannelCollection) {
+    openModal('smartCollectionBuilder', {
+      collectionSlotChannel: channelNumber,
+      collectionSlotType: plexType,
+      smartBuilderEdit: collection
+        ? { ratingKey: collection.collection_rating_key, title: collection.collection_title }
+        : null,
+    })
+  }
+
+  /**
+   * Defence in depth for the two destructive smart-collection actions. The menu
+   * already hides both unless Linearr created the collection (see
+   * `isOwnSmart`); these guards make a stray call a no-op rather than a
+   * rules-wipe or a permanent delete of a collection that isn't ours.
+   */
+  function handleEditFilters(plexType: 'movie' | 'show', collection?: ChannelCollection) {
+    if (!collection?.linearr_created) return
+    openSmartBuilder(plexType, collection)
+  }
+
+  async function handleUnassign(plexType: 'movie' | 'show', collection: ChannelCollection) {
+    const confirmed = await confirmDialog({
+      title: `Unassign “${collection.collection_title}”?`,
+      text: `This channel stops using it as its ${plexType === 'movie' ? 'movie' : 'show'} collection. The collection itself stays in Plex, unchanged.`,
+      confirmText: 'Unassign',
+    })
+    if (confirmed) unlinkCollection.mutate({ channelNumber, plexType })
+  }
+
+  async function handleDeleteCollection(collection: ChannelCollection) {
+    if (!collection.linearr_created) return
+    const confirmed = await confirmDialog({
+      title: `Delete “${collection.collection_title}” from Plex?`,
+      text: 'This permanently deletes the collection on your Plex server and unassigns it from every channel that references it. The media itself is not deleted.',
+      confirmText: 'Delete from Plex',
+      danger: true,
+    })
+    if (confirmed)
+      deletePlexCollection.mutate({
+        ratingKey: collection.collection_rating_key,
+        channelNumber,
+        title: collection.collection_title,
+      })
+  }
+
+  async function handleBuild() {
+    // Generating resolves the target purely by owned name, so an assigned slot
+    // is switched back to owned. Say so before it happens.
+    const switching = [movieCollection, showCollection].filter((c) => c?.source === 'assigned')
+    if (switching.length > 0) {
+      const names = switching.map((c) => `“${c!.collection_title}”`).join(' and ')
+      const confirmed = await confirmDialog({
+        title: 'Switch back to Linearr’s own collections?',
+        text: `This channel currently uses ${names} by reference. Building rebuilds “{Channel} Movies/TV” from the assigned items and makes that the active source again. ${switching.length > 1 ? 'Those collections' : 'That collection'} stays in Plex, untouched.`,
+        confirmText: 'Build collections',
+      })
+      if (!confirmed) return
+    }
+    generateCollections.mutate(channelNumber)
+  }
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -272,7 +537,6 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
           {barOpen && (
             <>
               <CollectionTypeStatus
-                plexType="movie"
                 label="Movies"
                 icon={
                   <svg
@@ -287,16 +551,24 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                   </svg>
                 }
                 status={collectionStatus?.movie}
-                linkedTitle={movieCollection?.collection_title}
+                collection={movieCollection}
                 tunarrLinked={movieTunarrLinked}
-                onLink={() => setSubTab('browse')}
-                onUnlink={() => unlinkCollection.mutate({ channelNumber, plexType: 'movie' })}
+                busy={busy}
+                pushPending={syncCollections.isPending}
+                onAssign={() => openAssign('movie')}
+                onNewSmart={() => openSmartBuilder('movie')}
+                onEditFilters={() => handleEditFilters('movie', movieCollection)}
+                onDeleteCollection={() =>
+                  movieCollection && void handleDeleteCollection(movieCollection)
+                }
+                onImportItems={() => setSubTab('browse')}
+                onUnassign={() => movieCollection && void handleUnassign('movie', movieCollection)}
+                onPushToTunarr={() => syncCollections.mutate(channelNumber)}
               />
 
               <span className="text-slate-700">|</span>
 
               <CollectionTypeStatus
-                plexType="show"
                 label="Shows"
                 icon={
                   <svg
@@ -311,16 +583,25 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                   </svg>
                 }
                 status={collectionStatus?.show}
-                linkedTitle={showCollection?.collection_title}
+                collection={showCollection}
                 tunarrLinked={showTunarrLinked}
-                onLink={() => setSubTab('browse')}
-                onUnlink={() => unlinkCollection.mutate({ channelNumber, plexType: 'show' })}
+                busy={busy}
+                pushPending={syncCollections.isPending}
+                onAssign={() => openAssign('show')}
+                onNewSmart={() => openSmartBuilder('show')}
+                onEditFilters={() => handleEditFilters('show', showCollection)}
+                onDeleteCollection={() =>
+                  showCollection && void handleDeleteCollection(showCollection)
+                }
+                onImportItems={() => setSubTab('browse')}
+                onUnassign={() => showCollection && void handleUnassign('show', showCollection)}
+                onPushToTunarr={() => syncCollections.mutate(channelNumber)}
               />
 
               <button
-                onClick={() => generateCollections.mutate(channelNumber)}
+                onClick={() => void handleBuild()}
                 disabled={generateCollections.isPending}
-                title="Builds Linearr's own “{Channel} Movies/TV” collections from the assigned items and syncs them to Plex + Tunarr. Your own collections are never modified."
+                title="Builds Linearr's own “{Channel} Movies/TV” collections from the assigned items and syncs them to Plex + Tunarr. Your own collections are never modified — but any assigned slot switches back to the owned collection."
                 className="ml-auto flex items-center gap-1.5 text-xs px-2.5 py-1 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700 text-indigo-300 hover:text-indigo-200 rounded-lg transition-colors disabled:opacity-50"
               >
                 {generateCollections.isPending ? (

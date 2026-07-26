@@ -1,12 +1,15 @@
 import { memo } from 'react'
+import { THUMB_POSTER } from '../thumbSizes'
 
 interface PlexThumbProps {
   path: string | null | undefined
   alt?: string
   className?: string
   onClick?: () => void
-  /** Requested thumb size — the backend transcodes to this via Plex, so ask
-   * for roughly 2x the rendered CSS size for retina. Defaults suit grid cells. */
+  /** Requested thumb size — the backend transcodes to this via Plex. Pass one of
+   * the canonical sizes from `../thumbSizes` (`THUMB_POSTER` / `THUMB_DENSE`),
+   * never a bespoke per-call-site dimension: every distinct pair is a separate
+   * key in all three cache layers. Defaults to `THUMB_POSTER`. */
   w?: number
   h?: number
 }
@@ -16,8 +19,8 @@ export const PlexThumb = memo(function PlexThumb({
   alt = '',
   className = '',
   onClick,
-  w = 240,
-  h = 360,
+  w = THUMB_POSTER.w,
+  h = THUMB_POSTER.h,
 }: PlexThumbProps) {
   if (!path) return null
 

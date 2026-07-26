@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -9,13 +10,13 @@ import sqlite3
 import time
 import uuid
 from collections import OrderedDict, defaultdict
-from urllib.parse import urlencode as _urlencode
+from urllib.parse import urlencode as _urlencode, urlparse as _urlparse
 import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -106,6 +107,28 @@ def get_db():
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
+def _new_channel_uid() -> str:
+    """A fresh stable identity for a `channels` row.
+
+    Every channel-creating path must pass one (see the `uid` migration in
+    `init_db`); the `channels_uid_default` trigger is the safety net, not the
+    intended mechanism.
+    """
+    return str(uuid.uuid4())
+
+
+# uuid4 as a SQL expression, for the `channels_uid_default` trigger. `random() % 4`
+# (rather than `abs(random()) % 4`) keeps the operand away from the one value
+# whose abs() overflows a signed 64-bit int.
+_SQL_UUID4 = (
+    "lower("
+    "hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' ||"
+    " substr(hex(randomblob(2)), 2) || '-' ||"
+    " substr('89ab', abs(random() % 4) + 1, 1) || substr(hex(randomblob(2)), 2) ||"
+    " '-' || hex(randomblob(6)))"
+)
+
+
 def init_db():
     with get_db() as conn:
         conn.executescript("""
@@ -168,6 +191,40 @@ def init_db():
             conn.execute("ALTER TABLE channel_collections ADD COLUMN managed INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
+        # Which kind of collection fills this (channel_number, plex_type) slot:
+        #   'owned'    — Linearr generated + manages it ('{Channel} Movies/TV')
+        #   'assigned' — an existing collection referenced by the channel; its
+        #                contents are NEVER read or modified by Linearr.
+        # Existing rows default to 'owned', which is what they always were.
+        try:
+            conn.execute("ALTER TABLE channel_collections ADD COLUMN source TEXT NOT NULL DEFAULT 'owned'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE channel_collections ADD COLUMN is_smart INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        # Did LINEARR create the Plex collection sitting in this slot?
+        #
+        # `source`/`managed` say what Linearr is allowed to *do* with a slot;
+        # this says where the collection came from, and it is the hard gate on
+        # the two destructive paths: pruning during generate, and the
+        # "Edit filters…" / "Delete collection" smart-collection actions. A
+        # collection Linearr did not create is never pruned and never rewritten,
+        # even if its title later matches the owned name.
+        #
+        # Backfill: `managed=1` is only ever written by `generate_collections`,
+        # which resolves its target by owned name — so those rows are Linearr's
+        # own generated collections and must keep their manage rights (losing
+        # them would silently stop pruning on every existing install). Everything
+        # else defaults to 0, which is the safe direction: at worst a slot
+        # becomes additive-only until the next generate re-creates it.
+        try:
+            conn.execute(
+                "ALTER TABLE channel_collections ADD COLUMN linearr_created INTEGER NOT NULL DEFAULT 0")
+            conn.execute("UPDATE channel_collections SET linearr_created=1 WHERE managed=1")
+        except sqlite3.OperationalError:
+            pass
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS tunarr_channel_links (
@@ -204,17 +261,57 @@ def init_db():
             """)
         except sqlite3.OperationalError:
             pass
+        # Stable per-channel identity, additive only.
+        #
+        # `number` is the PRIMARY KEY but a reorder MUTATES it, so it cannot
+        # identify a row across the very operation that matters most; `name` has
+        # no unique constraint, so two channels can legitimately share one. `uid`
+        # is never part of a route path and never replaces the primary key — it
+        # exists so clients (React keys, drag state, focus) have something that
+        # survives a renumber. A renumber only UPDATEs `number`, so `uid` is
+        # carried through unchanged for free.
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN uid TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # Backfill every row that has no uid yet — existing installs on first
+        # boot after this migration, plus anything a future path inserts without
+        # one. Never recreates the table.
+        try:
+            for (number,) in conn.execute(
+                "SELECT number FROM channels WHERE uid IS NULL OR uid=''"
+            ).fetchall():
+                conn.execute("UPDATE channels SET uid=? WHERE number=?",
+                             (_new_channel_uid(), number))
+        except sqlite3.OperationalError:
+            pass
+        # Belt and braces. SQLite rejects a non-constant DEFAULT in
+        # `ALTER TABLE ... ADD COLUMN`, so the invariant "every channels row has
+        # a uid" is enforced by a trigger instead: any INSERT that omits it gets
+        # one. Covers direct DB writes (tests, manual SQL) and any future code
+        # path that forgets. The app paths still pass one explicitly.
+        try:
+            conn.execute(f"""
+                CREATE TRIGGER IF NOT EXISTS channels_uid_default
+                AFTER INSERT ON channels
+                WHEN NEW.uid IS NULL OR NEW.uid = ''
+                BEGIN
+                    UPDATE channels SET uid = {_SQL_UUID4} WHERE number = NEW.number;
+                END
+            """)
+        except sqlite3.OperationalError:
+            pass
         # Seed a single example channel on fresh install. Users can import
         # the full Galaxy Network lineup via the Cable Plex view if they want.
         try:
             count = conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0]
             if count == 0:
                 conn.execute(
-                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
                     (100, "My First Channel", "Galaxy Main", "Everyday cable comfort",
                      "Shuffle",
                      "Your example channel. Edit this, create new ones, or import the Galaxy Network lineup from Cable Plex.",
-                     "blue"),
+                     "blue", _new_channel_uid()),
                 )
         except sqlite3.OperationalError:
             pass
@@ -256,6 +353,20 @@ def init_db():
             pass
         try:
             conn.execute("ALTER TABLE channels ADD COLUMN icon TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # Watermark config as a JSON blob: Tunarr's watermark schema is identical
+        # across every supported version (v1.0.0-v1.3.9), so there is nothing to
+        # normalize into columns. NULL = no watermark.
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN watermark TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # Absolute URL of the watermark image hosted BY TUNARR. Tunarr feeds this
+        # to ffmpeg as an HTTP input, so a base64 data URI (how Linearr stores
+        # icons) cannot be used directly — it must be uploaded and cached here.
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN watermark_image_url TEXT")
         except sqlite3.OperationalError:
             pass
         try:
@@ -515,6 +626,52 @@ class ChannelCollectionIn(BaseModel):
     collection_rating_key: str
     collection_title: str
 
+class ChannelCollectionAssignIn(BaseModel):
+    """Assign an EXISTING collection to a channel by reference (never copied,
+    never modified). Distinct from `ChannelCollectionIn`, which drives the
+    import-items route."""
+    plex_type: str
+    collection_rating_key: str
+    collection_title: str
+    is_smart: bool = False
+
+_WATERMARK_POSITIONS = ("top-left", "top-right", "bottom-left", "bottom-right")
+
+
+class WatermarkFade(BaseModel):
+    # Tunarr requires periodMins >= 1 and silently drops entries <= 0.
+    period_mins: int = Field(ge=1)
+    leading_edge: bool = True
+
+
+class WatermarkIn(BaseModel):
+    """Watermark config, validated against Tunarr's real constraints.
+
+    Mirrors Tunarr's WatermarkSchema so an invalid value is rejected here with a
+    clear message rather than as an opaque 400 from Tunarr. Deliberately omits
+    `animated` and `fadeConfig[].programType`: both are persisted by Tunarr but
+    never read by any pipeline builder at 1.3.6.
+    """
+    enabled: bool = False
+    position: str = "bottom-right"
+    width: float = Field(default=10.0, gt=0)          # percent of frame width, strictly > 0
+    vertical_margin: float = Field(default=1.0, ge=0, le=100)
+    horizontal_margin: float = Field(default=1.0, ge=0, le=100)
+    duration: float = Field(default=0.0, ge=0)        # seconds; 0 = always on
+    opacity: int = Field(default=100, ge=0, le=100)   # must be an int for Tunarr
+    fixed_size: bool = False                          # true makes `width` inert
+    use_channel_icon: bool = True
+    fade: WatermarkFade | None = None
+
+    @field_validator("position")
+    @classmethod
+    def _check_position(cls, v: str) -> str:
+        if v not in _WATERMARK_POSITIONS:
+            raise ValueError(
+                f"position must be one of {', '.join(_WATERMARK_POSITIONS)}"
+            )
+        return v
+
 class BulkAssignmentItem(BaseModel):
     # Bulk items carry no channel_number — the channel is set once at the top
     # level of BulkAssignmentIn and applied to every item by the handler.
@@ -572,6 +729,500 @@ class ChannelIn(BaseModel):
     color: str = "blue"
     icon: str | None = None
 
+# ── Channel numbering + reorder math ─────────────────────────────────────────
+#
+# `channels.number` is the PRIMARY KEY, so "reorder" means "renumber". The math
+# lives here as a pure function with no DB and no HTTP so it can be exhaustively
+# tested on its own — the transactional endpoint that consumes it is trivial
+# once the mapping is known to be collision-free.
+
+# Canonical tier -> (low, high) inclusive number range. Mirrors
+# `frontend/src/features/channels/presets/numbering.ts` (`TIER_RANGES`) and the
+# tier structure described to the model in /api/channels/ai-suggest. The `tier`
+# column is free text, so tiers absent from this map are legal — they simply
+# have no preferred range and a move into one falls back to positional
+# renumbering rather than raising.
+TIER_RANGES: dict[str, tuple[int, int]] = {
+    "Galaxy Main": (100, 119),
+    "Classics": (120, 139),
+    "Galaxy Premium": (140, 159),
+}
+
+
+def _compute_reorder(
+    channels: list[dict],
+    moved_number: int,
+    target_index: int,
+    target_tier: str | None = None,
+) -> dict[int, tuple[int, str]]:
+    """Work out the renumbering for a single drag-and-drop move.
+
+    Args:
+        channels: the full lineup; each row needs `number` and `tier`
+            (`sqlite3.Row` or plain dict). Order is irrelevant — it is sorted
+            by number internally.
+        moved_number: the channel being dragged.
+        target_index: the 0-based index the moved channel should occupy in the
+            *resulting* lineup (so `target_index == its current index` is a
+            no-op). Clamped into range.
+        target_tier: destination tier, or None to keep the channel's own tier.
+
+    Returns:
+        `{old_number: (new_number, new_tier)}` containing **only** the channels
+        whose number or tier actually changes. Guaranteed collision-free: no
+        two channels map to the same new number, and no new number collides
+        with a channel that did not move.
+
+    Raises:
+        ValueError: if `moved_number` is not in `channels`.
+
+    Two strategies:
+
+    * **Same tier (or a destination tier with no canonical range)** — rotate
+      the numbers already held by the affected window. The number *sequence* is
+      untouched, only which channel holds each number, so relative gaps are
+      preserved exactly and nothing outside the source..destination window
+      moves.
+    * **Cross tier into a known range** — give the channel the slot right after
+      the last destination-tier channel that ends up ahead of it (or the range
+      floor), then bump the contiguous integer run starting at that slot so the
+      new number is free. If the range is full the run simply extends past
+      `high` rather than raising.
+    """
+    lineup = sorted(
+        ({"number": int(c["number"]), "tier": c["tier"] or ""} for c in channels),
+        key=lambda c: c["number"],
+    )
+    src_index = next(
+        (i for i, c in enumerate(lineup) if c["number"] == moved_number), None
+    )
+    if src_index is None:
+        raise ValueError(f"Channel {moved_number} is not in the lineup")
+
+    moved = lineup[src_index]
+    others = [c for c in lineup if c["number"] != moved_number]
+    dst = max(0, min(int(target_index), len(others)))
+    new_tier = moved["tier"] if target_tier is None else target_tier
+    cross_tier = new_tier != moved["tier"]
+    dest_range = TIER_RANGES.get(new_tier) if cross_tier else None
+
+    if dest_range is None:
+        if dst == src_index and not cross_tier:
+            return {}
+        # Rotate the window's numbers onto the reordered channels.
+        new_order = others[:dst] + [moved] + others[dst:]
+        lo, hi = min(src_index, dst), max(src_index, dst)
+        numbers = [lineup[i]["number"] for i in range(lo, hi + 1)]
+        mapping: dict[int, tuple[int, str]] = {}
+        for offset, ch in enumerate(new_order[lo : hi + 1]):
+            tier = new_tier if ch is moved else ch["tier"]
+            number = numbers[offset]
+            if number != ch["number"] or tier != ch["tier"]:
+                mapping[ch["number"]] = (number, tier)
+        return mapping
+
+    # Cross-tier into a tier with a canonical range.
+    low, high = dest_range
+    ahead = [c["number"] for c in others[:dst] if c["tier"] == new_tier]
+    desired = max(low, ahead[-1] + 1) if ahead else low
+
+    mapping = {moved["number"]: (desired, new_tier)}
+    # Anything at or above `desired` may need to shift. Only an exact hit on
+    # `desired` collides (numbers are integers and the list is sorted), and the
+    # bump then walks the contiguous run until a gap absorbs it.
+    prev_new = desired
+    for ch in (c for c in others if c["number"] >= desired):
+        if ch["number"] > prev_new:
+            break
+        prev_new = ch["number"] + 1
+        mapping[ch["number"]] = (prev_new, ch["tier"])
+    return mapping
+
+
+# ── The two channel_number cascade lists ──────────────────────────────────────
+#
+# THESE TWO LISTS ARE DELIBERATELY DIFFERENT. Do not "unify" them.
+#
+# Every table below carries a `channel_number` value reference to
+# channels(number). There are NO foreign keys, so each has to be handled by
+# hand. But a RENUMBER and a DELETE want different sets:
+#
+#   * RENUMBER (`_CHANNEL_REF_TABLES`) must carry EVERY referencing table, or a
+#     reordered channel silently orphans rows — including `ai_logs`, whose rows
+#     would otherwise point at whatever channel later took that number.
+#   * DELETE (`_CHANNEL_DELETE_TABLES`) must NOT include `ai_logs`. AI
+#     generation history is a write-only audit trail with no other copy, and
+#     the delete confirmation never says it would be destroyed. Deleting a
+#     channel keeps its logs (they carry the number as a label, not a live
+#     reference).
+#
+# `update_channel`, the reorder endpoint (both via `_move_channel_number`) and
+# `delete_channel` are the only readers, so the paths cannot drift apart again.
+# (`block_slots` is absent from both: it follows `blocks` via `block_id`.)
+_CHANNEL_REF_TABLES: tuple[str, ...] = (
+    "assignments",
+    "blocks",
+    "channel_collections",
+    "tunarr_channel_links",
+    "tunarr_collection_links",
+    "ai_logs",
+)
+
+# Renumber list minus the audit trail. See the block comment above.
+_CHANNEL_DELETE_TABLES: tuple[str, ...] = tuple(
+    t for t in _CHANNEL_REF_TABLES if t != "ai_logs"
+)
+
+
+def _present_ref_tables(conn, tables: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    """`tables` (default `_CHANNEL_REF_TABLES`) filtered to what this DB can use.
+
+    Both the table AND the `channel_number` column are checked up front rather
+    than swallowing `sqlite3.OperationalError` per statement: on a renumber a
+    swallowed error would silently orphan rows. Checking the column too means a
+    table added to either list without a `channel_number` column degrades to
+    "skipped" instead of 500-ing every delete and reorder.
+    """
+    if tables is None:
+        tables = _CHANNEL_REF_TABLES
+    present = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    usable = []
+    for t in tables:
+        if t not in present:
+            continue
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({t})")}
+        if "channel_number" not in cols:
+            log.warning("Table %s has no channel_number column — skipping cascade", t)
+            continue
+        usable.append(t)
+    return tuple(usable)
+
+
+def _move_channel_number(conn, old_number: int, new_number: int) -> None:
+    """Move one channel to a new number, cascading to every referencing table.
+
+    Caller owns the transaction. The target number must already be free —
+    `channels.number` is the PRIMARY KEY, so a collision raises
+    `sqlite3.IntegrityError` and aborts the whole renumber.
+    """
+    conn.execute("UPDATE channels SET number=? WHERE number=?", (new_number, old_number))
+    for table in _present_ref_tables(conn):
+        conn.execute(
+            f"UPDATE {table} SET channel_number=? WHERE channel_number=?",
+            (new_number, old_number),
+        )
+
+
+def _renumber_channels(conn, mapping: dict[int, tuple[int, str]]) -> None:
+    """Apply a `_compute_reorder` mapping as a two-phase, collision-safe write.
+
+    Must run inside a transaction (`with get_db() as conn:` gives one — sqlite3
+    opens it implicitly before the first DML statement and rolls back on any
+    exception leaving the block).
+
+    Phase 1 parks every affected channel at a temporary negative number,
+    cascading to all referencing tables. Phase 2 writes the final numbers and
+    tiers, cascading again. A single-phase sequential update is wrong: a
+    reorder is normally a *cycle* (A takes B's number, B takes C's, C takes
+    A's), so the very first write would collide on the PRIMARY KEY.
+
+    The parking numbers are taken from below `-max(abs(number))` rather than
+    being a plain `-number`, so they cannot collide with each other *or* with
+    a channel that legitimately holds a negative number.
+    """
+    if not mapping:
+        return
+    numbers = [int(r[0]) for r in conn.execute("SELECT number FROM channels")]
+    park_base = max([abs(n) for n in numbers] + [0]) + 1
+    parked = {old: -(park_base + i) for i, old in enumerate(sorted(mapping))}
+
+    for old, tmp in parked.items():                      # phase 1 — park
+        _move_channel_number(conn, old, tmp)
+    for old, (new_number, new_tier) in mapping.items():  # phase 2 — final
+        _move_channel_number(conn, parked[old], new_number)
+        conn.execute("UPDATE channels SET tier=? WHERE number=?", (new_tier, new_number))
+
+
+class ChannelReorderIn(BaseModel):
+    moved_number: int
+    target_index: int
+    target_tier: str | None = None
+
+
+@app.post("/api/channels/reorder")
+async def reorder_channels(body: ChannelReorderIn):
+    """Drag-and-drop reorder: renumber `moved_number` into `target_index`,
+    shifting whatever it displaces.
+
+    `target_index` is the 0-based index the channel should occupy in the
+    resulting lineup (the same lineup `GET /api/channels` returns). Pass
+    `target_tier` only for a cross-tier move.
+
+    The local renumber is all-or-nothing. Tunarr propagation runs *after* the
+    commit and can never undo it — per-channel failures come back in
+    `tunarr.failed` and the caller must not read them as "the reorder failed".
+    Tunarr is renumbered with the same two-phase park-then-land write the local
+    transaction uses (`_tunarr_renumber_channels`), because a same-tier drag is
+    a rotation and Tunarr rejects a duplicate number with a 500.
+    """
+    with get_db() as conn:
+        lineup = [dict(r) for r in conn.execute("SELECT * FROM channels ORDER BY number")]
+    if not any(c["number"] == body.moved_number for c in lineup):
+        raise HTTPException(404, f"Channel {body.moved_number} not found")
+
+    try:
+        mapping = _compute_reorder(
+            lineup, body.moved_number, body.target_index, body.target_tier
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    if not mapping:
+        return {"changed": [], "channels": lineup, "tunarr": {"synced": 0, "failed": []}}
+
+    try:
+        with get_db() as conn:
+            _renumber_channels(conn, mapping)
+            channels = [dict(r) for r in conn.execute("SELECT * FROM channels ORDER BY number")]
+    except Exception as e:
+        # `with get_db()` already rolled the whole thing back — the lineup is
+        # exactly as it was.
+        log.exception("Channel reorder failed and was rolled back")
+        raise HTTPException(500, f"Reorder failed and was rolled back: {e}")
+
+    changed = [
+        {"old_number": old, "new_number": new_number, "tier": new_tier}
+        for old, (new_number, new_tier) in sorted(mapping.items())
+    ]
+    _log_app(
+        "channel",
+        f"Reordered channel {body.moved_number} -> {mapping[body.moved_number][0]} "
+        f"({len(changed)} renumbered)",
+        metadata={"moved": body.moved_number, "changed": changed},
+    )
+
+    tunarr = await _push_reorder_to_tunarr(changed)
+    return {"changed": changed, "channels": channels, "tunarr": tunarr}
+
+
+async def _tunarr_try_save_channel(
+    client: "httpx.AsyncClient", url: str, tunarr_id: str, changes: dict
+) -> tuple[bool, str]:
+    """`_tunarr_save_channel` reduced to `(ok, message)`. Never raises — a
+    renumber pass must keep going after one channel fails."""
+    try:
+        r = await _tunarr_save_channel(client, url, tunarr_id, changes)
+    except Exception as e:
+        return False, str(e)
+    if r.status_code in (200, 204):
+        return True, ""
+    return False, _tunarr_write_error(r.status_code)
+
+
+async def _tunarr_current_channel_numbers(client: "httpx.AsyncClient", url: str) -> dict[str, int]:
+    """`{tunarr_id: number}` for every channel Tunarr currently has.
+
+    Read live rather than assumed: the parking band has to clear channels
+    Linearr does not manage as well as the ones it does.
+    """
+    r = await client.get(f"{url}/api/channels")
+    if r.status_code != 200:
+        raise RuntimeError(_tunarr_write_error(r.status_code))
+    data = r.json()
+    if not isinstance(data, list):
+        raise RuntimeError("Tunarr returned an unreadable channel list")
+    numbers: dict[str, int] = {}
+    for ch in data:
+        if not isinstance(ch, dict) or ch.get("id") is None:
+            continue
+        try:
+            numbers[str(ch["id"])] = int(ch.get("number") or 0)
+        except (TypeError, ValueError):
+            numbers[str(ch["id"])] = 0
+    return numbers
+
+
+async def _tunarr_renumber_channels(
+    client: "httpx.AsyncClient", url: str, moves: list[dict]
+) -> dict:
+    """Renumber a set of already-linked Tunarr channels, collision-free.
+
+    `moves` is `[{"tunarr_id", "number" (final), "changes"}]` where `changes`
+    is the full set of SaveableChannel keys Linearr owns (`number` included —
+    it is overwritten with the final number here).
+
+    This is the Tunarr-side twin of `_renumber_channels`. A reorder is normally
+    a *rotation* (A takes B's number, B takes C's, C takes A's); Tunarr enforces
+    a unique channel number, rejects a duplicate with a **500** (its channel API
+    has no 409 anywhere) and offers no bulk or reorder endpoint, so writing a
+    rotation sequentially always collides on at least one channel.
+
+    So: same two phases the local transaction uses.
+
+    * **Phase 1 — park.** Every channel whose number is actually changing is
+      moved to a temporary number taken from a band starting one above the
+      highest number *currently present in Tunarr* and the highest *target*
+      number. Reading the live list matters — a fixed band could land on a
+      channel Linearr does not manage.
+    * **Phase 2 — land.** Each channel is written to its final number along
+      with the rest of its metadata. Every target is free by then.
+
+    A channel whose number is not changing skips phase 1 entirely: every
+    successful write regenerates Tunarr's M3U (and possibly its XMLTV), so the
+    parking round-trip is only paid where it buys something.
+
+    Both phases go through `_tunarr_save_channel`, never a partial PUT —
+    Tunarr's `PUT /api/channels/:id` body is the FULL SaveableChannel, and the
+    read-modify-write is what echoes `guideMinimumDuration` and `duration` back
+    untouched.
+
+    Returns `{"ok": [final numbers written], "failed": [{number, message,
+    state, parked_number?}]}` where `state` is:
+
+    * `"unchanged"` — the write failed before the channel moved. Harmless: it
+      still holds its old number in Tunarr.
+    * `"parked"` — the channel is **stranded on a temporary number**. This is
+      user-visible breakage, so it is called out explicitly with the number it
+      is sitting on.
+
+    A phase-1 failure never aborts the pass: everything that did park is still
+    landed by phase 2.
+    """
+    outcome: dict = {"ok": [], "failed": []}
+    if not moves:
+        return outcome
+
+    try:
+        current = await _tunarr_current_channel_numbers(client, url)
+    except Exception as e:
+        # Without the live list there is no number known to be free, so writing
+        # anything risks a collision. Touch nothing.
+        log.warning("Tunarr reorder aborted — could not read the channel list: %s", e)
+        for m in moves:
+            outcome["failed"].append({
+                "number": m["number"],
+                "state": "unchanged",
+                "message": f"Could not read Tunarr's channel list, so nothing was renumbered ({e})",
+            })
+        return outcome
+
+    park_next = max(
+        list(current.values()) + [int(m["number"]) for m in moves] + [0]
+    ) + 1
+
+    parked: dict[str, int] = {}     # tunarr_id -> parking number
+    to_land: list[dict] = []
+    for m in moves:                                          # phase 1 — park
+        tunarr_id = m["tunarr_id"]
+        if current.get(tunarr_id) == int(m["number"]):
+            to_land.append(m)       # already on its number; metadata write only
+            continue
+        tmp = park_next
+        park_next += 1
+        ok, message = await _tunarr_try_save_channel(client, url, tunarr_id, {"number": tmp})
+        if ok:
+            parked[tunarr_id] = tmp
+            to_land.append(m)
+        else:
+            outcome["failed"].append({
+                "number": m["number"],
+                "state": "unchanged",
+                "message": f"Tunarr still holds its old number — the parking write failed ({message})",
+            })
+
+    for m in to_land:                                        # phase 2 — land
+        tunarr_id = m["tunarr_id"]
+        changes = {**m["changes"], "number": int(m["number"])}
+        ok, message = await _tunarr_try_save_channel(client, url, tunarr_id, changes)
+        if ok:
+            outcome["ok"].append(m["number"])
+        elif tunarr_id in parked:
+            outcome["failed"].append({
+                "number": m["number"],
+                "state": "parked",
+                "parked_number": parked[tunarr_id],
+                "message": (
+                    f"Tunarr channel is stranded at temporary number {parked[tunarr_id]} — "
+                    f"the write to {m['number']} failed ({message}). "
+                    "Re-run the reorder or set the number in Tunarr."
+                ),
+            })
+        else:
+            outcome["failed"].append({
+                "number": m["number"],
+                "state": "unchanged",
+                "message": f"Tunarr write failed ({message})",
+            })
+    return outcome
+
+
+async def _push_reorder_to_tunarr(changed: list[dict]) -> dict:
+    """Propagate a committed renumber to Tunarr. Never raises — the local
+    lineup is already the source of truth, so every problem is reported as a
+    per-channel entry in `failed`.
+
+    Only channels that are *already linked* are pushed. A drag must not
+    provision brand-new Tunarr channels as a side effect, and an unlinked
+    channel has nothing to propagate. (`tunarr_channel_links.channel_number`
+    was cascaded by the local renumber, so it is keyed by the **new** number.)
+
+    The write itself is `_tunarr_renumber_channels` — two-phase, because a
+    rotation cannot be written sequentially without colliding.
+    """
+    result: dict = {"synced": 0, "failed": []}
+    url = get_tunarr_url()
+    if not changed or not url:
+        return result
+
+    with get_db() as conn:
+        links = {
+            int(r["channel_number"]): r["tunarr_id"]
+            for r in conn.execute("SELECT channel_number, tunarr_id FROM tunarr_channel_links")
+        }
+        rows = {
+            int(r["number"]): dict(r) for r in conn.execute("SELECT * FROM channels")
+        }
+
+    moves = [
+        {
+            "number": c["new_number"],
+            "tunarr_id": links[c["new_number"]],
+            "changes": _tunarr_channel_changes(rows[c["new_number"]]),
+        }
+        for c in changed
+        if c["new_number"] in links and c["new_number"] in rows
+    ]
+    if not moves:
+        return result
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            outcome = await _tunarr_renumber_channels(client, url, moves)
+    except Exception as e:            # defensive: must never undo the commit
+        log.warning("Tunarr reorder propagation raised: %s", e)
+        return {
+            "synced": 0,
+            "failed": [
+                {"number": m["number"], "state": "unchanged", "message": str(e)}
+                for m in moves
+            ],
+        }
+
+    if outcome["ok"]:
+        with get_db() as conn:
+            for number in outcome["ok"]:
+                conn.execute(
+                    "UPDATE tunarr_channel_links SET tunarr_name=?, tunarr_number=?"
+                    " WHERE channel_number=?",
+                    (rows[number].get("name"), number, number),
+                )
+    result["synced"] = len(outcome["ok"])
+    result["failed"] = outcome["failed"]
+    return result
+
+
 @app.get("/api/channels")
 def list_channels():
     with get_db() as conn:
@@ -583,8 +1234,9 @@ async def create_channel(body: ChannelIn):
     with get_db() as conn:
         try:
             conn.execute(
-                "INSERT INTO channels (number, name, tier, vibe, mode, style, color, icon) VALUES (?,?,?,?,?,?,?,?)",
-                (body.number, body.name, body.tier, body.vibe, body.mode, body.style, body.color, body.icon)
+                "INSERT INTO channels (number, name, tier, vibe, mode, style, color, icon, uid) VALUES (?,?,?,?,?,?,?,?,?)",
+                (body.number, body.name, body.tier, body.vibe, body.mode, body.style,
+                 body.color, body.icon, _new_channel_uid())
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, f"Channel {body.number} already exists")
@@ -596,9 +1248,87 @@ async def create_channel(body: ChannelIn):
     result["tunarr_sync"] = sync
     return result
 
-async def _sync_channel_to_tunarr(channel_number: int):
+# `_tunarr_resolve_transcode_config` returns None rather than a bogus id, and a
+# create without `transcodeConfigId` fails as an opaque "Tunarr 400". Both call
+# sites short-circuit with this instead.
+_NO_TRANSCODE_CONFIG_MSG = (
+    "Tunarr has no usable transcode config — Linearr cannot create a channel "
+    "without one. Open Tunarr → Settings → Transcoding and save a transcode "
+    "config (or set a default), then try again."
+)
+
+def _tunarr_write_error(status: int) -> str:
+    """Format a Tunarr write-failure message. Tunarr has no 409 — a duplicate
+    channel number surfaces as a 500 with an empty body, so hint at that
+    rather than reporting a bare status."""
+    hint = " — the channel number may already be in use in Tunarr" if status >= 500 else ""
+    return f"Tunarr {status}{hint}"
+
+def _watermark_for_tunarr(ch: dict) -> dict | None:
+    """Tunarr watermark payload for a channel row, or None when unset.
+
+    Corrupt JSON is treated as unset rather than raised: a bad blob must not
+    break channel metadata sync.
+    """
+    stored = ch.get("watermark")
+    if not stored:
+        return None
+    try:
+        wm = json.loads(stored) if isinstance(stored, str) else stored
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(wm, dict):
+        return None
+    return _watermark_to_tunarr(wm, ch.get("watermark_image_url"))
+
+def _disabled_watermark_for_tunarr() -> dict:
+    """A valid watermark payload that turns the overlay off.
+
+    Tunarr cannot null its watermark column through the API, so the only way to
+    switch one off is to write an object with `enabled: false`. It is still
+    validated while disabled (`width` > 0, margins 0-100), hence the defaults.
+
+    Used ONLY when Linearr is explicitly clearing a watermark — never as the
+    fallback for an unset channel, which must leave a Tunarr-side watermark
+    the user configured directly in Tunarr's own UI untouched.
+    """
+    return _watermark_to_tunarr({"enabled": False}, None)
+
+def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None,
+                            icon_override: dict | None = None) -> dict:
+    """The SaveableChannel keys Linearr owns, for a `channels` row.
+
+    Everything else on the Tunarr side is preserved by `_tunarr_save_channel`'s
+    read-modify-write, so this is deliberately the *whole* set of fields Linearr
+    is entitled to overwrite — a renumber has to carry all of them, not just
+    `number`, or a reordered channel would keep stale metadata.
+
+    `icon` and `watermark` are omitted (rather than nulled) when the channel has
+    none, so an icon/watermark configured directly in Tunarr's own UI survives.
+    The two `*_override` arguments are the escape hatch for the one case that
+    cannot express itself that way: Linearr *deliberately* clearing one.
+    """
+    changes = {
+        "name": ch.get("name", ""),
+        "number": ch.get("number", 0),
+        "groupTitle": ch.get("tier", "Linearr"),
+    }
+    icon_data = ch.get("icon")
+    if icon_override is not None:
+        changes["icon"] = icon_override
+    elif icon_data and str(icon_data).startswith("data:"):
+        changes["icon"] = _tunarr_icon_obj(icon_data)
+    watermark = watermark_override if watermark_override is not None else _watermark_for_tunarr(ch)
+    if watermark is not None:
+        changes["watermark"] = watermark
+    return changes
+
+async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: dict | None = None,
+                                  icon_override: dict | None = None):
     """Sync Cable Plex channel metadata to linked Tunarr channel.
     If no link exists, creates a new Tunarr channel and links it.
+    `watermark_override` / `icon_override`, when given, take precedence over the
+    channel row's stored value (used to push an explicit clear).
     Returns {"synced": True/False, "action": "updated"|"created"|"error", ...}"""
     with get_db() as conn:
         ch = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
@@ -610,45 +1340,40 @@ async def _sync_channel_to_tunarr(channel_number: int):
     if not url:
         return {"synced": False, "action": "error", "message": "Tunarr not configured"}
 
-    # Build metadata payload for Tunarr
-    update_data = {
-        "name": ch.get("name", ""),
-        "number": ch.get("number", 0),
-        "groupTitle": ch.get("tier", "Linearr"),
-    }
-    # Sync icon if present
+    # Only the keys Linearr owns; _tunarr_save_channel preserves everything else.
+    changes = _tunarr_channel_changes(ch, watermark_override, icon_override)
     icon_data = ch.get("icon")
-    if icon_data and icon_data.startswith("data:"):
-        update_data["icon"] = _tunarr_icon_obj(icon_data)
+    watermark = changes.get("watermark")
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             if link:
-                # Update existing Tunarr channel
                 tunarr_id = link["tunarr_id"]
-                r = await client.put(f"{url}/api/channels/{tunarr_id}", json=update_data)
+                r = await _tunarr_save_channel(client, url, tunarr_id, changes)
                 if r.status_code in (200, 204):
-                    # Update cached name/number in link
                     with get_db() as conn:
                         conn.execute(
                             "UPDATE tunarr_channel_links SET tunarr_name=?, tunarr_number=? WHERE channel_number=?",
                             (ch.get("name"), ch.get("number"), channel_number)
                         )
                     return {"synced": True, "action": "updated", "tunarr_id": tunarr_id}
-                return {"synced": False, "action": "error", "message": f"Tunarr {r.status_code}"}
+                return {"synced": False, "action": "error",
+                        "message": _tunarr_write_error(r.status_code)}
             else:
-                # Create new Tunarr channel
-                ffmpeg_r = await client.get(f"{url}/api/ffmpeg-settings")
-                transcode_id = None
-                if ffmpeg_r.status_code == 200:
-                    fj = ffmpeg_r.json()
-                    transcode_id = fj.get("defaultTranscodeConfigId") or fj.get("configId") or fj.get("id")
+                transcode_id = await _tunarr_resolve_transcode_config(client, url)
+                if not transcode_id:
+                    # Tunarr 1.3.x REQUIRES transcodeConfigId on a create, and
+                    # omitting it fails as a bare 400 that says nothing about the
+                    # real cause. Stop here with the actual reason.
+                    return {"synced": False, "action": "error",
+                            "message": _NO_TRANSCODE_CONFIG_MSG}
                 channel_obj = _tunarr_channel_obj(
                     name=ch.get("name", ""),
                     number=ch.get("number", 0),
                     group_title=ch.get("tier", "Linearr"),
                     transcode_id=transcode_id,
                     icon_data=icon_data if (icon_data and icon_data.startswith("data:")) else None,
+                    watermark=watermark,
                 )
                 r = await _tunarr_create_channel(client, url, channel_obj)
                 if r.status_code in (200, 201):
@@ -659,7 +1384,8 @@ async def _sync_channel_to_tunarr(channel_number: int):
                             (channel_number, new_ch["id"], new_ch.get("name"), new_ch.get("number"))
                         )
                     return {"synced": True, "action": "created", "tunarr_id": new_ch["id"]}
-                return {"synced": False, "action": "error", "message": f"Tunarr {r.status_code}"}
+                return {"synced": False, "action": "error",
+                        "message": _tunarr_write_error(r.status_code)}
     except Exception as e:
         log.warning("Tunarr sync failed for CH %s: %s", channel_number, e)
         return {"synced": False, "action": "error", "message": str(e)}
@@ -675,20 +1401,20 @@ async def update_channel(channel_number: int, body: ChannelIn):
                WHERE number=?""",
             (body.name, body.tier, body.vibe, body.mode, body.style, body.color, body.icon, channel_number)
         )
-        # If channel number changed, update all related tables
+        # If channel number changed, cascade to every table that references it
+        # by value (there are no foreign keys) — see _CHANNEL_REF_TABLES.
         if body.number != channel_number:
             try:
-                conn.execute("UPDATE channels SET number=? WHERE number=?", (body.number, channel_number))
+                _move_channel_number(conn, channel_number, body.number)
             except sqlite3.IntegrityError:
                 raise HTTPException(409, f"Channel number {body.number} is already in use")
-            for table in ("assignments", "blocks", "channel_collections", "tunarr_channel_links", "tunarr_collection_links"):
-                try:
-                    conn.execute(f"UPDATE {table} SET channel_number=? WHERE channel_number=?", (body.number, channel_number))
-                except sqlite3.OperationalError:
-                    pass
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
     result = dict(row)
     _log_app("channel", f"Updated channel {channel_number}", metadata={"old_number": channel_number, "new_number": body.number, "name": body.name})
+    # This route can change the icon too, so an icon-following watermark has to
+    # be re-uploaded here as well (best-effort; never blocks the save).
+    if body.icon != existing["icon"]:
+        await _refollow_channel_icon_watermark(body.number)
     # Auto-sync metadata to Tunarr (creates channel if not linked)
     sync = await _sync_channel_to_tunarr(body.number)
     result["tunarr_sync"] = sync
@@ -710,20 +1436,68 @@ def delete_channel(channel_number: int):
             raise HTTPException(404, "Channel not found")
         # No FK constraints tie these tables to channels(number) — clean up
         # explicitly so a reused channel number doesn't inherit ghost data.
+        # `_CHANNEL_DELETE_TABLES`, NOT `_CHANNEL_REF_TABLES`: `ai_logs` is an
+        # audit trail and survives the delete (see the block comment there).
         conn.execute(
             "DELETE FROM block_slots WHERE block_id IN (SELECT id FROM blocks WHERE channel_number=?)",
             (channel_number,),
         )
-        for table in ("assignments", "blocks", "channel_collections",
-                      "tunarr_channel_links", "tunarr_collection_links"):
-            try:
-                conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
-            except sqlite3.OperationalError:
-                pass
+        for table in _present_ref_tables(conn, _CHANNEL_DELETE_TABLES):
+            conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
     _log_app("channel", f"Deleted channel {channel_number}", level="warn", metadata={"number": channel_number})
     return {"ok": True}
 
 # ── Channel Icons ─────────────────────────────────────────────────────────────
+
+async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
+    """Re-upload the channel's icon as its watermark image, if it follows it.
+
+    `use_channel_icon` used to decide only which branch of the watermark-image
+    endpoint ran at the instant the user clicked Apply — so changing the icon
+    afterwards left the watermark pointing at the previously uploaded copy,
+    silently stale. Every icon-change path calls this so the watermark follows.
+
+    Deliberately best-effort: returns None (never raises) so a Tunarr upload
+    failure cannot break the icon update itself. `use_channel_icon` must be
+    explicitly true — a missing key means "don't touch", so a hand-pasted
+    absolute URL is never clobbered.
+    """
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT icon, watermark FROM channels WHERE number=?", (channel_number,)
+            ).fetchone()
+        if row is None or not row["watermark"]:
+            return None
+        try:
+            wm = json.loads(row["watermark"])
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(wm, dict) or wm.get("use_channel_icon") is not True:
+            return None
+        decoded = _decode_data_uri(row["icon"] or "")
+        if decoded is None:
+            return None
+        tunarr_url = get_tunarr_url()
+        if not tunarr_url:
+            return None
+        raw, content_type, filename = decoded
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            image_url = await _tunarr_upload_image(
+                client, tunarr_url, raw, content_type, filename)
+        if not image_url:
+            return None
+        with get_db() as conn:
+            conn.execute("UPDATE channels SET watermark_image_url=? WHERE number=?",
+                         (image_url, channel_number))
+        _log_app("channel",
+                 f"Watermark image re-followed the icon for channel {channel_number}",
+                 metadata={"number": channel_number, "image_url": image_url})
+        return image_url
+    except Exception as e:      # never break the icon write
+        log.warning("Watermark image re-upload failed for CH %s: %s", channel_number, e)
+        return None
+
 
 @app.put("/api/channels/{channel_number}/icon")
 async def set_channel_icon(channel_number: int, request: Request):
@@ -735,17 +1509,174 @@ async def set_channel_icon(channel_number: int, request: Request):
     if cur.rowcount == 0:
         raise HTTPException(404, "Channel not found")
     _log_app("channel", f"Set icon for channel {channel_number}", metadata={"number": channel_number})
+    # Before the sync, so the pushed watermark carries the NEW image URL.
+    await _refollow_channel_icon_watermark(channel_number)
     sync = await _sync_channel_to_tunarr(channel_number)
     return {"ok": True, "tunarr_sync": sync}
 
 @app.delete("/api/channels/{channel_number}/icon")
 async def delete_channel_icon(channel_number: int):
-    """Remove channel icon."""
+    """Remove the channel icon, and clear it in Tunarr too.
+
+    Channel writes are read-modify-write and `_tunarr_channel_changes` only
+    emits `icon` when the row holds a `data:` icon — so simply syncing after the
+    local clear sends no `icon` key and the PUT echoes Tunarr's old logo
+    straight back. The only way to switch it off is to write an icon object with
+    an empty path (Tunarr's "none" state), passed as an explicit override.
+
+    The override is used ONLY here; a routine sync for a channel with no icon
+    still sends no icon key, leaving one set directly in Tunarr's own UI alone.
+    """
     with get_db() as conn:
         conn.execute("UPDATE channels SET icon=NULL WHERE number=?", (channel_number,))
     _log_app("channel", f"Removed icon for channel {channel_number}", metadata={"number": channel_number})
-    await _sync_channel_to_tunarr(channel_number)
-    return {"ok": True}
+    sync = await _sync_channel_to_tunarr(
+        channel_number, icon_override=_tunarr_icon_obj(None))
+    return {"ok": True, "tunarr_sync": sync}
+
+# ── Channel watermark ─────────────────────────────────────────────────────────
+
+@app.get("/api/channels/{channel_number}/watermark")
+def get_channel_watermark(channel_number: int):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT watermark, watermark_image_url FROM channels WHERE number=?",
+            (channel_number,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+    # `image_url` is reported at the top level too, and independently of whether a
+    # config exists: the image route resolves it WITHOUT writing the config blob,
+    # so a channel can legitimately have a resolved image and `watermark = NULL`.
+    # The editor gates its "enabled" control on a resolved image (the PUT below
+    # rejects enabled-without-one), and it must be able to see that state before
+    # the first config is saved.
+    image_url = row["watermark_image_url"]
+    stored = row["watermark"]
+    if not stored:
+        return {"watermark": None, "image_url": image_url}
+    try:
+        wm = json.loads(stored)
+    except (TypeError, ValueError):
+        return {"watermark": None, "image_url": image_url}
+    wm["image_url"] = image_url
+    return {"watermark": wm, "image_url": image_url}
+
+
+@app.put("/api/channels/{channel_number}/watermark")
+async def put_channel_watermark(channel_number: int, body: WatermarkIn):
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT watermark_image_url FROM channels WHERE number=?", (channel_number,)
+        ).fetchone()
+        if existing is None:
+            raise HTTPException(404, "Channel not found")
+        # An enabled watermark with no resolved image maps to `url: ""`, which
+        # Tunarr may reject — and because every channel write is a full
+        # SaveableChannel PUT, that would then fail EVERY later save for this
+        # channel (name, number, tier included), not just the watermark. The
+        # mapper still emits `url: ""` by design (it has no channel context);
+        # the gate belongs here, where the resolved image is known.
+        if body.enabled and not (existing["watermark_image_url"] or "").strip():
+            raise HTTPException(
+                400, "Set a watermark image before enabling the watermark — "
+                     "Tunarr needs an image URL to draw. Apply the channel icon "
+                     "or an absolute image URL first, then enable it."
+            )
+        conn.execute(
+            "UPDATE channels SET watermark=? WHERE number=?",
+            (json.dumps(body.model_dump()), channel_number),
+        )
+    _log_app("channel", f"Updated watermark for channel {channel_number}",
+             metadata={"number": channel_number, "enabled": body.enabled})
+    sync = await _sync_channel_to_tunarr(channel_number)
+    return {"ok": True, "watermark": body.model_dump(), "tunarr_sync": sync}
+
+
+@app.delete("/api/channels/{channel_number}/watermark")
+async def delete_channel_watermark(channel_number: int):
+    """Clear the watermark and switch it off in Tunarr.
+
+    Tunarr has no way to null the watermark column via its API, and channel
+    writes are read-modify-write — omitting the key would echo Tunarr's
+    existing watermark straight back and the overlay would keep rendering. So
+    the sync is given an explicit `enabled: false` payload as an override. That
+    override is only used here; a routine sync for a channel with no watermark
+    configured still sends no watermark key, leaving one set directly in
+    Tunarr's own UI untouched.
+    """
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE channels SET watermark=NULL, watermark_image_url=NULL WHERE number=?",
+            (channel_number,),
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(404, "Channel not found")
+    _log_app("channel", f"Cleared watermark for channel {channel_number}",
+             level="warn", metadata={"number": channel_number})
+    sync = await _sync_channel_to_tunarr(
+        channel_number, watermark_override=_disabled_watermark_for_tunarr())
+    return {"ok": True, "tunarr_sync": sync}
+
+
+class WatermarkImageIn(BaseModel):
+    # Omit both to fall back to the channel's icon.
+    image: str | None = None   # data URI to upload
+    url: str | None = None     # absolute URL to use as-is
+
+
+@app.post("/api/channels/{channel_number}/watermark/image")
+async def set_channel_watermark_image(channel_number: int, body: WatermarkImageIn):
+    """Resolve the watermark image to an absolute URL Tunarr can fetch.
+
+    An explicit absolute `url` is stored verbatim. A data URI — either supplied
+    directly or taken from the channel's icon — is uploaded to Tunarr, because
+    Tunarr passes this value to ffmpeg as an HTTP input and cannot read a
+    `data:` URI (which is also why leaving `url` blank to inherit the channel
+    icon does not work: the icon is itself stored as a data URI).
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT icon FROM channels WHERE number=?", (channel_number,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+
+    if body.url:
+        parsed = _urlparse(body.url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise HTTPException(
+                400, "Watermark URL must be absolute (http:// or https://) — "
+                     "Tunarr fetches it over HTTP and cannot use a relative path"
+            )
+        image_url = body.url
+    else:
+        source = body.image or row["icon"]
+        decoded = _decode_data_uri(source or "")
+        if decoded is None:
+            raise HTTPException(
+                400, "No usable image — supply a data URI, an absolute URL, or "
+                     "set a channel icon first"
+            )
+        raw, content_type, filename = decoded
+        tunarr_url = get_tunarr_url()
+        if not tunarr_url:
+            raise HTTPException(400, "Tunarr not configured")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            image_url = await _tunarr_upload_image(
+                client, tunarr_url, raw, content_type, filename)
+        if not image_url:
+            raise HTTPException(502, "Tunarr rejected the watermark image upload")
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE channels SET watermark_image_url=? WHERE number=?",
+            (image_url, channel_number),
+        )
+    _log_app("channel", f"Set watermark image for channel {channel_number}",
+             metadata={"number": channel_number, "image_url": image_url})
+    sync = await _sync_channel_to_tunarr(channel_number)
+    return {"ok": True, "image_url": image_url, "tunarr_sync": sync}
 
 @app.get("/api/icons/export")
 def export_icon_pack():
@@ -1769,8 +2700,95 @@ def get_channel_collections(channel_number: int):
         ).fetchall()
     result = {}
     for r in rows:
-        result[r["plex_type"]] = dict(r)
+        d = dict(r)
+        # Normalize so the UI can always branch on these, even for rows written
+        # before the columns existed.
+        d["source"] = d.get("source") or "owned"
+        d["is_smart"] = int(d.get("is_smart") or 0)
+        # Whether Linearr created the Plex collection itself. The UI gates the
+        # destructive smart-collection actions on this: Plex cannot read a smart
+        # collection's rules back, so "Edit filters…" opens BLANK and replacing
+        # from it would wipe a user's own rules.
+        d["linearr_created"] = int(d.get("linearr_created") or 0)
+        result[d["plex_type"]] = d
     return result
+
+
+def _write_assigned_slot(channel_number: int, plex_type: str, rating_key: str,
+                         title: str, is_smart: bool, linearr_created: bool = False) -> None:
+    """Point a channel's (type) slot at an existing collection, by REFERENCE.
+
+    Writes `source='assigned'`, `managed=0` — Linearr records that the channel
+    uses this collection and never reads or edits its members. `UNIQUE(channel_
+    number, plex_type)` means assigning replaces whatever held the slot.
+
+    `linearr_created` is True only on the create-and-assign path, where Linearr
+    itself built the collection in Plex. It gates the destructive smart-
+    collection actions ("Edit filters…" replaces the rules from a blank form —
+    Plex cannot read them back — and "Delete collection" is permanent), and it
+    is deliberately reset on every write: re-pointing a slot at a different
+    collection must never inherit the previous one's provenance.
+    """
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO channel_collections
+                 (channel_number, plex_type, collection_rating_key, collection_title,
+                  managed, source, is_smart, linearr_created)
+               VALUES (?, ?, ?, ?, 0, 'assigned', ?, ?)
+               ON CONFLICT(channel_number, plex_type) DO UPDATE SET
+                   collection_rating_key=excluded.collection_rating_key,
+                   collection_title=excluded.collection_title,
+                   managed=0,
+                   source='assigned',
+                   is_smart=excluded.is_smart,
+                   linearr_created=excluded.linearr_created""",
+            (channel_number, plex_type, str(rating_key), title,
+             1 if is_smart else 0, 1 if linearr_created else 0),
+        )
+
+
+@app.post("/api/channel-collections/{channel_number}/assign", status_code=200)
+def assign_channel_collection(channel_number: int, body: ChannelCollectionAssignIn):
+    """Assign an existing Plex collection to a channel BY REFERENCE.
+
+    Reference only: this records that the channel uses the collection. It makes
+    no Plex call at all — the collection's members are never read, copied into
+    `assignments`, or modified. (Contrast `POST /api/channel-collections/{n}`,
+    which imports a collection's items into assignments, and
+    `generate_collections`, which builds and manages Linearr's own
+    '{Channel} Movies/TV' collections.)
+
+    One active source per type: assigning replaces whatever was in that slot.
+
+    The two owned names ('{Channel} Movies' / '{Channel} TV') are RESERVED and
+    rejected: generation resolves its target purely by name, so a collection
+    assigned under an owned name would be found, adopted and — on the second
+    build — pruned down to the channel's assignments. (`linearr_created` is the
+    second, rename-proof half of that guard.)
+    """
+    if body.plex_type not in _COLLECTION_SUFFIX:
+        raise HTTPException(400, "plex_type must be 'movie' or 'show'")
+    ch = _get_channel(channel_number)
+    if not ch:
+        raise HTTPException(404, "Channel not found")
+    if _is_owned_title(body.collection_title, ch.get("name") or ""):
+        raise HTTPException(
+            400,
+            f"'{body.collection_title}' is reserved for the collection Linearr "
+            f"generates for this channel — assigning it would let a later build "
+            f"rewrite its contents. Rename the collection in Plex first, then "
+            f"assign it.",
+        )
+    _write_assigned_slot(channel_number, body.plex_type, body.collection_rating_key,
+                         body.collection_title, body.is_smart)
+    _log_app("collection", f"Assigned collection '{body.collection_title}' to ch {channel_number}",
+             metadata={"channel": channel_number, "plex_type": body.plex_type,
+                       "rating_key": body.collection_rating_key, "is_smart": body.is_smart})
+    return {"ok": True, "channel_number": channel_number, "plex_type": body.plex_type,
+            "collection_rating_key": str(body.collection_rating_key),
+            "collection_title": body.collection_title,
+            "source": "assigned", "is_smart": 1 if body.is_smart else 0,
+            "linearr_created": 0}
 
 
 @app.post("/api/channel-collections/{channel_number}", status_code=200)
@@ -1928,6 +2946,11 @@ async def generate_collections(channel_number: int):
     Linearr manages ONLY its own '{Channel} Movies' / '{Channel} TV' collections,
     resolved by name — never a user-linked collection. First touch of any
     collection is additive-only, so a user's own collection can never be pruned.
+
+    If a type's slot currently holds an ASSIGNED collection (source='assigned'),
+    generating switches that slot back to 'owned'. That is a DB-slot change
+    only: the assigned collection is never read, added to, or pruned, because
+    the target is still resolved purely by owned name.
     """
     url, token = get_plex_config()
     if not token:
@@ -2020,15 +3043,27 @@ async def generate_collections(channel_number: int):
                 created = True
 
             # 4b. Is this collection already managed by Linearr? (fresh-created => owned)
+            #
+            # Pruning requires ALL of: the same rating key as last time, a
+            # managed slot, AND `linearr_created` — Linearr must have created
+            # the Plex collection itself. The name check above is defeated by a
+            # rename (a user's collection renamed to '{Channel} Movies' resolves
+            # here), so provenance is the guard that actually holds: a
+            # collection Linearr merely *adopted* by name stays additive-only
+            # forever and can never lose the user's items.
             with get_db() as conn:
                 prior = conn.execute(
-                    "SELECT collection_rating_key, managed FROM channel_collections "
-                    "WHERE channel_number=? AND plex_type=?",
+                    "SELECT collection_rating_key, managed, linearr_created "
+                    "FROM channel_collections WHERE channel_number=? AND plex_type=?",
                     (channel_number, plex_type),
                 ).fetchone()
+            same_collection = bool(prior and str(prior["collection_rating_key"]) == coll_id)
+            prior_linearr_created = bool(
+                same_collection and (prior["linearr_created"] or 0) == 1)
+            linearr_created = created or prior_linearr_created
             already_managed = bool(
                 created
-                or (prior and prior["managed"] == 1 and str(prior["collection_rating_key"]) == coll_id)
+                or (same_collection and prior["managed"] == 1 and prior_linearr_created)
             )
 
             # 4c. Current items
@@ -2065,17 +3100,27 @@ async def generate_collections(channel_number: int):
                 if del_resp.status_code in (200, 204):
                     removed += 1
 
-            # 4f. Persist as managed (owned collection only)
+            # 4f. Persist as managed (owned collection only).
+            # If the slot currently holds an ASSIGNED collection, generating
+            # switches it back to 'owned' — the intentional, documented way to
+            # return to a Linearr-managed collection. Note this only rewrites
+            # the DB slot: the assigned collection itself was never read or
+            # edited above, because the target is resolved by NAME (4a).
             with get_db() as conn:
                 conn.execute(
                     """INSERT INTO channel_collections
-                       (channel_number, plex_type, collection_rating_key, collection_title, managed)
-                       VALUES (?, ?, ?, ?, 1)
+                       (channel_number, plex_type, collection_rating_key, collection_title,
+                        managed, source, is_smart, linearr_created)
+                       VALUES (?, ?, ?, ?, 1, 'owned', 0, ?)
                        ON CONFLICT(channel_number, plex_type) DO UPDATE SET
                            collection_rating_key=excluded.collection_rating_key,
                            collection_title=excluded.collection_title,
-                           managed=1""",
-                    (channel_number, plex_type, coll_id, coll_name),
+                           managed=1,
+                           source='owned',
+                           is_smart=0,
+                           linearr_created=excluded.linearr_created""",
+                    (channel_number, plex_type, coll_id, coll_name,
+                     1 if linearr_created else 0),
                 )
 
             log.info("generate_collections ch %s: %s '%s' +%d/-%d (%d desired, additive_only=%s)",
@@ -2119,12 +3164,9 @@ async def generate_collections(channel_number: int):
                 # just created/updated exist as tags before the smart collections
                 # that query those tags are written.
                 scan_ok = await _tunarr_scan_libraries(tc, tunarr_url, wait=True)
-                sc_path = "/api/smart_collections"
-                # Fetch existing Tunarr smart collections (underscore, hyphen fallback)
+                sc_path = _TUNARR_SC_PATH
+                # Fetch existing Tunarr smart collections
                 sr = await tc.get(f"{tunarr_url}{sc_path}")
-                if sr.status_code == 404:
-                    sc_path = "/api/smart-collections"
-                    sr = await tc.get(f"{tunarr_url}{sc_path}")
                 existing_sc = {sc["name"]: sc for sc in (sr.json() if sr.status_code == 200 else [])}
 
                 created_sc, updated_sc = [], []
@@ -2748,6 +3790,90 @@ async def plex_create_smart_collection(body: SmartCollectionIn):
         "smart": True,
         "unresolved_genres": missing,
     }
+
+async def _best_effort_delete_plex_collection(rating_key: str) -> bool:
+    """Delete a Plex collection without ever raising — used to roll back a
+    just-created collection when the follow-up assign fails."""
+    try:
+        url, token = get_plex_config()
+        if not token:
+            return False
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.delete(f"{url}/library/collections/{rating_key}",
+                                    headers=plex_headers(token))
+        return r.status_code in (200, 204)
+    except Exception as e:  # noqa: BLE001 — rollback must never mask the original error
+        log.warning("Rollback delete of Plex collection %s failed: %s", rating_key, e)
+        return False
+
+
+@app.post("/api/channels/{channel_number}/smart-collection", status_code=201)
+async def create_and_assign_smart_collection(channel_number: int, body: SmartCollectionIn):
+    """Create a Plex smart collection AND assign it to a channel, atomically.
+
+    Reuses `plex_create_smart_collection` (and therefore `_build_smart_uri`) for
+    the Plex side, then records the slot with `source='assigned'`, `is_smart=1`.
+    Either both halves land or neither does:
+      - channel + type are validated BEFORE anything is created in Plex, so a
+        bad request can't orphan a collection;
+      - if the assign write fails, the freshly created collection is deleted
+        again and any partial slot is cleared — no orphaned collection left
+        assigned, no assignment pointing at nothing.
+
+    Assigned means REFERENCE ONLY: Linearr never edits the collection's members
+    (it's a smart collection — Plex keeps it current from its rules).
+    """
+    if body.type not in _COLLECTION_SUFFIX:
+        raise HTTPException(400, "type must be 'movie' or 'show'")
+    ch = _get_channel(channel_number)
+    if not ch:
+        raise HTTPException(404, "Channel not found")
+    # Same reserved-name rule as the plain assign: '{Channel} Movies/TV' is the
+    # name generation resolves by, and a smart collection cannot be added to.
+    # Checked BEFORE anything is created in Plex so nothing is orphaned.
+    if _is_owned_title(body.title, ch.get("name") or ""):
+        raise HTTPException(
+            400,
+            f"'{body.title}' is reserved for the collection Linearr generates "
+            f"for this channel — pick a different name.",
+        )
+
+    created = await plex_create_smart_collection(body)
+    rating_key = created.get("rating_key")
+    if not rating_key:
+        # Nothing usable to assign, and nothing to roll back by (no key) — fail
+        # loudly rather than writing a dangling reference.
+        raise HTTPException(502, "Plex created the smart collection but returned no rating key")
+
+    try:
+        _write_assigned_slot(channel_number, body.type, rating_key,
+                             created.get("title") or body.title, is_smart=True,
+                             linearr_created=True)
+    except Exception as e:  # noqa: BLE001 — must roll the Plex side back
+        rolled_back = await _best_effort_delete_plex_collection(rating_key)
+        with get_db() as conn:
+            conn.execute(
+                "DELETE FROM channel_collections WHERE channel_number=? AND plex_type=? "
+                "AND collection_rating_key=?",
+                (channel_number, body.type, str(rating_key)),
+            )
+        log.warning("smart-collection assign failed for ch %s (%s): %s (rolled_back=%s)",
+                    channel_number, rating_key, e, rolled_back)
+        raise HTTPException(
+            500,
+            f"Created the Plex smart collection but could not assign it: {e}. "
+            + ("It was deleted again." if rolled_back
+               else f"It could NOT be deleted — remove '{created.get('title')}' in Plex manually."),
+        )
+
+    _log_app("collection",
+             f"Created + assigned smart collection '{created.get('title')}' to ch {channel_number}",
+             metadata={"channel": channel_number, "plex_type": body.type,
+                       "rating_key": rating_key, "unresolved_genres": created.get("unresolved_genres")})
+    return {**created, "assigned": True, "channel_number": channel_number,
+            "plex_type": body.type, "source": "assigned", "is_smart": 1,
+            "linearr_created": 1}
+
 
 @app.put("/api/plex/smart-collections/{rating_key}")
 async def plex_update_smart_collection(rating_key: str, body: SmartCollectionUpdateIn):
@@ -3819,10 +4945,11 @@ def create_channel_package(body: dict):
         for ch in channels_to_create:
             try:
                 conn.execute(
-                    "INSERT INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    "INSERT INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
                     (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"),
                      ch.get("vibe", ""), ch.get("mode", "Shuffle"),
-                     ch.get("description", ""), ch.get("color", "blue"))
+                     ch.get("description", ""), ch.get("color", "blue"),
+                     _new_channel_uid())
                 )
                 created.append(ch["number"])
             except sqlite3.IntegrityError:
@@ -4259,6 +5386,210 @@ def get_tunarr_url() -> str:
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
     return rows.get("tunarr_url", "http://tunarr:8000").rstrip("/")
 
+_DATA_URI_RE = _re.compile(r"^data:(?P<mime>[\w.+/-]+);base64,(?P<b64>.+)$", _re.DOTALL)
+
+_MIME_EXT = {
+    "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp",
+    "image/svg+xml": "svg", "image/gif": "gif",
+}
+
+
+def _decode_data_uri(data_uri: str) -> tuple[bytes, str, str] | None:
+    """Decode a base64 data URI into (bytes, content_type, filename).
+
+    Returns None for anything that is not a base64 data URI, including the
+    absolute URLs a user may paste as a watermark override.
+    """
+    if not isinstance(data_uri, str):
+        return None
+    m = _DATA_URI_RE.match(data_uri.strip())
+    if not m:
+        return None
+    mime = m.group("mime").lower()
+    try:
+        raw = base64.b64decode(m.group("b64"), validate=True)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    return raw, mime, f"linearr-watermark.{_MIME_EXT.get(mime, 'png')}"
+
+
+async def _tunarr_upload_image(
+    client: "httpx.AsyncClient", url: str, raw: bytes,
+    content_type: str, filename: str,
+) -> str | None:
+    """Upload an image to Tunarr and return an absolute, reachable URL.
+
+    Tunarr builds `fileUrl` from the inbound Host header, so the URL it returns
+    is often unreachable from Linearr (which talks to `http://tunarr:8000`).
+    The path is kept and the host rewritten onto the configured base URL.
+    """
+    try:
+        r = await client.post(
+            f"{url}/api/upload/image",
+            files={"file": (filename, raw, content_type)},
+        )
+    except Exception as e:
+        log.warning("Tunarr image upload failed: %s", e)
+        return None
+    if r.status_code not in (200, 201):
+        log.warning("Tunarr rejected image upload: %s %s", r.status_code, r.text[:200])
+        return None
+    try:
+        file_url = (r.json() or {}).get("fileUrl") or ""
+    except Exception:
+        return None
+    if not file_url:
+        return None
+    path = _urlparse(file_url).path or ""
+    if not path:
+        return None
+    return f"{url.rstrip('/')}{path}"
+
+
+# Tunarr's upload directory — the only prefix `/api/tunarr/image` will fetch, so
+# the route cannot be used as a general-purpose proxy.
+_TUNARR_IMAGE_ALLOWED_PREFIXES = ("/images/",)
+
+# Raster only, deliberately. This route serves bytes from Tunarr's upload
+# directory on LINEARR's origin, so honouring the upstream Content-Type blindly
+# would let an `image/svg+xml` (or anything Tunarr's `image/*` sniff lets in)
+# execute script against the session cookie — stored XSS. Linearr's own icon
+# upload accepts SVG, so that path is real, not theoretical. SVG is no loss
+# here: ffmpeg cannot use one as an overlay input anyway.
+_TUNARR_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+_TUNARR_IMAGE_HEADERS = {
+    "Cache-Control": "public, max-age=604800, immutable",
+    # Belt and braces even with the allow-list: never let a sniffer re-interpret
+    # the body, and give the response no privileges if it is ever framed.
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; sandbox",
+}
+
+
+@app.get("/api/tunarr/image")
+async def tunarr_image(path: str = Query(...)):
+    """Proxy an image hosted by Tunarr, for the BROWSER.
+
+    `watermark_image_url` is stored as an absolute URL on the configured Tunarr
+    base — `http://tunarr:8000/...` on a default Docker deployment — because
+    ffmpeg *inside the Tunarr container* is what fetches it. The user's browser
+    is on the LAN and cannot resolve that container hostname, so rendering the
+    stored value directly in an <img> is a guaranteed broken image. This route is
+    the browser-facing equivalent: same-origin in, server-side fetch out.
+
+    SSRF hardening mirrors `/api/plex/thumb`: `path` is caller-controlled, so only
+    a plain path under Tunarr's `/images/` directory is accepted (no scheme, no
+    `//`, no `@`, no backslash, no `..` traversal) and the Tunarr base URL is
+    prefixed here rather than taken from the caller. Redirects are not followed.
+    """
+    path_only = path.split("?", 1)[0]
+    if (not path.startswith("/") or path.startswith("//") or "://" in path
+            or any(c in path for c in ("@", "\\"))
+            or ".." in path_only
+            or not path_only.startswith(_TUNARR_IMAGE_ALLOWED_PREFIXES)):
+        raise HTTPException(400, "Invalid Tunarr image path")
+    url = get_tunarr_url()
+    if not url:
+        raise HTTPException(400, "Tunarr not configured")
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
+            resp = await client.get(f"{url}{path}")
+    except Exception as e:
+        log.warning("Tunarr image proxy failed for %s: %s", path, e)
+        raise HTTPException(502, "Tunarr image fetch failed")
+    if resp.status_code != 200 or not resp.content:
+        raise HTTPException(resp.status_code if resp.status_code != 200 else 502,
+                            "Tunarr image error")
+    content_type = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in _TUNARR_IMAGE_TYPES:
+        raise HTTPException(415, f"Unsupported Tunarr image type: {content_type or 'unknown'}")
+    return Response(
+        content=resp.content,
+        media_type=content_type,
+        headers=_TUNARR_IMAGE_HEADERS,
+    )
+
+
+def _watermark_to_tunarr(wm: dict, image_url: str | None) -> dict:
+    """Map stored watermark config to Tunarr's WatermarkSchema.
+
+    Only `fadeConfig[0]` is ever applied by Tunarr, so at most one entry is
+    sent. `animated` and `fadeConfig[].programType` are omitted: Tunarr
+    persists both but no pipeline builder reads them (1.3.6).
+    """
+    out: dict = {
+        "enabled": bool(wm.get("enabled", False)),
+        "position": wm.get("position", "bottom-right"),
+        "width": float(wm.get("width", 10.0)),
+        "verticalMargin": float(wm.get("vertical_margin", 1.0)),
+        "horizontalMargin": float(wm.get("horizontal_margin", 1.0)),
+        "duration": float(wm.get("duration", 0.0)),
+        "opacity": int(wm.get("opacity", 100)),
+        "fixedSize": bool(wm.get("fixed_size", False)),
+        "url": image_url or "",
+    }
+    fade = wm.get("fade")
+    if isinstance(fade, dict) and int(fade.get("period_mins", 0)) >= 1:
+        out["fadeConfig"] = [{
+            "periodMins": int(fade["period_mins"]),
+            "leadingEdge": bool(fade.get("leading_edge", True)),
+        }]
+    return out
+
+
+_UUID_RE = _re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+async def _tunarr_resolve_transcode_config(
+    client: "httpx.AsyncClient", url: str
+) -> str | None:
+    """Resolve a transcode-config uuid Tunarr will actually accept.
+
+    Tunarr 1.3.x validates `transcodeConfigId` as a uuid AND checks it exists;
+    both failures are a 400. Prefers the config flagged default, else the first
+    one with a uuid-shaped id, else `/api/ffmpeg-settings`. Returns None rather
+    than a bogus value — the caller must not send a non-uuid.
+    """
+    def _uuid_or_none(value) -> str | None:
+        return value if isinstance(value, str) and _UUID_RE.match(value) else None
+
+    try:
+        r = await client.get(f"{url}/api/transcode_configs")
+        if r.status_code == 200:
+            data = r.json()
+            configs = data if isinstance(data, list) else data.get("data", [])
+            if isinstance(configs, list) and configs:
+                for cfg in configs:
+                    if isinstance(cfg, dict) and cfg.get("isDefault"):
+                        found = _uuid_or_none(cfg.get("id"))
+                        if found:
+                            return found
+                for cfg in configs:
+                    if isinstance(cfg, dict):
+                        found = _uuid_or_none(cfg.get("id"))
+                        if found:
+                            return found
+    except Exception as e:
+        log.debug("transcode_configs lookup failed: %s", e)
+
+    try:
+        r = await client.get(f"{url}/api/ffmpeg-settings")
+        if r.status_code == 200:
+            fj = r.json()
+            if isinstance(fj, dict):
+                for key in ("defaultTranscodeConfigId", "transcodeConfigId", "configId", "id"):
+                    found = _uuid_or_none(fj.get(key))
+                    if found:
+                        return found
+    except Exception as e:
+        log.debug("ffmpeg-settings lookup failed: %s", e)
+
+    return None
+
 def _tunarr_icon_obj(data_uri: str | None) -> dict:
     """Channel icon write object. A data:/http path sets a custom icon; an empty
     path renders as none. (Tunarr 1.3 has three icon states custom/default/none —
@@ -4267,7 +5598,8 @@ def _tunarr_icon_obj(data_uri: str | None) -> dict:
 
 def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
                         channel_id: str | None = None, transcode_id: str | None = None,
-                        icon_data: str | None = None) -> dict:
+                        icon_data: str | None = None,
+                        watermark: dict | None = None) -> dict:
     """Build a Tunarr channel object for create/update using fields valid across 1.2.x–1.3.x."""
     obj = {
         "name": name,
@@ -4283,29 +5615,75 @@ def _tunarr_channel_obj(*, name: str, number: int, group_title: str,
         "streamMode": "hls",
         "subtitlesEnabled": False,
     }
+    if watermark is not None:
+        obj["watermark"] = watermark
     if channel_id:
         obj["id"] = channel_id
     if transcode_id:
         obj["transcodeConfigId"] = transcode_id
-    else:
-        obj["transcoding"] = {"targetResolution": "1920x1080"}
+    # No `transcoding` fallback: it is read-only in Tunarr's SaveableChannel
+    # (stripped on write) while transcodeConfigId is required. Sending it in
+    # place of a real config id guarantees a 400 — the caller must resolve one
+    # via _tunarr_resolve_transcode_config.
     return obj
 
 async def _tunarr_create_channel(client: "httpx.AsyncClient", url: str, channel_obj: dict):
-    """POST a new channel, tolerating Tunarr's create-request shape change.
+    """POST a new channel.
 
-    Tunarr 1.3.x expects a discriminated `{"type":"new","channel":{...}}` body
-    where the client supplies the channel id; older Tunarr accepted a flat channel
-    object and assigned the id server-side. Tries the modern wrapped form first and
-    falls back to the flat form on a schema/route rejection. Returns the response.
+    Tunarr's create body is a discriminated union — `{"type":"new","channel":{…}}`
+    — in every 1.x release (verified against v1.0.0 through v1.3.9); there has
+    never been a flat-object form. The client must supply `channel.id` because
+    the schema requires it, but Tunarr ignores the value and assigns its own
+    uuid, so the real id must be read from the response.
     """
     obj = dict(channel_obj)
     obj.setdefault("id", str(uuid.uuid4()))
-    r = await client.post(f"{url}/api/channels", json={"type": "new", "channel": obj})
-    if r.status_code in (400, 404, 422):
-        flat = {k: v for k, v in channel_obj.items() if k != "id"}
-        r = await client.post(f"{url}/api/channels", json=flat)
-    return r
+    return await client.post(f"{url}/api/channels", json={"type": "new", "channel": obj})
+
+
+# Tunarr's ChannelSchema exposes these but SaveableChannel omits them — they are
+# stripped by its zod object, so sending them is harmless but pointless. We drop
+# them explicitly so a read-modify-write PUT carries only writable fields.
+_TUNARR_READONLY_CHANNEL_KEYS = frozenset(
+    {"programCount", "transcoding", "sessions", "fallback", "programs"}
+)
+
+
+async def _tunarr_save_channel(
+    client: "httpx.AsyncClient", url: str, tunarr_id: str, changes: dict
+) -> "httpx.Response":
+    """Update a Tunarr channel by read-modify-write.
+
+    Tunarr's `PUT /api/channels/:id` body is the FULL SaveableChannel — only
+    `onDemand` is partial — so a body carrying just the changed keys is a 400.
+    Read the channel, apply `changes`, and write the whole object back.
+
+    Values we do not touch are echoed verbatim, which is required for
+    `guideMinimumDuration` (whose unit is inconsistent inside Tunarr) and
+    `duration` (server-maintained; sending 0 zeroes it).
+
+    Returns the PUT response, or the failing GET response when the read fails
+    (so the caller sees one status either way).
+    """
+    r = await client.get(f"{url}/api/channels/{tunarr_id}")
+    if r.status_code != 200:
+        return r
+    try:
+        current = r.json()
+    except Exception:
+        current = None
+    if not isinstance(current, dict):
+        return httpx.Response(
+            502,
+            json={"error": "Tunarr returned an unreadable channel body; nothing was written"},
+            request=r.request,
+        )
+
+    payload = {**current, **changes}
+    payload = {k: v for k, v in payload.items() if k not in _TUNARR_READONLY_CHANNEL_KEYS}
+    payload.setdefault("id", tunarr_id)
+    return await client.put(f"{url}/api/channels/{tunarr_id}", json=payload)
+
 
 class TunarrTestIn(BaseModel):
     url: str | None = None
@@ -4454,31 +5832,11 @@ async def tunarr_create_channel(body: dict):
     channel_id = str(uuid.uuid4())
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Fetch the actual default transcode config ID from Tunarr
-        transcode_id = "default"
-        try:
-            tr = await client.get(f"{url}/api/ffmpeg-settings")
-            if tr.status_code == 200:
-                data = tr.json()
-                # Could be a list or a single object — get the first/default
-                if isinstance(data, list) and data:
-                    transcode_id = data[0].get("id", "default")
-                elif isinstance(data, dict):
-                    transcode_id = data.get("id", "default")
-        except Exception:
-            pass
-
-        # Also copy settings from an existing channel if available
-        existing_channel = None
-        try:
-            cr = await client.get(f"{url}/api/channels")
-            if cr.status_code == 200:
-                channels = cr.json()
-                if channels:
-                    existing_channel = channels[0]
-                    transcode_id = existing_channel.get("transcodeConfigId", transcode_id)
-        except Exception:
-            pass
+        transcode_id = await _tunarr_resolve_transcode_config(client, url)
+        if not transcode_id:
+            # Required by Tunarr 1.3.x; without it the create comes back as an
+            # unexplained 400. Say what is actually wrong.
+            raise HTTPException(502, _NO_TRANSCODE_CONFIG_MSG)
 
         icon_in = body.get("icon")
         channel_obj = _tunarr_channel_obj(
@@ -4990,8 +6348,9 @@ async def tunarr_import_channels(body: TunarrImportRequest):
             elif act.action == "create":
                 cp_num = tnum or (max((r["number"] for r in conn.execute("SELECT number FROM channels")), default=99) + 1)
                 conn.execute(
-                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
-                    (cp_num, tname, "Galaxy Main", "", "Shuffle", "", "blue"),
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
+                    (cp_num, tname, "Galaxy Main", "", "Shuffle", "", "blue",
+                     _new_channel_uid()),
                 )
                 results["created"] += 1
             else:
@@ -5229,14 +6588,17 @@ async def tunarr_filler_list_programs(filler_id: str):
         return []
     return r.json() if isinstance(r.json(), list) else []
 
+# Tunarr's smart-collections route is underscored in every supported version
+# (verified in server/src/api/smartCollectionsApi.ts at v1.2.10 and v1.3.6).
+# There is no hyphenated alias — a wrong separator is a plain 404.
+_TUNARR_SC_PATH = "/api/smart_collections"
+
 @app.get("/api/tunarr/smart-collections")
 async def tunarr_list_smart_collections():
     url = get_tunarr_url()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{url}/api/smart_collections")
-            if r.status_code == 404:
-                r = await client.get(f"{url}/api/smart-collections")
+            r = await client.get(f"{url}{_TUNARR_SC_PATH}")
         if r.status_code != 200:
             raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
         return r.json()
@@ -5308,7 +6670,7 @@ async def tunarr_create_smart_collection(body: dict):
         raise HTTPException(400, 'Provide a structured "filter" object or a simple filterString like: tags = "My Collection"')
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await _tunarr_write_smart_collection(
-            client, url, "/api/smart_collections", name=name, structured=structured)
+            client, url, _TUNARR_SC_PATH, name=name, structured=structured)
     if r is None or r.status_code not in (200, 201):
         raise HTTPException(r.status_code if r is not None else 502,
                             r.text[:300] if r is not None else "No response from Tunarr")
@@ -5328,7 +6690,7 @@ async def tunarr_update_smart_collection(sc_id: str, body: dict):
     async with httpx.AsyncClient(timeout=10.0) as client:
         if structured is not None:
             r = await _tunarr_write_smart_collection(
-                client, url, "/api/smart_collections",
+                client, url, _TUNARR_SC_PATH,
                 name=passthrough.get("name") or "", structured=structured,
                 uuid=sc_id, extra=passthrough)
             if r is not None and r.status_code not in (404,) and r.status_code in (200, 201, 204) \
@@ -5339,7 +6701,7 @@ async def tunarr_update_smart_collection(sc_id: str, body: dict):
                 raise HTTPException(400, 'This filter expression is too complex to translate — use a structured "filter" object, or a simple one like: tags = "My Collection"')
             if not passthrough:
                 raise HTTPException(400, "Nothing to update")
-            r = await client.put(f"{url}/api/smart_collections/{sc_id}", json=passthrough)
+            r = await client.put(f"{url}{_TUNARR_SC_PATH}/{sc_id}", json=passthrough)
     if r is None:
         raise HTTPException(502, "No response from Tunarr")
     if r.status_code == 404:
@@ -5354,7 +6716,7 @@ async def tunarr_update_smart_collection(sc_id: str, body: dict):
 async def tunarr_delete_smart_collection(sc_id: str):
     url = get_tunarr_url()
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.delete(f"{url}/api/smart_collections/{sc_id}")
+        r = await client.delete(f"{url}{_TUNARR_SC_PATH}/{sc_id}")
     if r.status_code == 404:
         raise HTTPException(404, "Smart collection not found in Tunarr")
     if r.status_code not in (200, 204):
@@ -5364,6 +6726,70 @@ async def tunarr_delete_smart_collection(sc_id: str):
         conn.execute("DELETE FROM tunarr_collection_links WHERE tunarr_collection_id=?", (sc_id,))
     _log_app("tunarr", f"Deleted Tunarr smart collection {sc_id}", level="warn", metadata={"uuid": sc_id})
     return {"ok": True}
+
+@app.post("/api/tunarr/smart-collections/purge")
+async def tunarr_purge_smart_collections():
+    """Delete EVERY Tunarr smart collection and clear `tunarr_collection_links`.
+
+    Destructive and global, so it is an explicit endpoint of its own and is
+    never a side effect of any other action (sync, generate, assign).
+
+    Failures are reported per item rather than aborting the run: one collection
+    Tunarr refuses to delete must not strand the rest. Link rows are cleared for
+    everything that actually went away — a link is retained only when its
+    collection survived in Tunarr, so the local state still matches the server.
+
+    Returns {"deleted": int, "failed": [{"id", "name", "error"}, ...]}.
+    """
+    url = get_tunarr_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{url}{_TUNARR_SC_PATH}")
+            if r.status_code != 200:
+                raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+            data = r.json()
+            items = data if isinstance(data, list) else data.get("data", []) or []
+
+            deleted = 0
+            failed: list[dict] = []
+            failed_ids: list[str] = []
+            for sc in items:
+                sc_id = str(sc.get("uuid") or sc.get("id") or "")
+                name = sc.get("name")
+                if not sc_id:
+                    failed.append({"id": None, "name": name, "error": "no uuid in Tunarr response"})
+                    continue
+                try:
+                    dr = await client.delete(f"{url}{_TUNARR_SC_PATH}/{sc_id}")
+                except Exception as e:  # noqa: BLE001 — keep purging the rest
+                    failed.append({"id": sc_id, "name": name, "error": str(e)[:200]})
+                    failed_ids.append(sc_id)
+                    continue
+                # 404 counts as gone: the goal state is "not in Tunarr".
+                if dr.status_code in (200, 204, 404):
+                    deleted += 1
+                else:
+                    failed.append({"id": sc_id, "name": name,
+                                   "error": f"{dr.status_code}: {dr.text[:200]}"})
+                    failed_ids.append(sc_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Cannot reach Tunarr: {e}")
+
+    with get_db() as conn:
+        if failed_ids:
+            placeholders = ",".join("?" for _ in failed_ids)
+            conn.execute(
+                f"DELETE FROM tunarr_collection_links WHERE tunarr_collection_id NOT IN ({placeholders})",
+                failed_ids,
+            )
+        else:
+            conn.execute("DELETE FROM tunarr_collection_links")
+
+    _log_app("tunarr", f"Purged Tunarr smart collections: {deleted} deleted, {len(failed)} failed",
+             level="warn", metadata={"deleted": deleted, "failed": failed})
+    return {"deleted": deleted, "failed": failed}
 
 # ── Tunarr tasks (guide refresh, library scan) ───────────────────────────────
 
@@ -5458,14 +6884,10 @@ async def tunarr_sync_collections(channel_number: int):
 
     url = get_tunarr_url()
 
-    # Resolve the correct smart collections endpoint (underscore vs hyphen varies by Tunarr version)
-    sc_path = "/api/smart_collections"
+    sc_path = _TUNARR_SC_PATH
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{url}{sc_path}")
-            if r.status_code == 404:
-                sc_path = "/api/smart-collections"
-                r = await client.get(f"{url}{sc_path}")
         existing = r.json() if r.status_code == 200 else []
     except Exception as e:
         log.warning("Failed to fetch Tunarr smart collections: %s", e)
@@ -5990,11 +7412,13 @@ def _import_lineup_data(data: dict, mode: str) -> dict:
 
         for ch in channels:
             try:
+                # An imported channel always gets a LOCAL uid — an exported one
+                # would collide with the source install's identity.
                 conn.execute(
-                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, icon) VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, icon, uid) VALUES (?,?,?,?,?,?,?,?,?)",
                     (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"), ch.get("vibe", ""),
                      ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue"),
-                     ch.get("icon")),
+                     ch.get("icon"), _new_channel_uid()),
                 )
                 stats["channels_added"] += 1
             except Exception:
@@ -6065,10 +7489,12 @@ async def import_lineup(request: Request):
 
         for ch in channels:
             try:
+                # Fresh local uid, never the exported one (see _import_lineup_data).
                 conn.execute(
-                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+                    "INSERT OR IGNORE INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
                     (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"), ch.get("vibe", ""),
-                     ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue")),
+                     ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue"),
+                     _new_channel_uid()),
                 )
                 stats["channels_added"] += 1
             except Exception:
@@ -6132,10 +7558,17 @@ async def import_channel(request: Request):
     block_slots = data.get("block_slots", [])
 
     with get_db() as conn:
+        # INSERT OR REPLACE deletes the old row, so an existing channel's uid
+        # would be lost — re-importing over a channel must not change its
+        # identity. Keep it when the number is already taken, mint one otherwise.
+        prior = conn.execute(
+            "SELECT uid FROM channels WHERE number=?", (ch["number"],)
+        ).fetchone()
+        uid = (prior["uid"] if prior and prior["uid"] else None) or _new_channel_uid()
         conn.execute(
-            "INSERT OR REPLACE INTO channels (number, name, tier, vibe, mode, style, color) VALUES (?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO channels (number, name, tier, vibe, mode, style, color, uid) VALUES (?,?,?,?,?,?,?,?)",
             (ch["number"], ch["name"], ch.get("tier", "Galaxy Main"), ch.get("vibe", ""),
-             ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue")),
+             ch.get("mode", "Shuffle"), ch.get("style", ""), ch.get("color", "blue"), uid),
         )
         for a in assignments:
             try:

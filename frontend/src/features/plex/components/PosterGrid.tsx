@@ -1,4 +1,6 @@
+import type { DragEvent } from 'react'
 import { Button, EmptyState, PosterGridSkeleton } from '@/shared/components/ui'
+import { useUIStore } from '@/shared/store/ui.store'
 import { PlexThumb } from './PlexThumb'
 import type { Assignment, PlexItem } from '@/shared/types'
 
@@ -26,6 +28,37 @@ const LIST_THUMB: Record<PosterSize, string> = {
   large: 'w-14 h-20',
 }
 
+/** Visual-only checkbox — the surrounding control owns the click + ARIA. */
+function SelectCheck({ checked, className = '' }: { checked: boolean; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`pointer-events-none inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-md border-2 shadow-sm transition-colors ${
+        checked ? 'bg-indigo-600 border-indigo-400' : 'bg-slate-900/80 border-slate-400/70'
+      } ${className}`}
+    >
+      {checked && (
+        <svg
+          className="w-3 h-3 text-white"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={3}
+        >
+          <path d="M5 13l4 4L19 7" />
+        </svg>
+      )}
+    </span>
+  )
+}
+
+/** Native HTML5 drag props applied to a poster tile when selection is enabled. */
+interface DragSourceProps {
+  draggable?: boolean
+  onDragStart?: (e: DragEvent) => void
+  onDragEnd?: () => void
+}
+
 interface PosterGridProps {
   items: PlexItem[]
   assignedKeys: Set<string>
@@ -36,6 +69,13 @@ interface PosterGridProps {
   loading?: boolean
   viewMode?: PosterViewMode
   posterSize?: PosterSize
+  /**
+   * Multi-select layer — OPTIONAL and purely additive. Omit both props and the
+   * grid behaves exactly as it always has, with no selection affordances.
+   * Selection state is owned by the caller; the grid only reports toggles.
+   */
+  selectedKeys?: Set<string>
+  onToggleSelect?: (item: PlexItem) => void
 }
 
 export function PosterGrid({
@@ -48,7 +88,46 @@ export function PosterGrid({
   loading = false,
   viewMode = 'grid',
   posterSize = 'medium',
+  selectedKeys,
+  onToggleSelect,
 }: PosterGridProps) {
+  const setDraggingPlexItems = useUIStore((s) => s.setDraggingPlexItems)
+  const clearPlexDrag = useUIStore((s) => s.clearPlexDrag)
+
+  // Selection mode is driven by the toggle callback alone, so a caller can pass
+  // an empty Set without accidentally opting out.
+  const selectable = typeof onToggleSelect === 'function'
+
+  const isSelected = (item: PlexItem) => !!selectedKeys?.has(item.rating_key)
+
+  /** Toggle in selection mode, otherwise fall back to the detail drill-in. */
+  const primaryActivate = (item: PlexItem) => {
+    if (selectable) onToggleSelect?.(item)
+    else onDetail?.(item.rating_key)
+  }
+
+  /**
+   * Dragging a poster that is part of the current selection drags the WHOLE
+   * selection; dragging an unselected poster drags just that one.
+   */
+  const dragSource = (item: PlexItem): DragSourceProps => {
+    if (!selectable) return {}
+    return {
+      draggable: true,
+      onDragStart: (e: DragEvent) => {
+        const payload =
+          selectedKeys && selectedKeys.has(item.rating_key)
+            ? items.filter((i) => selectedKeys.has(i.rating_key))
+            : [item]
+        // Firefox refuses to start a drag unless dataTransfer carries something.
+        e.dataTransfer.setData('text/plain', payload.map((i) => i.rating_key).join(','))
+        e.dataTransfer.effectAllowed = 'copy'
+        setDraggingPlexItems(payload)
+      },
+      onDragEnd: () => clearPlexDrag(),
+    }
+  }
+
   if (loading) {
     return <PosterGridSkeleton count={12} />
   }
@@ -68,19 +147,39 @@ export function PosterGrid({
         {items.map((item) => {
           const isAssigned = assignedKeys.has(item.rating_key)
           const assignment = assignments.find((a) => a.plex_rating_key === item.rating_key)
+          const selected = isSelected(item)
 
           return (
             <div
               key={item.rating_key}
+              {...dragSource(item)}
               className={`group flex items-center gap-3 rounded-lg border transition-all px-2 py-1.5 [content-visibility:auto] [contain-intrinsic-size:auto_56px] ${
-                isAssigned
-                  ? 'border-emerald-600 bg-slate-800'
-                  : 'border-slate-700 bg-slate-800 hover:border-slate-500'
+                selectable ? 'cursor-grab active:cursor-grabbing' : ''
+              } ${
+                selected
+                  ? 'border-indigo-500 bg-indigo-950/40 ring-1 ring-indigo-500'
+                  : isAssigned
+                    ? 'border-emerald-600 bg-slate-800'
+                    : 'border-slate-700 bg-slate-800 hover:border-slate-500'
               }`}
             >
+              {/* Selection checkbox */}
+              {selectable && (
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={selected}
+                  aria-label={`Select ${item.title}`}
+                  onClick={() => onToggleSelect?.(item)}
+                  className="shrink-0 rounded-md focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  <SelectCheck checked={selected} />
+                </button>
+              )}
+
               {/* Thumbnail */}
               <button
-                onClick={() => onDetail?.(item.rating_key)}
+                onClick={() => primaryActivate(item)}
                 className={`${LIST_THUMB[posterSize]} shrink-0 rounded-sm overflow-hidden bg-slate-900 relative`}
               >
                 {item.thumb ? (
@@ -106,10 +205,7 @@ export function PosterGrid({
               </button>
 
               {/* Title + meta */}
-              <button
-                onClick={() => onDetail?.(item.rating_key)}
-                className="flex-1 min-w-0 text-left"
-              >
+              <button onClick={() => primaryActivate(item)} className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-medium text-slate-200 truncate group-hover:text-indigo-300 transition-colors">
                   {item.title}
                 </p>
@@ -155,24 +251,33 @@ export function PosterGrid({
         {items.map((item) => {
           const isAssigned = assignedKeys.has(item.rating_key)
           const assignment = assignments.find((a) => a.plex_rating_key === item.rating_key)
+          const selected = isSelected(item)
           return (
             <div
               key={item.rating_key}
+              {...dragSource(item)}
               title={`${item.title}${item.year ? ` (${item.year})` : ''}`}
               className={`group relative aspect-2/3 rounded overflow-hidden border [content-visibility:auto] [contain-intrinsic-size:auto_240px] ${
-                isAssigned ? 'border-emerald-500' : 'border-slate-700 hover:border-slate-500'
+                selectable ? 'cursor-grab active:cursor-grabbing' : ''
+              } ${
+                selected
+                  ? 'border-indigo-500 ring-2 ring-indigo-500'
+                  : isAssigned
+                    ? 'border-emerald-500'
+                    : 'border-slate-700 hover:border-slate-500'
               }`}
             >
               <div
-                role="button"
+                role={selectable ? 'checkbox' : 'button'}
                 tabIndex={0}
+                aria-checked={selectable ? selected : undefined}
                 aria-label={item.title}
                 className="absolute inset-0 bg-slate-900 cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
-                onClick={() => onDetail?.(item.rating_key)}
+                onClick={() => primaryActivate(item)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    onDetail?.(item.rating_key)
+                    primaryActivate(item)
                   }
                 }}
               >
@@ -188,6 +293,11 @@ export function PosterGrid({
                   </div>
                 )}
               </div>
+              {selectable && (
+                <span className="absolute top-1 left-1 pointer-events-none">
+                  <SelectCheck checked={selected} className="w-4 h-4" />
+                </span>
+              )}
               {isAssigned && (
                 <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm">
                   <svg
@@ -236,32 +346,44 @@ export function PosterGrid({
       {items.map((item) => {
         const isAssigned = assignedKeys.has(item.rating_key)
         const assignment = assignments.find((a) => a.plex_rating_key === item.rating_key)
+        const selected = isSelected(item)
 
         return (
           <div
             key={item.rating_key}
+            {...dragSource(item)}
             className={`group relative rounded-lg overflow-hidden border transition-all ${
-              isAssigned
-                ? 'border-emerald-600 bg-slate-800'
-                : 'border-slate-700 bg-slate-800 hover:border-slate-500'
+              selectable ? 'cursor-grab active:cursor-grabbing' : ''
+            } ${
+              selected
+                ? 'border-indigo-500 bg-indigo-950/40 ring-2 ring-indigo-500'
+                : isAssigned
+                  ? 'border-emerald-600 bg-slate-800'
+                  : 'border-slate-700 bg-slate-800 hover:border-slate-500'
             }`}
           >
             {/* Poster image */}
             <div
-              role="button"
+              role={selectable ? 'checkbox' : 'button'}
               tabIndex={0}
+              aria-checked={selectable ? selected : undefined}
               aria-label={item.title}
               className="relative aspect-2/3 bg-slate-900 overflow-hidden cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
-              onClick={() => onDetail?.(item.rating_key)}
+              onClick={() => primaryActivate(item)}
               onKeyDown={(e) => {
                 // Ignore key events bubbling from the overlay action button
                 if (e.target !== e.currentTarget) return
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  onDetail?.(item.rating_key)
+                  primaryActivate(item)
                 }
               }}
             >
+              {selectable && (
+                <span className="absolute top-1.5 left-1.5 z-10 pointer-events-none">
+                  <SelectCheck checked={selected} />
+                </span>
+              )}
               {item.thumb ? (
                 <PlexThumb
                   path={item.thumb}

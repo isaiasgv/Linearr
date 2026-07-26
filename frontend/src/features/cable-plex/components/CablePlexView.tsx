@@ -1,11 +1,17 @@
-import { useState, useMemo, memo, useEffect } from 'react'
+import { useState, useMemo, memo, useEffect, useCallback } from 'react'
 import Swal from 'sweetalert2'
 import { useChannels } from '@/features/channels/hooks'
-import { useAssignments } from '@/features/assignments/hooks'
-import { useUIStore } from '@/shared/store/ui.store'
+import { channelKey } from '@/features/channels/utils'
+import { useAssignments, useBulkAssign } from '@/features/assignments/hooks'
+import { toBulkAssignItem } from '@/features/assignments/utils'
+import { useUIStore, type CablePlexViewMode } from '@/shared/store/ui.store'
 import { useToastStore } from '@/shared/store/toast.store'
 import { tierColor } from '@/shared/components/ui/TierBadge'
 import { Spinner } from '@/shared/components/ui/Spinner'
+import { Button, EmptyState, IconButton, SegmentedControl } from '@/shared/components/ui'
+import { PlexThumb } from '@/features/plex/components/PlexThumb'
+import { THUMB_DENSE, THUMB_POSTER, type ThumbSize } from '@/features/plex/thumbSizes'
+import { AddContentPanel } from './AddContentPanel'
 import type { Channel } from '@/shared/types'
 
 // Preset lineup picker — only renders if user has dropped JSON files in ./data/presets/
@@ -92,7 +98,7 @@ function PresetLineupButton() {
   )
 }
 
-type ViewMode = 'compact' | 'expanded'
+type ViewMode = CablePlexViewMode
 type TierFilter = 'All' | 'Galaxy Main' | 'Classics' | 'Galaxy Premium'
 type PosterSize = 'small' | 'medium' | 'large'
 const POSTER_SIZES: Record<PosterSize, string> = {
@@ -101,38 +107,151 @@ const POSTER_SIZES: Record<PosterSize, string> = {
   large: 'w-20 h-28',
 }
 
-const TIER_FILTERS: TierFilter[] = ['All', 'Galaxy Main', 'Classics', 'Galaxy Premium']
-
-interface ChannelCardCompactProps {
-  channel: Channel
-  assignments: import('@/shared/types').Assignment[]
-  onClick: () => void
+// Requested transcode size per rendered poster size. Only the two CANONICAL
+// sizes are used — a bespoke size per rendering would give every poster size its
+// own key in all three cache layers, so toggling S/M/L would re-download the
+// visible grid and nothing would be shared with the rest of the app. S and M
+// both take the dense size (identical key → toggling between them is free), and
+// L takes the poster size every other view already requests, so an L grid is
+// warm straight from the Content tab. See PlexThumb + CLAUDE.md.
+const POSTER_DIMS: Record<PosterSize, ThumbSize> = {
+  small: THUMB_DENSE, // 40x56 CSS
+  medium: THUMB_DENSE, // 56x80 CSS
+  large: THUMB_POSTER, // 80x112 CSS
 }
 
-function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCardCompactProps) {
+// Compact-card collage cells are ~45x80 CSS px — the dense size, same key as
+// the S/M strips above.
+const COLLAGE_DIMS = THUMB_DENSE
+
+const TIER_FILTERS: TierFilter[] = ['All', 'Galaxy Main', 'Classics', 'Galaxy Premium']
+
+/**
+ * Small "+" affordance that lives INSIDE a channel card. The card itself is a
+ * div[role="button"] (a nested <button> inside a <button> is invalid HTML), and
+ * this stops both click and key events so opening the picker never also
+ * navigates into the channel.
+ */
+function AddContentButton({
+  onAdd,
+  label,
+  className = '',
+}: {
+  onAdd: () => void
+  label?: string
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      aria-label="Add content to this channel"
+      title="Add content"
+      onClick={(e) => {
+        e.stopPropagation()
+        onAdd()
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className={`inline-flex items-center justify-center gap-1 rounded-lg border border-slate-600 bg-slate-900/85 text-slate-200 hover:bg-indigo-600 hover:border-indigo-400 hover:text-white transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${className}`}
+    >
+      <svg
+        className="w-3.5 h-3.5 shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+      {label && <span className="text-xs font-medium">{label}</span>}
+    </button>
+  )
+}
+
+/**
+ * Drop-target wiring shared by both card layouts. Native HTML5 DnD — the same
+ * idiom as the block HourGrid and the channel-reorder rows.
+ */
+interface CardDropProps {
+  /** This card is the current drop target. */
+  isDropTarget: boolean
+  /** A Plex-item drag is in flight anywhere in the view. */
+  dragActive: boolean
+  onDragOverCard: (channel: Channel, e: React.DragEvent) => void
+  onDragLeaveCard: (channel: Channel) => void
+  onDropCard: (channel: Channel, e: React.DragEvent) => void
+}
+
+/** Border/background for a card, resolved to ONE class per property so
+ *  Tailwind never has to break a tie between conflicting utilities. */
+function cardStateClasses(isDropTarget: boolean, dragActive: boolean): string {
+  if (isDropTarget) return 'border-indigo-400 ring-2 ring-indigo-400 bg-indigo-950/60'
+  if (dragActive) return 'border-dashed border-indigo-700 bg-slate-900 hover:border-indigo-400'
+  return 'border-slate-700 bg-slate-900 hover:border-slate-500 hover:bg-slate-800'
+}
+
+interface ChannelCardCompactProps extends CardDropProps {
+  channel: Channel
+  assignments: import('@/shared/types').Assignment[]
+  onOpen: (channel: Channel) => void
+  onAddContent: (channel: Channel) => void
+}
+
+function ChannelCardCompact({
+  channel,
+  assignments: items,
+  onOpen,
+  onAddContent,
+  isDropTarget,
+  dragActive,
+  onDragOverCard,
+  onDragLeaveCard,
+  onDropCard,
+}: ChannelCardCompactProps) {
   const shows = items.filter((a) => a.plex_type === 'show')
   const movies = items.filter((a) => a.plex_type === 'movie')
   const thumbItems = items.filter((a) => a.plex_thumb).slice(0, 6)
 
   return (
-    <button
-      onClick={onClick}
-      className="bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl overflow-hidden text-left transition-all hover:bg-slate-800 group flex flex-col"
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Channel ${channel.number} ${channel.name}`}
+      onClick={() => onOpen(channel)}
+      onKeyDown={(e) => {
+        // Ignore keys bubbling from the inner add-content button
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen(channel)
+        }
+      }}
+      onDragOver={(e) => onDragOverCard(channel, e)}
+      onDragLeave={() => onDragLeaveCard(channel)}
+      onDrop={(e) => onDropCard(channel, e)}
+      className={`relative border rounded-xl overflow-hidden text-left transition-all group flex flex-col cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${cardStateClasses(
+        isDropTarget,
+        dragActive,
+      )}`}
     >
+      {isDropTarget && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-indigo-950/70 pointer-events-none">
+          <span className="text-xs font-semibold text-indigo-100 bg-indigo-600 rounded-full px-2.5 py-1 shadow-lg">
+            Drop to add
+          </span>
+        </div>
+      )}
       {/* Poster collage strip */}
       <div className="h-20 relative overflow-hidden bg-slate-950">
         {thumbItems.length > 0 ? (
           <div className="absolute inset-0 flex">
             {thumbItems.map((a, i) => (
               <div key={i} className="flex-1 min-w-0 relative">
-                <img
-                  src={`/api/plex/thumb?path=${encodeURIComponent(a.plex_thumb!)}`}
+                <PlexThumb
+                  path={a.plex_thumb}
                   alt=""
-                  loading="lazy"
+                  w={COLLAGE_DIMS.w}
+                  h={COLLAGE_DIMS.h}
                   className="absolute inset-0 w-full h-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
                 />
               </div>
             ))}
@@ -164,6 +283,10 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
             {channel.name}
           </span>
         </div>
+        {/* Add content — top-left, out of the way of the stats badges */}
+        <div className="absolute top-1.5 left-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+          <AddContentButton onAdd={() => onAddContent(channel)} className="w-6 h-6" />
+        </div>
         {/* Stats top-right */}
         <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
           {shows.length > 0 && (
@@ -189,16 +312,17 @@ function ChannelCardCompact({ channel, assignments: items, onClick }: ChannelCar
           <p className="text-xs text-slate-600 italic">No content assigned</p>
         ) : null}
       </div>
-    </button>
+    </div>
   )
 }
 
-interface ChannelCardExpandedProps {
+interface ChannelCardExpandedProps extends CardDropProps {
   channel: Channel
   assignments: import('@/shared/types').Assignment[]
   posterSize: PosterSize
   thumbFilter: 'all' | 'shows' | 'movies'
-  onClick: () => void
+  onOpen: (channel: Channel) => void
+  onAddContent: (channel: Channel) => void
 }
 
 const ChannelCardExpanded = memo(function ChannelCardExpanded({
@@ -206,7 +330,13 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
   assignments: items,
   posterSize,
   thumbFilter,
-  onClick,
+  onOpen,
+  onAddContent,
+  isDropTarget,
+  dragActive,
+  onDragOverCard,
+  onDragLeaveCard,
+  onDropCard,
 }: ChannelCardExpandedProps) {
   const shows = items.filter((a) => a.plex_type === 'show')
   const movies = items.filter((a) => a.plex_type === 'movie')
@@ -214,12 +344,35 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
   const thumbItems = filteredItems.filter((a) => a.plex_thumb)
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-xl text-left transition-all hover:bg-slate-800 overflow-hidden cursor-pointer"
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Channel ${channel.number} ${channel.name}`}
+      onClick={() => onOpen(channel)}
+      onKeyDown={(e) => {
+        // Ignore keys bubbling from the inner add-content button
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen(channel)
+        }
+      }}
+      onDragOver={(e) => onDragOverCard(channel, e)}
+      onDragLeave={() => onDragLeaveCard(channel)}
+      onDrop={(e) => onDropCard(channel, e)}
+      className={`relative w-full border rounded-xl text-left transition-all overflow-hidden cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${cardStateClasses(
+        isDropTarget,
+        dragActive,
+      )}`}
       style={{ contentVisibility: 'auto', containIntrinsicHeight: '80px' }}
     >
+      {isDropTarget && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-indigo-950/70 pointer-events-none">
+          <span className="text-xs font-semibold text-indigo-100 bg-indigo-600 rounded-full px-2.5 py-1 shadow-lg">
+            Drop to add to Ch {channel.number}
+          </span>
+        </div>
+      )}
       <div className="flex items-stretch">
         {/* Channel info */}
         <div className="p-3 flex items-center gap-3 shrink-0 w-48">
@@ -273,15 +426,12 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
               className={`${POSTER_SIZES[posterSize]} shrink-0 rounded-sm overflow-hidden bg-slate-800 relative`}
               title={a.plex_title}
             >
-              <img
-                src={`/api/plex/thumb?path=${encodeURIComponent(a.plex_thumb!)}`}
+              <PlexThumb
+                path={a.plex_thumb}
                 alt={a.plex_title}
-                loading="lazy"
-                decoding="async"
+                w={POSTER_DIMS[posterSize].w}
+                h={POSTER_DIMS[posterSize].h}
                 className="absolute inset-0 w-full h-full object-cover"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
               />
             </div>
           ))}
@@ -289,8 +439,12 @@ const ChannelCardExpanded = memo(function ChannelCardExpanded({
             <span className="text-xs text-slate-700 italic">No posters</span>
           )}
         </div>
+        {/* Add content */}
+        <div className="shrink-0 flex items-center pr-3 pl-1">
+          <AddContentButton onAdd={() => onAddContent(channel)} label="Add" className="px-2 py-1" />
+        </div>
       </div>
-    </button>
+    </div>
   )
 })
 
@@ -299,14 +453,33 @@ export function CablePlexView() {
   const { data: assignments = {} } = useAssignments()
   const selectChannel = useUIStore((s) => s.selectChannel)
   const setActiveView = useUIStore((s) => s.setActiveView)
+  const openModal = useUIStore((s) => s.openModal)
   const addToast = useToastStore((s) => s.addToast)
 
   const [search, setSearch] = useState('')
   const [exporting, setExporting] = useState(false)
   const [tierFilter, setTierFilter] = useState<TierFilter>('All')
-  const [viewMode, setViewMode] = useState<ViewMode>('compact')
-  const [posterSize, setPosterSize] = useState<PosterSize>('medium')
+  // View mode + poster size are persisted preferences (expanded is the default
+  // for a first-time visitor; a stored choice always wins).
+  const viewMode = useUIStore((s) => s.cablePlexViewMode)
+  const setViewMode = useUIStore((s) => s.setCablePlexViewMode)
+  const posterSize = useUIStore((s) => s.cablePlexPosterSize)
+  const setPosterSize = useUIStore((s) => s.setCablePlexPosterSize)
   const [thumbFilter, setThumbFilter] = useState<'all' | 'shows' | 'movies'>('all')
+
+  // Plex tray — the drag source. Posters live beside the cards so a selection
+  // can be dragged straight onto any channel.
+  const [trayOpen, setTrayOpen] = useState(false)
+  const [trayChannel, setTrayChannel] = useState<number | null>(null)
+
+  // Drag-to-assign state (native HTML5 DnD, state in Zustand — same idiom as
+  // the block HourGrid).
+  const draggingPlexItems = useUIStore((s) => s.draggingPlexItems)
+  const plexDropChannel = useUIStore((s) => s.plexDropChannelNumber)
+  const setPlexDropChannel = useUIStore((s) => s.setPlexDropChannel)
+  const clearPlexDrag = useUIStore((s) => s.clearPlexDrag)
+  const { mutate: bulkAssignMutate } = useBulkAssign()
+  const dragActive = (draggingPlexItems?.length ?? 0) > 0
 
   const filtered = useMemo(() => {
     return channels.filter((ch) => {
@@ -319,10 +492,59 @@ export function CablePlexView() {
     })
   }, [channels, tierFilter, search])
 
-  const handleChannelClick = (channel: Channel) => {
-    selectChannel(channel)
-    setActiveView('channel')
-  }
+  const handleChannelClick = useCallback(
+    (channel: Channel) => {
+      selectChannel(channel)
+      setActiveView('channel')
+    },
+    [selectChannel, setActiveView],
+  )
+
+  const handleAddContent = useCallback(
+    (channel: Channel) => {
+      openModal('addContent', { addContentChannel: channel.number })
+    },
+    [openModal],
+  )
+
+  // The live drag payload is read from the store at event time (getState) so
+  // these handlers stay referentially stable across a drag.
+  const handleDragOverCard = useCallback(
+    (channel: Channel, e: React.DragEvent) => {
+      if (!useUIStore.getState().draggingPlexItems) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+      setPlexDropChannel(channel.number)
+    },
+    [setPlexDropChannel],
+  )
+
+  const handleDragLeaveCard = useCallback(
+    (channel: Channel) => {
+      if (useUIStore.getState().plexDropChannelNumber === channel.number) setPlexDropChannel(null)
+    },
+    [setPlexDropChannel],
+  )
+
+  const handleDropCard = useCallback(
+    (channel: Channel, e: React.DragEvent) => {
+      const items = useUIStore.getState().draggingPlexItems
+      clearPlexDrag()
+      if (!items || items.length === 0) return
+      e.preventDefault()
+      // One bulk call — the server skips duplicates on the uniqueness
+      // constraint, and useBulkAssign owns the toast + cache invalidation.
+      bulkAssignMutate({ channelNumber: channel.number, items: items.map(toBulkAssignItem) })
+    },
+    [bulkAssignMutate, clearPlexDrag],
+  )
+
+  // Fall back to the first visible channel so the tray always has a valid
+  // "Add to" target even before the user picks one.
+  const trayTarget =
+    trayChannel !== null && channels.some((c) => c.number === trayChannel)
+      ? trayChannel
+      : (filtered[0]?.number ?? channels[0]?.number ?? null)
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -359,90 +581,41 @@ export function CablePlexView() {
           </div>
 
           {/* View toggle */}
-          <div className="flex gap-1 bg-slate-900 border border-slate-700 rounded-lg p-1 ml-auto">
-            <button
-              onClick={() => setViewMode('compact')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'compact'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              <svg
-                className="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
-              Compact
-            </button>
-            <button
-              onClick={() => setViewMode('expanded')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'expanded'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              <svg
-                className="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
-              </svg>
-              Expanded
-            </button>
-          </div>
+          <SegmentedControl<ViewMode>
+            className="ml-auto"
+            options={[
+              { value: 'compact', label: 'Compact' },
+              { value: 'expanded', label: 'Expanded' },
+            ]}
+            value={viewMode}
+            onChange={setViewMode}
+          />
 
           {/* Expanded view controls */}
           {viewMode === 'expanded' && (
             <>
               {/* Content type filter */}
-              <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
-                {[
-                  { v: 'all' as const, l: 'All' },
-                  { v: 'shows' as const, l: 'Shows' },
-                  { v: 'movies' as const, l: 'Movies' },
-                ].map(({ v, l }) => (
-                  <button
-                    key={v}
-                    onClick={() => setThumbFilter(v)}
-                    className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                      thumbFilter === v
-                        ? 'bg-slate-600 text-white'
-                        : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl<'all' | 'shows' | 'movies'>
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'shows', label: 'Shows' },
+                  { value: 'movies', label: 'Movies' },
+                ]}
+                value={thumbFilter}
+                onChange={setThumbFilter}
+                tone="neutral"
+              />
               {/* Poster size toggle */}
-              <div className="flex gap-0.5 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
-                {(['small', 'medium', 'large'] as PosterSize[]).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setPosterSize(s)}
-                    title={s.charAt(0).toUpperCase() + s.slice(1)}
-                    className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                      posterSize === s
-                        ? 'bg-slate-600 text-white'
-                        : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    {s.charAt(0).toUpperCase()}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl<PosterSize>
+                options={[
+                  { value: 'small', label: 'S' },
+                  { value: 'medium', label: 'M' },
+                  { value: 'large', label: 'L' },
+                ]}
+                value={posterSize}
+                onChange={setPosterSize}
+                tone="neutral"
+              />
             </>
           )}
         </div>
@@ -560,6 +733,27 @@ export function CablePlexView() {
             />
           </label>
           <PresetLineupButton />
+          <Button
+            size="sm"
+            variant={trayOpen ? 'primary' : 'secondary'}
+            aria-pressed={trayOpen}
+            onClick={() => setTrayOpen((o) => !o)}
+            className="ml-auto"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+            {trayOpen ? 'Hide Plex tray' : 'Plex tray'}
+          </Button>
         </div>
 
         {/* Tier filter tabs */}
@@ -605,10 +799,16 @@ export function CablePlexView() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {filtered.map((ch) => (
               <ChannelCardCompact
-                key={ch.number}
+                key={channelKey(ch)}
                 channel={ch}
                 assignments={assignments[ch.number] ?? []}
-                onClick={() => handleChannelClick(ch)}
+                onOpen={handleChannelClick}
+                onAddContent={handleAddContent}
+                isDropTarget={plexDropChannel === ch.number}
+                dragActive={dragActive}
+                onDragOverCard={handleDragOverCard}
+                onDragLeaveCard={handleDragLeaveCard}
+                onDropCard={handleDropCard}
               />
             ))}
           </div>
@@ -616,17 +816,82 @@ export function CablePlexView() {
           <div className="space-y-2">
             {filtered.map((ch) => (
               <ChannelCardExpanded
-                key={ch.number}
+                key={channelKey(ch)}
                 channel={ch}
                 assignments={assignments[ch.number] ?? []}
                 posterSize={posterSize}
                 thumbFilter={thumbFilter}
-                onClick={() => handleChannelClick(ch)}
+                onOpen={handleChannelClick}
+                onAddContent={handleAddContent}
+                isDropTarget={plexDropChannel === ch.number}
+                dragActive={dragActive}
+                onDragOverCard={handleDragOverCard}
+                onDragLeaveCard={handleDragLeaveCard}
+                onDropCard={handleDropCard}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Plex tray — browse + multi-select, then drag onto any card above
+          (or add the selection to the target channel). */}
+      {trayOpen && (
+        <section
+          aria-label="Plex tray"
+          className="shrink-0 flex flex-col border-t border-slate-800 bg-slate-950 h-[45vh] min-h-64"
+        >
+          <div className="shrink-0 flex items-center gap-3 flex-wrap px-4 py-2 border-b border-slate-800">
+            <h2 className="text-sm font-semibold text-slate-100">Plex tray</h2>
+            <p className="text-xs text-slate-500">
+              Select posters, then drag them onto any channel card — or add them to the target
+              channel.
+            </p>
+            <label className="ml-auto flex items-center gap-1.5 text-xs text-slate-400">
+              Target
+              <select
+                value={trayTarget ?? ''}
+                onChange={(e) => setTrayChannel(Number(e.target.value))}
+                disabled={channels.length === 0}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50 max-w-56"
+              >
+                {channels.map((c) => (
+                  <option key={channelKey(c)} value={c.number}>
+                    {c.number} · {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <IconButton label="Close Plex tray" onClick={() => setTrayOpen(false)}>
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </IconButton>
+          </div>
+
+          {trayTarget !== null ? (
+            // No `key` here on purpose: switching the target must NOT wipe a
+            // selection the user built up to drag onto a card.
+            <AddContentPanel
+              channelNumber={trayTarget}
+              className="flex-1 min-h-0"
+              hint="Click posters to select them, then drag the selection onto a channel card."
+            />
+          ) : (
+            <EmptyState
+              title="No channels yet"
+              description="Create a channel before adding Plex content to it."
+              className="flex-1"
+            />
+          )}
+        </section>
+      )}
     </div>
   )
 }

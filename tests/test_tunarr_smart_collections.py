@@ -8,6 +8,7 @@ and never trust a bare 2xx.
 """
 import httpx
 import pytest
+from fastapi import HTTPException
 
 import main
 
@@ -63,7 +64,7 @@ async def test_writer_sends_filter_first():
 
 
 @pytest.mark.anyio
-async def test_writer_retries_when_2xx_drops_rules():
+async def test_writer_retries_when_2xx_drops_rules(monkeypatch):
     """A 2xx that doesn't echo the search object back must trigger a retry,
     and the retry must UPDATE the just-created collection, not POST a duplicate."""
     import json as _j
@@ -78,16 +79,14 @@ async def test_writer_retries_when_2xx_drops_rules():
         return httpx.Response(201 if request.method == "POST" else 200, json=saved)
 
     # Force the wrong field first to simulate a Tunarr that drops it silently.
-    orig = main._SC_FIELDS
-    main._SC_FIELDS = ("query", "filter")
-    try:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler),
-                                     base_url="http://t.test") as client:
-            resp = await main._tunarr_write_smart_collection(
-                client, "http://t.test", "/api/smart_collections",
-                name="X", structured=main._tunarr_tags_filter("X"))
-    finally:
-        main._SC_FIELDS = orig
+    # monkeypatch (not try/finally) so the global is restored even if the test
+    # dies between the swap and the restore.
+    monkeypatch.setattr(main, "_SC_FIELDS", ("query", "filter"))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler),
+                                 base_url="http://t.test") as client:
+        resp = await main._tunarr_write_smart_collection(
+            client, "http://t.test", "/api/smart_collections",
+            name="X", structured=main._tunarr_tags_filter("X"))
 
     assert resp.json().get("filter"), "retry must persist the rules"
     assert calls[0][0] == "POST" and "query" in calls[0][2]
@@ -97,17 +96,15 @@ async def test_writer_retries_when_2xx_drops_rules():
 
 
 @pytest.mark.anyio
-async def test_writer_retries_on_500():
+async def test_writer_retries_on_500(monkeypatch):
     transport, state = _mock_tunarr("strict-filter")
-    orig = main._SC_FIELDS
-    main._SC_FIELDS = ("query", "filter")  # wrong field first → 500 → retry
-    try:
-        async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
-            resp = await main._tunarr_write_smart_collection(
-                client, "http://t.test", "/api/smart_collections",
-                name="X", structured=main._tunarr_tags_filter("X"))
-    finally:
-        main._SC_FIELDS = orig
+    # wrong field first → 500 → retry. monkeypatch so an abnormal exit cannot
+    # leak the swapped global into the rest of the session.
+    monkeypatch.setattr(main, "_SC_FIELDS", ("query", "filter"))
+    async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
+        resp = await main._tunarr_write_smart_collection(
+            client, "http://t.test", "/api/smart_collections",
+            name="X", structured=main._tunarr_tags_filter("X"))
     assert resp.status_code == 201 and resp.json().get("filter")
     assert "query" in state["posts"][0] and "filter" in state["posts"][1]
 
@@ -174,3 +171,76 @@ async def test_task_run_falls_back_to_empty_object():
         r = await main._tunarr_run_task_request(client, "http://t.test", "ScanLibrariesTask")
     assert r.status_code == 200
     assert seen == [False, True], "must retry once with {} after a bare-400"
+
+
+def _install_mock_client(monkeypatch, handler):
+    """Point the handler's internally-built `httpx.AsyncClient` at a MockTransport.
+
+    `tunarr_list_smart_collections` constructs its own client
+    (`httpx.AsyncClient(timeout=10.0)`), so we swap `main.httpx.AsyncClient` for a
+    factory returning a real client bound to the mock transport — still a valid
+    async context manager, so the call site is untouched. The real class is
+    captured BEFORE patching, otherwise the factory would recurse into itself
+    (`main.httpx` is the `httpx` module object itself).
+    """
+    calls: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return handler(request)
+
+    transport = httpx.MockTransport(_handler)
+    real_async_client = httpx.AsyncClient
+
+    def _factory(*args, **kwargs):
+        return real_async_client(transport=transport)
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", _factory)
+    return calls
+
+
+def test_smart_collections_path_constant_is_underscored():
+    """The constant's value is itself load-bearing — Tunarr 1.2.10..1.3.6 only
+    ever served the underscored route."""
+    assert main._TUNARR_SC_PATH == "/api/smart_collections"
+
+
+@pytest.mark.anyio
+async def test_list_smart_collections_does_not_retry_hyphen_on_404(monkeypatch):
+    """Regression: Linearr used to retry `/api/smart-collections` after a 404 on
+    `/api/smart_collections`. That route has never existed in any supported
+    Tunarr version, so the retry was dead code that doubled every failure's
+    latency and masked the real error. Drive the REAL route handler: a 404 must
+    produce exactly one request (the underscored one) and surface as an error.
+    """
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="Not Found")
+
+    calls = _install_mock_client(monkeypatch, handler)
+
+    with pytest.raises(HTTPException) as exc:
+        await main.tunarr_list_smart_collections()
+
+    assert [r.url.path for r in calls] == ["/api/smart_collections"], (
+        "a 404 must NOT be followed by a hyphenated retry — "
+        f"saw {[r.url.path for r in calls]}"
+    )
+    assert exc.value.status_code == 404, "the 404 must surface, not be swallowed"
+
+
+@pytest.mark.anyio
+async def test_list_smart_collections_uses_underscored_path_on_success(monkeypatch):
+    """Happy path: one GET, underscored, and the Tunarr payload is returned as-is."""
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
+
+    payload = [{"uuid": "u-1", "name": "Galaxy ONE Movies"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    calls = _install_mock_client(monkeypatch, handler)
+
+    assert await main.tunarr_list_smart_collections() == payload
+    assert [(r.method, r.url.path) for r in calls] == [("GET", "/api/smart_collections")]

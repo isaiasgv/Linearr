@@ -97,9 +97,41 @@ frontend/src/
     ├── ai/                     # AI content advisor, network advisor, day generator
     ├── tunarr/                 # Tunarr channel links, schedules, smart collections
     ├── settings/               # Plex URL/token, AI keys, OAuth PIN flow
-    ├── cable-plex/             # Cable+Plex combined view
+    ├── watermark/              # Per-channel Tunarr watermark config + live preview
+    ├── cable-plex/             # Cable+Plex combined view + add-content picker/tray
     └── generic-blocks/         # Reusable blocks view (no channel context)
 ```
+
+### Cable Plex view
+
+Two layouts — **compact** (card grid) and **expanded** (wide rows with a full
+poster strip). **Expanded is the default**; both the layout and the expanded
+poster size are persisted in `localStorage` via `ui.store.ts`
+(`linearr:cablePlexViewMode`, `linearr:cablePlexPosterSize`), so a stored
+choice always beats the default.
+
+Two ways to add content to a channel, both ending in ONE
+`POST /api/assignments/bulk` (`useBulkAssign`):
+
+- **Add-content modal** — the "+" affordance on a channel card opens the
+  propless, store-driven `addContent` modal (target channel carried in
+  `addContentChannel`). It embeds `PlexBrowser`; a sticky footer adds the whole
+  selection at once.
+- **Plex tray + drag** — the "Plex tray" drawer keeps posters on screen next to
+  the cards. Dragging a poster that is part of the selection drags the whole
+  selection, otherwise just that poster; channel cards are drop targets.
+
+Both reuse one selection primitive: the **optional** `selectedKeys` /
+`onToggleSelect` props on `features/plex/components/PosterGrid.tsx` (passed
+through by `PlexBrowser`). Omit them and `PosterGrid` behaves exactly as it did
+before — no checkboxes, no rings, no drag. Drag is native HTML5 with the
+payload in `ui.store` (`draggingPlexItems` / `plexDropChannelNumber`) — there is
+no drag library in `frontend/package.json` and there must not be one.
+
+`toBulkAssignItem` (`features/assignments/utils.ts`) is the single
+`PlexItem → bulk-assign row` mapping. Never client-filter duplicates — the DB
+uniqueness constraint on `(channel_number, plex_rating_key)` skips them and the
+response reports `{added, skipped}`.
 
 ### Path alias
 `@/` maps to `frontend/src/` (configured in `vite.config.ts`). Use `@/shared/...` and `@/features/...`.
@@ -124,6 +156,7 @@ frontend/src/
 ['tunarr', 'collection-links']
 ['tunarr', 'smart-collections']
 ['tunarr', 'schedule', tunarrId]
+['watermark', channelNumber]
 ['ai-logs']
 ```
 
@@ -152,10 +185,48 @@ channel_collections  -- user-linked Plex collections per channel+type
   (channel_number, plex_type UNIQUE)
   fields: collection_rating_key, collection_title
 
+channels             -- TV channels (authoritative source; channels.py is a seed snapshot)
+  (number PK)
+  fields: name, tier, vibe, mode, style, color, icon (data URI),
+          uid (uuid4 — STABLE identity for clients; `number` is mutated by a
+          reorder and `name` is not unique. Additive only: no route takes it,
+          every creation path must supply one, and a trigger backfills any
+          insert that doesn't),
+          watermark (JSON blob, NULL = none), watermark_image_url (absolute URL
+          Tunarr fetches — ffmpeg cannot read the data URI icons are stored as)
+
 settings             -- key/value store (plex_url, plex_token, client_id, pending_pin_id)
 ```
 
 **Schema migrations** use `ALTER TABLE ... ADD COLUMN` wrapped in `try/except sqlite3.OperationalError` — always use this pattern for new columns, never recreate tables.
+
+### `channels.number` is a primary key referenced by value
+
+`channels.number` is the PRIMARY KEY *and* six tables carry a `channel_number` value
+reference to it with **no foreign keys**: `assignments`, `blocks`, `channel_collections`,
+`tunarr_channel_links`, `tunarr_collection_links`, `ai_logs`. (`block_slots` follows
+`blocks` via `block_id`.) That tuple is `_CHANNEL_REF_TABLES` in `main.py`, read by
+`update_channel` and the reorder endpoint via `_move_channel_number`.
+
+**`delete_channel` uses a different list on purpose** — `_CHANNEL_DELETE_TABLES`, which is
+`_CHANNEL_REF_TABLES` minus `ai_logs`. A renumber must carry the AI logs (otherwise they
+end up pointing at whatever channel later takes that number); a delete must NOT destroy
+them (write-only audit trail, no other copy, not mentioned in the confirmation). Do not
+re-unify the two lists.
+
+Consequences:
+- **There is no `order_index` — reordering channels means renumbering them.**
+- Any renumber must go through the transactional endpoint (`POST /api/channels/reorder`)
+  or `PUT /api/channels/{n}` — never hand-write `UPDATE channels SET number=…`, which
+  silently orphans rows in all six tables.
+- A renumber is written in **two phases** (`_renumber_channels`): park every affected row
+  at a temporary negative number, then write the finals. A reorder is normally a *cycle*,
+  so a single-phase sequential update collides on the PRIMARY KEY immediately.
+- Frontend: after a renumber, invalidate everything keyed by channel number —
+  `['assignments']`, `['blocks']`, `['channel-collections']`, `['collection-status']`,
+  `['tunarr','links']`, `['tunarr','collection-links']`, `['watermark']` — and never key a
+  React list on `ch.number`. Key on `ch.uid` (see the `channels` schema above): `name` is
+  not unique either, so `tier|name` is not an identity.
 
 ---
 
@@ -169,6 +240,29 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 - `GET /api/channels` — returns all rows from the SQLite `channels` table (ordered by number)
 - `GET /api/channels/suggest-247` — analyze Plex library, return 24/7 loop channel candidates
 - `POST /api/channels/ai-suggest` — AI-generate channel + package suggestions from DB
+- `POST /api/channels/reorder` — drag-and-drop reorder, i.e. **renumber**.
+  Body `{moved_number, target_index, target_tier}`; `target_index` is the 0-based index the
+  moved channel should occupy in the **resulting** lineup (dropping onto a row = that row's
+  pre-drop index), and `target_tier` is only for a cross-tier move (`null` keeps the tier).
+  Returns `{changed: [{old_number, new_number, tier}], channels: [...full new lineup...],
+  tunarr: {synced, failed: [{number, message, state, parked_number}]}}`.
+  The renumber math is the pure `_compute_reorder` (mirrored client-side in
+  `frontend/src/features/channels/reorder.ts` for the confirm preview only); the write is
+  one all-or-nothing transaction cascading to `_CHANNEL_REF_TABLES`.
+  Tunarr propagation runs **after** the commit and can never undo it — a failure entry's
+  `state` is `unchanged` (Tunarr kept the old number, harmless) or `parked` (the Tunarr
+  channel is stranded on temporary number `parked_number` and needs attention). Never
+  report either as "the reorder failed".
+- `PUT /api/channels/{n}` also renumbers when `body.number` differs from the path number
+  (409 if the target number is taken).
+- `GET|PUT|DELETE /api/channels/{n}/watermark` — per-channel Tunarr watermark config.
+  `GET` returns `{watermark: null}` or the stored config plus a server-owned `image_url`;
+  `PUT`/`DELETE` also re-sync the channel to Tunarr and return `tunarr_sync`. Validation
+  mirrors Tunarr's zod rules (`width` strictly > 0 as a percent of frame width, integer
+  `opacity` 0–100, margins 0–100, `duration` seconds ≥ 0, `fade.period_mins` ≥ 1).
+- `POST /api/channels/{n}/watermark/image` — resolve the watermark image to an absolute
+  URL Tunarr can fetch. Body `{image}` (data URI), `{url}` (absolute), or `{}` to use the
+  channel icon; data URIs are uploaded via Tunarr's `POST /api/upload/image`.
 
 ### Assignments
 - `GET /api/assignments` — all assignments grouped by channel_number
@@ -231,15 +325,33 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 ### Tunarr
 > **Version support:** tested against Tunarr **1.3.6**; minimum supported **1.2.10**.
 > Support is a floor (`version >= TUNARR_MIN_VERSION`), not a ceiling — see
-> `TUNARR_MIN_VERSION` / `TUNARR_TESTED_VERSION` in `main.py`. The smart-collection
-> search body field is **`filter`** (all versions; `query` is only Tunarr's DB column)
-> and it's optional in Tunarr's schema — so writes must verify the response echoes the
-> rules back, not just trust a 2xx (`_tunarr_write_smart_collection` retries with the
-> other field name on 400/422/500 **or** a rule-dropping 2xx). Tag-based smart
+> `TUNARR_MIN_VERSION` / `TUNARR_TESTED_VERSION` in `main.py`.
+> **`/api/smart_collections` is underscored in every supported version** (verified in
+> Tunarr's `smartCollectionsApi.ts` at v1.2.10 and v1.3.6) — there is no hyphenated
+> alias, so a wrong separator is a plain 404. The smart-collection search body field is
+> **`filter`** (all versions; `query` is only Tunarr's DB column) and it's optional in
+> Tunarr's schema — so writes must verify the response echoes the rules back, not just
+> trust a 2xx (`_tunarr_write_smart_collection` retries with the other field name on
+> 400/422/500 **or** a rule-dropping 2xx). Tag-based smart
 > collections require the Plex collection to exist as a tag in Tunarr's index, so both
 > sync flows run `ScanLibrariesTask` in the foreground *before* writing them.
-> Channel creates try the 1.3 `{"type":"new","channel":{…}}` shape then fall back to the
-> flat object (`_tunarr_create_channel`); schedule slots carry an `id` (1.3 linkable slots).
+> Schedule slots carry an `id` (1.3 linkable slots).
+>
+> **Channel writes go through `_tunarr_save_channel` (read-modify-write).** Tunarr's
+> `PUT /api/channels/:id` validates the body as the FULL `SaveableChannel` — only
+> `onDemand` is partial — so a partial PUT is a 400. Never compute
+> `guideMinimumDuration` (its unit is inconsistent inside Tunarr) or `duration`
+> (server-maintained); echo them back. Read-only keys Tunarr strips on write:
+> `programCount`, `transcoding`, `sessions`, `fallback`. Creates use only the
+> discriminated `{"type":"new","channel":{…}}` body — no Tunarr 1.x accepts a flat
+> object — and must carry a real `transcodeConfigId` from
+> `_tunarr_resolve_transcode_config` (1.3.x validates it as a uuid AND checks existence;
+> `transcoding` is read-only and stripped). A duplicate channel number returns **500, not
+> 409** — there is no 409 anywhere in the channel API. The watermark schema is
+> byte-identical from v1.0.0 to v1.3.9; `animated` and `fadeConfig[].programType` are
+> persisted but never read, and only `fadeConfig[0]` is applied — so clearing a watermark
+> pushes an explicit `enabled: false` (read-modify-write would otherwise echo Tunarr's
+> existing one straight back).
 
 - `GET /api/tunarr/channels`
 - `GET /api/tunarr/channels/{id}/schedule`
@@ -256,6 +368,10 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 - `GET /api/tunarr/smart-collections`
 - `PUT /api/tunarr/smart-collections/{uuid}`
 - `DELETE /api/tunarr/smart-collections/{uuid}`
+- `GET /api/tunarr/image?path=` — proxies a Tunarr-hosted image (`/images/…` only) for the
+  **browser**. Stored watermark URLs point at the Tunarr container (`http://tunarr:8000`),
+  which a LAN browser cannot resolve; keeps the 7-day immutable cache headers like
+  `/api/plex/thumb`.
 - `POST /api/tunarr/test` — body: `{url}`, returns `{ok, latency_ms}`
 - `POST /api/tunarr/tasks/UpdateXmlTvTask`
 - `POST /api/tunarr/tasks/ScanLibrariesTask`
@@ -292,7 +408,14 @@ User docs: `docs/MCP.md`.
 
 ## Channels
 
-Channels are stored in the SQLite `channels` table (fields: `number, name, tier, vibe, mode, style, color, icon`) and managed at runtime via the `POST/PUT/DELETE /api/channels` routes — this is the authoritative source. `channels.py` exports a `CHANNELS` list as a **reference/seed snapshot only**; it is not imported by `main.py` and is excluded from the Docker image. If you wire it back in as a DB seed, un-ignore it in `.dockerignore` first.
+Channels are stored in the SQLite `channels` table (fields: `number, name, tier, vibe, mode, style, color, icon, uid, watermark, watermark_image_url`) and managed at runtime via the `POST/PUT/DELETE /api/channels` routes — this is the authoritative source. `channels.py` exports a `CHANNELS` list as a **reference/seed snapshot only**; it is not imported by `main.py` and is excluded from the Docker image. If you wire it back in as a DB seed, un-ignore it in `.dockerignore` first.
+
+Tier ranges (`Galaxy Main [100,119]`, `Classics [120,139]`, `Galaxy Premium [140,159]`) live
+in `TIER_RANGES` — `main.py` and `frontend/src/features/channels/presets/numbering.ts` must
+agree. Ordering is *by number*: there is no separate ordering column, so reordering
+renumbers. See "`channels.number` is a primary key referenced by value" above and
+`POST /api/channels/reorder`. The sidebar (`ChannelSidebar.tsx`) drives it with native
+HTML5 drag-and-drop — no drag library, and none should be added.
 
 ---
 

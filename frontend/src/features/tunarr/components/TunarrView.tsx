@@ -22,6 +22,7 @@ import {
   useTunarrVersionCheck,
   useUpdateSmartCollection,
   useDeleteSmartCollection,
+  usePurgeTunarrSmartCollections,
   useImportPreview,
   useImportChannels,
   useExportChannels,
@@ -33,6 +34,7 @@ import {
   useDeleteFillerList,
 } from '@/features/tunarr/hooks'
 import { useChannels } from '@/features/channels/hooks'
+import { channelKey } from '@/features/channels/utils'
 import { use247Suggestions, useAiSuggestChannels } from '@/features/ai/hooks'
 import { useCreateChannel } from '@/features/channels/hooks'
 import { useSettings } from '@/features/settings/hooks'
@@ -587,6 +589,7 @@ export function TunarrView() {
   const { data: tunarrChannels = [], isLoading: loadingChannels } = useTunarrChannels()
   const { data: links = [] } = useTunarrLinks()
   const { data: smartCollections = [], isLoading: loadingCollections } = useTunarrSmartCollections()
+  const purgeSmartCollections = usePurgeTunarrSmartCollections()
   const { data: settings } = useSettings()
   const { refreshGuide, scanLibraries } = useTunarrTasks()
   const testTunarr = useTestTunarr()
@@ -663,6 +666,37 @@ export function TunarrView() {
       danger: true,
     })
     if (ok) deleteFillerList.mutate(id)
+  }
+
+  /**
+   * Purge is global: it deletes EVERY smart collection in Tunarr, not just the
+   * ones Linearr created. A generic yes/no is not enough — require the word
+   * DELETE to be typed, and name the blast radius explicitly.
+   */
+  const handlePurgeSmartCollections = async () => {
+    const count = smartCollections.length
+    const { isConfirmed } = await Swal.fire({
+      title: 'Delete ALL Tunarr smart collections?',
+      html:
+        `<p style="margin-bottom:.75rem">This deletes <strong>every one of the ${count} smart collection${count !== 1 ? 's' : ''}</strong> in Tunarr — ` +
+        `including any you created by hand in Tunarr itself, not just the ones Linearr synced.</p>` +
+        `<p style="margin-bottom:.75rem">Every Tunarr collection link in Linearr is cleared too. ` +
+        `Channels whose schedules reference these collections will lose that content until you re-sync.</p>` +
+        `<p>Your Plex collections are <strong>not</strong> affected. This cannot be undone.</p>`,
+      icon: 'warning',
+      input: 'text',
+      inputPlaceholder: 'Type DELETE to confirm',
+      inputAttributes: { autocapitalize: 'off', autocorrect: 'off', autocomplete: 'off' },
+      showCancelButton: true,
+      confirmButtonText: 'Delete them all',
+      cancelButtonText: 'Cancel',
+      background: '#1e293b',
+      color: '#e2e8f0',
+      confirmButtonColor: '#dc2626',
+      inputValidator: (value) =>
+        value.trim().toUpperCase() === 'DELETE' ? null : 'Type DELETE to confirm',
+    })
+    if (isConfirmed) purgeSmartCollections.mutate()
   }
 
   return (
@@ -873,7 +907,21 @@ export function TunarrView() {
                 <span className="ml-2 text-xs text-slate-500">({smartCollections.length})</span>
               )}
             </h2>
+            <Button
+              variant="dangerSoft"
+              size="sm"
+              onClick={() => void handlePurgeSmartCollections()}
+              loading={purgeSmartCollections.isPending}
+              disabled={smartCollections.length === 0 || purgeSmartCollections.isPending}
+              title="Deletes every smart collection in Tunarr — including ones you made yourself"
+            >
+              Purge all Tunarr collections
+            </Button>
           </div>
+          <p className="text-xs text-slate-500 -mt-1 mb-3">
+            Purging removes <span className="text-slate-400">every</span> smart collection in
+            Tunarr, not only the ones Linearr synced. Plex collections are never touched.
+          </p>
 
           {loadingCollections ? (
             <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
@@ -1178,7 +1226,7 @@ export function TunarrView() {
                   const isLinked = links.some((l) => l.channel_number === ch.number)
                   return (
                     <label
-                      key={ch.number}
+                      key={channelKey(ch)}
                       className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${isLinked ? 'bg-slate-900/50 border-slate-700/50' : 'bg-slate-900 border-slate-700'}`}
                     >
                       <input

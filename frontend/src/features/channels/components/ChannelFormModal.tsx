@@ -319,6 +319,7 @@ export function ChannelFormModal() {
   const fieldId = useId()
   const ids = {
     number: `${fieldId}-number`,
+    numberHint: `${fieldId}-number-hint`,
     color: `${fieldId}-color`,
     name: `${fieldId}-name`,
     tier: `${fieldId}-tier`,
@@ -461,6 +462,12 @@ export function ChannelFormModal() {
 
   const isPending = createChannel.isPending || updateChannel.isPending
 
+  // A direct renumber from the edit form. Worth calling out: it cascades to
+  // every table that references channels.number by value.
+  const parsedNumber = parseInt(number, 10)
+  const numberChanged =
+    isEditing && Number.isFinite(parsedNumber) && parsedNumber !== editingChannel!.number
+
   // Basic color validation — accepts empty, #hex (3/6), or any CSS color keyword.
   // Feedback only; does not block submit.
   const trimmedColor = color.trim()
@@ -598,6 +605,10 @@ export function ChannelFormModal() {
               <label htmlFor={ids.number} className="block text-xs text-slate-400 mb-1">
                 Channel Number
               </label>
+              {/* Editable while editing: the number is the primary key, and the
+                  PUT route renumbers transactionally (cascading to every table
+                  that references it by value), so a direct renumber is allowed
+                  here as an alternative to dragging in the sidebar. */}
               <input
                 id={ids.number}
                 type="number"
@@ -609,9 +620,15 @@ export function ChannelFormModal() {
                 required
                 min={1}
                 max={9999}
-                disabled={isEditing}
+                aria-describedby={numberChanged ? ids.numberHint : undefined}
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
               />
+              {numberChanged && (
+                <p id={ids.numberHint} className="mt-1 text-xs text-amber-400">
+                  Renumbering {editingChannel!.number} → {number}. Assignments, blocks, collections
+                  and the Tunarr link follow it.
+                </p>
+              )}
             </div>
 
             {/* Color */}

@@ -164,6 +164,10 @@ When you create or update a Cable Plex channel (name, number, tier, icon), Linea
 
 ## Cable Plex Views
 
+Two layouts. **Expanded is the default** — the choice (and the expanded poster
+size) is remembered in the browser, so whatever you last picked is what you get
+next time.
+
 ### Compact View
 
 A grid of channel cards. Each card shows:
@@ -186,6 +190,20 @@ Both views support:
 - **Content filter** (expanded) — show only shows, only movies, or all
 - **Poster size toggle** (expanded) — small, medium, large thumbnails
 - **Export/Import** — download/upload channel lineup as JSON
+
+### Adding Content from Cable Plex
+
+You can put movies and shows on a channel — one or many at a time — without
+leaving the lineup:
+
+| Flow | How it works |
+|------|--------------|
+| **Add content button** | The "+" on a channel card opens a Plex browser scoped to that channel. Search or browse, click posters to select any number of them, then **Add N items** in the sticky footer. |
+| **Plex tray** | A drawer at the bottom of the view that keeps the Plex browser open alongside the channel cards. Pick a target channel for the Add button, or drag instead. |
+| **Drag onto a card** | Drag a poster from the tray onto any channel card. If the poster is part of your current selection, the whole selection goes; otherwise just that one. The card highlights as you hover it. |
+
+All three add in a single batch. Items already on the channel are skipped
+automatically, and the toast reports how many were added versus skipped.
 
 ---
 

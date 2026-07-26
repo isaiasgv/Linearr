@@ -59,6 +59,16 @@ const TunarrCollectionPickerModal = lazy(() =>
     default: m.TunarrCollectionPickerModal,
   })),
 )
+const AssignCollectionModal = lazy(() =>
+  import('@/features/collections/components/AssignCollectionModal').then((m) => ({
+    default: m.AssignCollectionModal,
+  })),
+)
+const SmartCollectionBuilderModal = lazy(() =>
+  import('@/features/collections/components/SmartCollectionBuilderModal').then((m) => ({
+    default: m.SmartCollectionBuilderModal,
+  })),
+)
 const IconEditorModal = lazy(() =>
   import('@/features/channels/components/IconEditorModal').then((m) => ({
     default: m.IconEditorModal,
@@ -67,6 +77,16 @@ const IconEditorModal = lazy(() =>
 const IconPickerModal = lazy(() =>
   import('@/features/channels/components/IconPickerModal').then((m) => ({
     default: m.IconPickerModal,
+  })),
+)
+const WatermarkEditorModal = lazy(() =>
+  import('@/features/watermark/components/WatermarkEditorModal').then((m) => ({
+    default: m.WatermarkEditorModal,
+  })),
+)
+const AddContentModal = lazy(() =>
+  import('@/features/cable-plex/components/AddContentModal').then((m) => ({
+    default: m.AddContentModal,
   })),
 )
 const TunarrView = lazy(() =>
@@ -152,8 +172,12 @@ export default function App() {
         <NetworkAdvisorModal />
         <TunarrPreviewModal />
         <TunarrCollectionPickerModal />
+        <AssignCollectionModal />
+        <SmartCollectionBuilderModal />
         <IconEditorModal />
         <IconPickerModal />
+        <WatermarkEditorModal />
+        <AddContentModal />
       </Suspense>
     </AppLayout>
   )

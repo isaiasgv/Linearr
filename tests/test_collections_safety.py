@@ -41,7 +41,12 @@ def test_collection_delta_full_reconcile_when_managed():
     assert to_remove == {"99"}
 
 
-def test_managed_column_exists():
+def test_managed_column_exists(client):
+    # Depends on `client`: the schema (and therefore this column) is created by
+    # `init_db()` in the app lifespan, which only runs inside the TestClient
+    # context manager. Without the fixture this passed only when some earlier
+    # test in the session happened to build the schema first, and failed when
+    # the file was run on its own.
     with main.get_db() as conn:
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(channel_collections)")}
     assert "managed" in cols

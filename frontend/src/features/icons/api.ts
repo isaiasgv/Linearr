@@ -36,7 +36,8 @@ function deleteIcon(id: number): Promise<void> {
 }
 
 function assignToChannel(channelNumber: number, iconData: string): Promise<{ ok: boolean }> {
-  return post<{ ok: boolean }>(`/api/channels/${channelNumber}/icon`, { icon: iconData })
+  // The backend registers PUT (and DELETE) for this path — a POST is a 405.
+  return put<{ ok: boolean }>(`/api/channels/${channelNumber}/icon`, { icon: iconData })
 }
 
 function seedPack(pack: {
