@@ -97,6 +97,7 @@ frontend/src/
     ├── ai/                     # AI content advisor, network advisor, day generator
     ├── tunarr/                 # Tunarr channel links, schedules, smart collections
     ├── settings/               # Plex URL/token, AI keys, OAuth PIN flow
+    ├── watermark/              # Per-channel Tunarr watermark config + live preview
     ├── cable-plex/             # Cable+Plex combined view
     └── generic-blocks/         # Reusable blocks view (no channel context)
 ```
@@ -124,6 +125,7 @@ frontend/src/
 ['tunarr', 'collection-links']
 ['tunarr', 'smart-collections']
 ['tunarr', 'schedule', tunarrId]
+['watermark', channelNumber]
 ['ai-logs']
 ```
 
@@ -152,6 +154,12 @@ channel_collections  -- user-linked Plex collections per channel+type
   (channel_number, plex_type UNIQUE)
   fields: collection_rating_key, collection_title
 
+channels             -- TV channels (authoritative source; channels.py is a seed snapshot)
+  (number PK)
+  fields: name, tier, vibe, mode, style, color, icon (data URI),
+          watermark (JSON blob, NULL = none), watermark_image_url (absolute URL
+          Tunarr fetches — ffmpeg cannot read the data URI icons are stored as)
+
 settings             -- key/value store (plex_url, plex_token, client_id, pending_pin_id)
 ```
 
@@ -169,6 +177,14 @@ settings             -- key/value store (plex_url, plex_token, client_id, pendin
 - `GET /api/channels` — returns all rows from the SQLite `channels` table (ordered by number)
 - `GET /api/channels/suggest-247` — analyze Plex library, return 24/7 loop channel candidates
 - `POST /api/channels/ai-suggest` — AI-generate channel + package suggestions from DB
+- `GET|PUT|DELETE /api/channels/{n}/watermark` — per-channel Tunarr watermark config.
+  `GET` returns `{watermark: null}` or the stored config plus a server-owned `image_url`;
+  `PUT`/`DELETE` also re-sync the channel to Tunarr and return `tunarr_sync`. Validation
+  mirrors Tunarr's zod rules (`width` strictly > 0 as a percent of frame width, integer
+  `opacity` 0–100, margins 0–100, `duration` seconds ≥ 0, `fade.period_mins` ≥ 1).
+- `POST /api/channels/{n}/watermark/image` — resolve the watermark image to an absolute
+  URL Tunarr can fetch. Body `{image}` (data URI), `{url}` (absolute), or `{}` to use the
+  channel icon; data URIs are uploaded via Tunarr's `POST /api/upload/image`.
 
 ### Assignments
 - `GET /api/assignments` — all assignments grouped by channel_number
@@ -241,8 +257,23 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 > 400/422/500 **or** a rule-dropping 2xx). Tag-based smart
 > collections require the Plex collection to exist as a tag in Tunarr's index, so both
 > sync flows run `ScanLibrariesTask` in the foreground *before* writing them.
-> Channel creates try the 1.3 `{"type":"new","channel":{…}}` shape then fall back to the
-> flat object (`_tunarr_create_channel`); schedule slots carry an `id` (1.3 linkable slots).
+> Schedule slots carry an `id` (1.3 linkable slots).
+>
+> **Channel writes go through `_tunarr_save_channel` (read-modify-write).** Tunarr's
+> `PUT /api/channels/:id` validates the body as the FULL `SaveableChannel` — only
+> `onDemand` is partial — so a partial PUT is a 400. Never compute
+> `guideMinimumDuration` (its unit is inconsistent inside Tunarr) or `duration`
+> (server-maintained); echo them back. Read-only keys Tunarr strips on write:
+> `programCount`, `transcoding`, `sessions`, `fallback`. Creates use only the
+> discriminated `{"type":"new","channel":{…}}` body — no Tunarr 1.x accepts a flat
+> object — and must carry a real `transcodeConfigId` from
+> `_tunarr_resolve_transcode_config` (1.3.x validates it as a uuid AND checks existence;
+> `transcoding` is read-only and stripped). A duplicate channel number returns **500, not
+> 409** — there is no 409 anywhere in the channel API. The watermark schema is
+> byte-identical from v1.0.0 to v1.3.9; `animated` and `fadeConfig[].programType` are
+> persisted but never read, and only `fadeConfig[0]` is applied — so clearing a watermark
+> pushes an explicit `enabled: false` (read-modify-write would otherwise echo Tunarr's
+> existing one straight back).
 
 - `GET /api/tunarr/channels`
 - `GET /api/tunarr/channels/{id}/schedule`
