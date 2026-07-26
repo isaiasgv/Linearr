@@ -112,3 +112,66 @@ def test_400_when_tunarr_is_not_configured(auth_client, monkeypatch):
     monkeypatch.setattr(main, "get_tunarr_url", lambda: "")
     r = auth_client.get("/api/tunarr/image", params={"path": "/images/uploads/logo.png"})
     assert r.status_code == 400
+
+
+# ── Content-Type allow-list (stored XSS guard) ────────────────────────────────
+# This route serves bytes from Tunarr's upload directory on LINEARR's origin, so
+# honouring the upstream Content-Type blindly would let an SVG (or anything
+# Tunarr's `image/*` sniff admits) run script against the session cookie.
+# Linearr's own icon upload accepts image/svg+xml, so the path is real.
+
+@pytest.fixture
+def typed_transport(monkeypatch):
+    """Serves whatever content-type the requested filename encodes."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        types = {
+            "/images/x.svg": "image/svg+xml",
+            "/images/x.html": "text/html",
+            "/images/x.png": "image/png",
+            "/images/x.jpg": "image/jpeg",
+            "/images/x.gif": "image/gif",
+            "/images/x.webp": "image/webp",
+            "/images/x.none": "",
+        }
+        ct = types.get(request.url.path)
+        if ct is None:
+            return httpx.Response(404)
+        headers = {"content-type": ct} if ct else {}
+        return httpx.Response(200, content=b"<svg onload=alert(1)>", headers=headers)
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+
+    def fake_client(**kwargs):
+        kwargs.pop("transport", None)
+        return real_client(transport=transport, **kwargs)
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", fake_client)
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://tunarr:8000")
+
+
+@pytest.mark.parametrize("name", ["x.svg", "x.html", "x.none"])
+def test_image_proxy_refuses_script_capable_types(auth_client, typed_transport, name):
+    """An SVG served from Linearr's own origin is stored XSS — refuse it."""
+    r = auth_client.get(f"/api/tunarr/image?path=/images/{name}")
+    assert r.status_code == 415, (
+        f"{name} must be refused, not echoed back with its upstream type"
+    )
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("x.png", "image/png"), ("x.jpg", "image/jpeg"),
+    ("x.gif", "image/gif"), ("x.webp", "image/webp"),
+])
+def test_image_proxy_serves_raster_types(auth_client, typed_transport, name, expected):
+    r = auth_client.get(f"/api/tunarr/image?path=/images/{name}")
+    assert r.status_code == 200
+    assert r.headers["content-type"].split(";")[0] == expected
+
+
+def test_image_proxy_sets_sniffing_and_csp_guards(auth_client, typed_transport):
+    """Defence in depth behind the allow-list."""
+    r = auth_client.get("/api/tunarr/image?path=/images/x.png")
+    assert r.status_code == 200
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert "default-src 'none'" in r.headers["content-security-policy"]

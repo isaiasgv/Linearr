@@ -5444,7 +5444,21 @@ async def _tunarr_upload_image(
 # Tunarr's upload directory — the only prefix `/api/tunarr/image` will fetch, so
 # the route cannot be used as a general-purpose proxy.
 _TUNARR_IMAGE_ALLOWED_PREFIXES = ("/images/",)
-_TUNARR_IMAGE_HEADERS = {"Cache-Control": "public, max-age=604800, immutable"}
+
+# Raster only, deliberately. This route serves bytes from Tunarr's upload
+# directory on LINEARR's origin, so honouring the upstream Content-Type blindly
+# would let an `image/svg+xml` (or anything Tunarr's `image/*` sniff lets in)
+# execute script against the session cookie — stored XSS. Linearr's own icon
+# upload accepts SVG, so that path is real, not theoretical. SVG is no loss
+# here: ffmpeg cannot use one as an overlay input anyway.
+_TUNARR_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+_TUNARR_IMAGE_HEADERS = {
+    "Cache-Control": "public, max-age=604800, immutable",
+    # Belt and braces even with the allow-list: never let a sniffer re-interpret
+    # the body, and give the response no privileges if it is ever framed.
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; sandbox",
+}
 
 
 @app.get("/api/tunarr/image")
@@ -5481,9 +5495,12 @@ async def tunarr_image(path: str = Query(...)):
     if resp.status_code != 200 or not resp.content:
         raise HTTPException(resp.status_code if resp.status_code != 200 else 502,
                             "Tunarr image error")
+    content_type = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in _TUNARR_IMAGE_TYPES:
+        raise HTTPException(415, f"Unsupported Tunarr image type: {content_type or 'unknown'}")
     return Response(
         content=resp.content,
-        media_type=resp.headers.get("content-type", "image/png"),
+        media_type=content_type,
         headers=_TUNARR_IMAGE_HEADERS,
     )
 
