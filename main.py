@@ -2690,6 +2690,11 @@ async def generate_collections(channel_number: int):
     Linearr manages ONLY its own '{Channel} Movies' / '{Channel} TV' collections,
     resolved by name — never a user-linked collection. First touch of any
     collection is additive-only, so a user's own collection can never be pruned.
+
+    If a type's slot currently holds an ASSIGNED collection (source='assigned'),
+    generating switches that slot back to 'owned'. That is a DB-slot change
+    only: the assigned collection is never read, added to, or pruned, because
+    the target is still resolved purely by owned name.
     """
     url, token = get_plex_config()
     if not token:
@@ -2827,16 +2832,24 @@ async def generate_collections(channel_number: int):
                 if del_resp.status_code in (200, 204):
                     removed += 1
 
-            # 4f. Persist as managed (owned collection only)
+            # 4f. Persist as managed (owned collection only).
+            # If the slot currently holds an ASSIGNED collection, generating
+            # switches it back to 'owned' — the intentional, documented way to
+            # return to a Linearr-managed collection. Note this only rewrites
+            # the DB slot: the assigned collection itself was never read or
+            # edited above, because the target is resolved by NAME (4a).
             with get_db() as conn:
                 conn.execute(
                     """INSERT INTO channel_collections
-                       (channel_number, plex_type, collection_rating_key, collection_title, managed)
-                       VALUES (?, ?, ?, ?, 1)
+                       (channel_number, plex_type, collection_rating_key, collection_title,
+                        managed, source, is_smart)
+                       VALUES (?, ?, ?, ?, 1, 'owned', 0)
                        ON CONFLICT(channel_number, plex_type) DO UPDATE SET
                            collection_rating_key=excluded.collection_rating_key,
                            collection_title=excluded.collection_title,
-                           managed=1""",
+                           managed=1,
+                           source='owned',
+                           is_smart=0""",
                     (channel_number, plex_type, coll_id, coll_name),
                 )
 
