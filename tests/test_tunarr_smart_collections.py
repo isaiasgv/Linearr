@@ -64,7 +64,7 @@ async def test_writer_sends_filter_first():
 
 
 @pytest.mark.anyio
-async def test_writer_retries_when_2xx_drops_rules():
+async def test_writer_retries_when_2xx_drops_rules(monkeypatch):
     """A 2xx that doesn't echo the search object back must trigger a retry,
     and the retry must UPDATE the just-created collection, not POST a duplicate."""
     import json as _j
@@ -79,16 +79,14 @@ async def test_writer_retries_when_2xx_drops_rules():
         return httpx.Response(201 if request.method == "POST" else 200, json=saved)
 
     # Force the wrong field first to simulate a Tunarr that drops it silently.
-    orig = main._SC_FIELDS
-    main._SC_FIELDS = ("query", "filter")
-    try:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler),
-                                     base_url="http://t.test") as client:
-            resp = await main._tunarr_write_smart_collection(
-                client, "http://t.test", "/api/smart_collections",
-                name="X", structured=main._tunarr_tags_filter("X"))
-    finally:
-        main._SC_FIELDS = orig
+    # monkeypatch (not try/finally) so the global is restored even if the test
+    # dies between the swap and the restore.
+    monkeypatch.setattr(main, "_SC_FIELDS", ("query", "filter"))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler),
+                                 base_url="http://t.test") as client:
+        resp = await main._tunarr_write_smart_collection(
+            client, "http://t.test", "/api/smart_collections",
+            name="X", structured=main._tunarr_tags_filter("X"))
 
     assert resp.json().get("filter"), "retry must persist the rules"
     assert calls[0][0] == "POST" and "query" in calls[0][2]
@@ -98,17 +96,15 @@ async def test_writer_retries_when_2xx_drops_rules():
 
 
 @pytest.mark.anyio
-async def test_writer_retries_on_500():
+async def test_writer_retries_on_500(monkeypatch):
     transport, state = _mock_tunarr("strict-filter")
-    orig = main._SC_FIELDS
-    main._SC_FIELDS = ("query", "filter")  # wrong field first → 500 → retry
-    try:
-        async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
-            resp = await main._tunarr_write_smart_collection(
-                client, "http://t.test", "/api/smart_collections",
-                name="X", structured=main._tunarr_tags_filter("X"))
-    finally:
-        main._SC_FIELDS = orig
+    # wrong field first → 500 → retry. monkeypatch so an abnormal exit cannot
+    # leak the swapped global into the rest of the session.
+    monkeypatch.setattr(main, "_SC_FIELDS", ("query", "filter"))
+    async with httpx.AsyncClient(transport=transport, base_url="http://t.test") as client:
+        resp = await main._tunarr_write_smart_collection(
+            client, "http://t.test", "/api/smart_collections",
+            name="X", structured=main._tunarr_tags_filter("X"))
     assert resp.status_code == 201 and resp.json().get("filter")
     assert "query" in state["posts"][0] and "filter" in state["posts"][1]
 

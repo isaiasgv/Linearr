@@ -388,19 +388,17 @@ def test_generate_can_never_prune_a_lookalike_collection(auth_client):
 
 
 @respx.mock
-def test_generate_refuses_non_owned_title(auth_client):
+def test_generate_refuses_non_owned_title(auth_client, monkeypatch):
     """Belt-and-braces: even if a non-owned title were resolved, generation aborts."""
     _seed_channel(922, "Refuse")
     r = respx.mock
     _base_plex_routes(r, section_collections=[{"title": "Refuse Movies", "ratingKey": "500"}], children=[])
     r.put(url__regex=rf"{PLEX}/library/collections/500/items").mock(return_value=httpx.Response(200, json={}))
     # Force the ownership check to fail for a title the resolver did return.
-    orig = main._is_owned_title
-    main._is_owned_title = lambda title, ch: False
-    try:
-        resp = auth_client.post("/api/collections/generate/922")
-    finally:
-        main._is_owned_title = orig
+    # monkeypatch (not try/finally) so the swapped global cannot leak into the
+    # rest of the session if this test exits abnormally.
+    monkeypatch.setattr(main, "_is_owned_title", lambda title, ch: False)
+    resp = auth_client.post("/api/collections/generate/922")
     assert resp.status_code == 500
 
 
