@@ -139,6 +139,120 @@ def test_routine_sync_without_an_icon_leaves_tunarrs_icon_alone(monkeypatch, aut
     assert put_body["icon"]["path"] == live_icon
 
 
+# ── An icon change must drag an icon-following watermark with it ──────────────
+#
+# `use_channel_icon` used to decide only which branch of the watermark-image
+# endpoint ran at the instant Apply was clicked. Changing the icon afterwards
+# left the watermark pointing at the previously uploaded copy — silently stale.
+
+_WM_FOLLOW = _json.dumps({
+    "enabled": True, "position": "bottom-right", "width": 10.0,
+    "vertical_margin": 1.0, "horizontal_margin": 1.0, "duration": 0.0,
+    "opacity": 100, "fixed_size": False, "use_channel_icon": True, "fade": None,
+})
+_WM_PASTED_URL = _json.dumps({
+    "enabled": True, "position": "bottom-right", "width": 10.0,
+    "vertical_margin": 1.0, "horizontal_margin": 1.0, "duration": 0.0,
+    "opacity": 100, "fixed_size": False, "use_channel_icon": False, "fade": None,
+})
+
+
+def _set_watermark(number: int, watermark_json: str | None, image_url: str | None):
+    with main.get_db() as conn:
+        conn.execute(
+            "UPDATE channels SET watermark=?, watermark_image_url=? WHERE number=?",
+            (watermark_json, image_url, number),
+        )
+
+
+def _watermark_image_url(number: int) -> str | None:
+    with main.get_db() as conn:
+        return conn.execute(
+            "SELECT watermark_image_url FROM channels WHERE number=?", (number,)
+        ).fetchone()["watermark_image_url"]
+
+
+def _handler_with_upload(number: int, icon_path: str, new_file_url: str,
+                         upload_status: int = 200):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/api/upload/image":
+            if upload_status != 200:
+                return httpx.Response(upload_status, json={})
+            return httpx.Response(200, json={"name": "logo.png", "fileUrl": new_file_url})
+        return _handler_for(number, icon_path)(request)
+    return handler
+
+
+def test_changing_the_icon_re_uploads_an_icon_following_watermark(monkeypatch, auth_client):
+    n = 7114
+    _seed_icon_channel(n, None)
+    _set_watermark(n, _WM_FOLLOW, "http://tunarr:8000/images/uploads/old.png")
+    calls = _install_mock_client(monkeypatch, _handler_with_upload(
+        n, "", "http://localhost:8000/images/uploads/new.png"))
+
+    r = auth_client.put(f"/api/channels/{n}/icon", json={"icon": _PNG_DATA_URI})
+    assert r.status_code == 200, r.text
+
+    assert any(c.method == "POST" and c.url.path == "/api/upload/image" for c in calls), \
+        "the new icon must be re-uploaded as the watermark image"
+    # Host rewritten onto the configured Tunarr base URL, as always.
+    assert _watermark_image_url(n) == "http://tunarr:8000/images/uploads/new.png"
+
+    # ...and the sync that follows carries the NEW url, not the stale one.
+    put_req = next(c for c in calls
+                   if c.method == "PUT" and c.url.path == f"/api/channels/{_ICON_CH_UUID}")
+    put_body = _json.loads(put_req.content or b"{}")
+    assert put_body["watermark"]["url"] == "http://tunarr:8000/images/uploads/new.png"
+
+
+def test_changing_the_icon_leaves_a_pasted_watermark_url_alone(monkeypatch, auth_client):
+    n = 7115
+    _seed_icon_channel(n, None)
+    _set_watermark(n, _WM_PASTED_URL, "https://cdn.example.com/logo.png")
+    calls = _install_mock_client(monkeypatch, _handler_with_upload(
+        n, "", "http://localhost:8000/images/uploads/new.png"))
+
+    r = auth_client.put(f"/api/channels/{n}/icon", json={"icon": _PNG_DATA_URI})
+    assert r.status_code == 200, r.text
+
+    assert not any(c.url.path == "/api/upload/image" for c in calls)
+    assert _watermark_image_url(n) == "https://cdn.example.com/logo.png"
+
+
+def test_icon_change_survives_a_failed_watermark_re_upload(monkeypatch, auth_client):
+    """Resilience: the icon write must land even if Tunarr rejects the upload."""
+    n = 7116
+    _seed_icon_channel(n, None)
+    _set_watermark(n, _WM_FOLLOW, "http://tunarr:8000/images/uploads/old.png")
+    _install_mock_client(monkeypatch, _handler_with_upload(
+        n, "", "http://localhost:8000/images/uploads/new.png", upload_status=500))
+
+    r = auth_client.put(f"/api/channels/{n}/icon", json={"icon": _PNG_DATA_URI})
+    assert r.status_code == 200, r.text
+    with main.get_db() as conn:
+        icon = conn.execute("SELECT icon FROM channels WHERE number=?", (n,)).fetchone()["icon"]
+    assert icon == _PNG_DATA_URI
+    # Stale-but-working URL kept rather than blanked (which would disable the overlay).
+    assert _watermark_image_url(n) == "http://tunarr:8000/images/uploads/old.png"
+
+
+def test_updating_a_channels_icon_via_put_also_re_uploads(monkeypatch, auth_client):
+    """`PUT /api/channels/{n}` can change the icon too."""
+    n = 7117
+    _seed_icon_channel(n, None)
+    _set_watermark(n, _WM_FOLLOW, "http://tunarr:8000/images/uploads/old.png")
+    calls = _install_mock_client(monkeypatch, _handler_with_upload(
+        n, "", "http://localhost:8000/images/uploads/via-put.png"))
+
+    r = auth_client.put(f"/api/channels/{n}", json={
+        "number": n, "name": f"ICON {n}", "tier": "Galaxy Main", "vibe": "",
+        "mode": "Shuffle", "style": "", "color": "blue", "icon": _PNG_DATA_URI,
+    })
+    assert r.status_code == 200, r.text
+    assert any(c.url.path == "/api/upload/image" for c in calls)
+    assert _watermark_image_url(n) == "http://tunarr:8000/images/uploads/via-put.png"
+
+
 def test_icon_obj_empty_path_is_the_none_state():
     assert main._tunarr_icon_obj(None)["path"] == ""
     assert main._tunarr_icon_obj("")["path"] == ""

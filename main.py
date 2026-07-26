@@ -1411,6 +1411,10 @@ async def update_channel(channel_number: int, body: ChannelIn):
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
     result = dict(row)
     _log_app("channel", f"Updated channel {channel_number}", metadata={"old_number": channel_number, "new_number": body.number, "name": body.name})
+    # This route can change the icon too, so an icon-following watermark has to
+    # be re-uploaded here as well (best-effort; never blocks the save).
+    if body.icon != existing["icon"]:
+        await _refollow_channel_icon_watermark(body.number)
     # Auto-sync metadata to Tunarr (creates channel if not linked)
     sync = await _sync_channel_to_tunarr(body.number)
     result["tunarr_sync"] = sync
@@ -1445,6 +1449,56 @@ def delete_channel(channel_number: int):
 
 # ── Channel Icons ─────────────────────────────────────────────────────────────
 
+async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
+    """Re-upload the channel's icon as its watermark image, if it follows it.
+
+    `use_channel_icon` used to decide only which branch of the watermark-image
+    endpoint ran at the instant the user clicked Apply — so changing the icon
+    afterwards left the watermark pointing at the previously uploaded copy,
+    silently stale. Every icon-change path calls this so the watermark follows.
+
+    Deliberately best-effort: returns None (never raises) so a Tunarr upload
+    failure cannot break the icon update itself. `use_channel_icon` must be
+    explicitly true — a missing key means "don't touch", so a hand-pasted
+    absolute URL is never clobbered.
+    """
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT icon, watermark FROM channels WHERE number=?", (channel_number,)
+            ).fetchone()
+        if row is None or not row["watermark"]:
+            return None
+        try:
+            wm = json.loads(row["watermark"])
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(wm, dict) or wm.get("use_channel_icon") is not True:
+            return None
+        decoded = _decode_data_uri(row["icon"] or "")
+        if decoded is None:
+            return None
+        tunarr_url = get_tunarr_url()
+        if not tunarr_url:
+            return None
+        raw, content_type, filename = decoded
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            image_url = await _tunarr_upload_image(
+                client, tunarr_url, raw, content_type, filename)
+        if not image_url:
+            return None
+        with get_db() as conn:
+            conn.execute("UPDATE channels SET watermark_image_url=? WHERE number=?",
+                         (image_url, channel_number))
+        _log_app("channel",
+                 f"Watermark image re-followed the icon for channel {channel_number}",
+                 metadata={"number": channel_number, "image_url": image_url})
+        return image_url
+    except Exception as e:      # never break the icon write
+        log.warning("Watermark image re-upload failed for CH %s: %s", channel_number, e)
+        return None
+
+
 @app.put("/api/channels/{channel_number}/icon")
 async def set_channel_icon(channel_number: int, request: Request):
     """Set channel icon (base64 PNG data URL)."""
@@ -1455,6 +1509,8 @@ async def set_channel_icon(channel_number: int, request: Request):
     if cur.rowcount == 0:
         raise HTTPException(404, "Channel not found")
     _log_app("channel", f"Set icon for channel {channel_number}", metadata={"number": channel_number})
+    # Before the sync, so the pushed watermark carries the NEW image URL.
+    await _refollow_channel_icon_watermark(channel_number)
     sync = await _sync_channel_to_tunarr(channel_number)
     return {"ok": True, "tunarr_sync": sync}
 
