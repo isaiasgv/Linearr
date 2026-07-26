@@ -16,6 +16,14 @@ export interface TunarrSync {
 export interface WatermarkResponse {
   /** null when the channel has no watermark configured. */
   watermark: Watermark | null
+  /**
+   * The resolved absolute URL Tunarr fetches, reported independently of the
+   * config: applying an image does NOT write a config blob, so a channel can
+   * have an image with `watermark: null`. The editor needs it in that state —
+   * enabling a watermark without a resolved image is rejected by the backend.
+   * Optional so an older backend still type-checks.
+   */
+  image_url?: string | null
 }
 
 export interface SaveWatermarkResponse {

@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Field, IconButton, Input, ModalWrapper, Select } from '@/shared/components/ui'
 import { useUIStore } from '@/shared/store/ui.store'
-import {
-  useDeleteWatermark,
-  useSaveWatermark,
-  useSetWatermarkImage,
-  useWatermark,
-} from '../hooks'
+import { useDeleteWatermark, useSaveWatermark, useSetWatermarkImage, useWatermark } from '../hooks'
 import {
   DEFAULT_FADE,
   DEFAULT_WATERMARK,
@@ -17,10 +12,24 @@ import {
 import { WatermarkPreview } from './WatermarkPreview'
 
 const TITLE_ID = 'watermark-editor-title'
+const ENABLE_HINT_ID = 'watermark-enable-hint'
+
+const NEEDS_IMAGE_MSG =
+  'Apply a watermark image first — Tunarr needs an absolute image URL to draw.'
 
 /** Client-side mirror of the backend's Tunarr-derived constraints. */
-function validate(form: Watermark, fadeOn: boolean): Partial<Record<string, string>> {
+function validate(
+  form: Watermark,
+  fadeOn: boolean,
+  hasImage: boolean,
+): Partial<Record<string, string>> {
   const errors: Partial<Record<string, string>> = {}
+  // Mirrors the backend gate on PUT .../watermark. An enabled watermark with no
+  // resolved image maps to `url: ""`, and because every channel write is a full
+  // SaveableChannel PUT, Tunarr rejecting it would break EVERY later save for
+  // this channel — name, number and tier included. The user must never reach
+  // that 400, so the state is not submittable here either.
+  if (form.enabled && !hasImage) errors.enabled = NEEDS_IMAGE_MSG
   if (!(form.width > 0)) errors.width = 'Must be greater than 0.'
   if (form.vertical_margin < 0 || form.vertical_margin > 100)
     errors.vertical_margin = 'Must be between 0 and 100.'
@@ -55,7 +64,11 @@ export function WatermarkEditorModal() {
   const [urlInput, setUrlInput] = useState('')
 
   const stored = data?.watermark ?? null
-  const imageUrl = stored?.image_url ?? null
+  // Top-level `image_url` first: an image applied before any config was saved
+  // exists with `watermark: null`, so reading it only off `stored` would hide it.
+  const imageUrl = data?.image_url ?? stored?.image_url ?? null
+  // Server-owned: only "Apply image" resolves one, and it saves immediately.
+  const hasImage = Boolean(imageUrl && imageUrl.trim())
 
   // Hydrate exactly once per open, as soon as the stored config has settled.
   // Re-hydrating on every `stored` change would wipe unsaved edits whenever an
@@ -70,10 +83,10 @@ export function WatermarkEditorModal() {
     hydrated.current = true
     setForm(stored ? { ...DEFAULT_WATERMARK, ...stored } : DEFAULT_WATERMARK)
     setFadeOn(Boolean(stored?.fade))
-    setUrlInput(stored?.image_url ?? '')
-  }, [open, isLoading, stored])
+    setUrlInput(imageUrl ?? '')
+  }, [open, isLoading, stored, imageUrl])
 
-  const errors = useMemo(() => validate(form, fadeOn), [form, fadeOn])
+  const errors = useMemo(() => validate(form, fadeOn, hasImage), [form, fadeOn, hasImage])
   const hasErrors = Object.keys(errors).length > 0
 
   function set<K extends keyof Watermark>(key: K, value: Watermark[K]) {
@@ -113,17 +126,42 @@ export function WatermarkEditorModal() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <label className={checkboxLabel}>
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(e) => set('enabled', e.target.checked)}
-                className={checkbox}
-              />
-              Enabled
-            </label>
+            {/* Enabling with no resolved image is not submittable (see validate),
+                so the tick itself is blocked until an image is applied. Unticking
+                stays available even in that state, so a stored config that somehow
+                lost its image can still be switched off. */}
+            <div className="flex flex-col items-end">
+              <label
+                className={`${checkboxLabel} ${!hasImage && !form.enabled ? 'text-slate-500' : ''}`}
+                title={!hasImage && !form.enabled ? NEEDS_IMAGE_MSG : undefined}
+              >
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  disabled={!hasImage && !form.enabled}
+                  aria-describedby={hasImage ? undefined : ENABLE_HINT_ID}
+                  onChange={(e) => set('enabled', e.target.checked)}
+                  className={`${checkbox} disabled:cursor-not-allowed disabled:opacity-50`}
+                />
+                Enabled
+              </label>
+              {!hasImage && (
+                <p
+                  id={ENABLE_HINT_ID}
+                  className="mt-0.5 max-w-56 text-right text-[11px] text-amber-300/90"
+                >
+                  {errors.enabled ?? 'Apply an image below to enable this watermark.'}
+                </p>
+              )}
+            </div>
             <IconButton label="Close" onClick={close}>
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg
+                className="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </IconButton>
@@ -167,8 +205,8 @@ export function WatermarkEditorModal() {
               </Button>
               <p className="text-xs text-slate-500">
                 Tunarr fetches the image over HTTP as an ffmpeg input, so it must be hosted at an
-                absolute URL — the channel icon is copied to Tunarr for you. Applying an image
-                saves immediately, separately from the settings below.
+                absolute URL — the channel icon is copied to Tunarr for you. Applying an image saves
+                immediately, separately from the settings below.
               </p>
               {imageUrl && (
                 <p className="truncate font-mono text-[11px] text-emerald-400/80" title={imageUrl}>
@@ -365,7 +403,10 @@ export function WatermarkEditorModal() {
           >
             Clear watermark
           </Button>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {errors.enabled && (
+              <p className="max-w-72 text-right text-[11px] text-amber-300/90">{errors.enabled}</p>
+            )}
             <Button variant="ghost" size="sm" onClick={close}>
               Cancel
             </Button>
@@ -373,6 +414,7 @@ export function WatermarkEditorModal() {
               size="sm"
               loading={save.isPending}
               disabled={hasErrors || !channelNumber}
+              title={errors.enabled}
               onClick={handleSave}
             >
               Save

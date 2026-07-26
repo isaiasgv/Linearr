@@ -9,7 +9,8 @@ import {
 } from '@/shared/components/ui'
 import { useUIStore } from '@/shared/store/ui.store'
 import { usePlexCollections } from '@/features/plex/hooks'
-import { PlexThumb, THUMB_DENSE } from '@/features/plex/components/PlexThumb'
+import { PlexThumb } from '@/features/plex/components/PlexThumb'
+import { THUMB_DENSE } from '@/features/plex/thumbSizes'
 import { useAssignCollection, useChannelCollections } from '@/features/collections/hooks'
 
 const TYPE_LABEL: Record<'movie' | 'show', string> = { movie: 'Movies', show: 'Shows' }

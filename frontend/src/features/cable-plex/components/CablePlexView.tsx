@@ -9,12 +9,8 @@ import { useToastStore } from '@/shared/store/toast.store'
 import { tierColor } from '@/shared/components/ui/TierBadge'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { Button, EmptyState, IconButton, SegmentedControl } from '@/shared/components/ui'
-import {
-  PlexThumb,
-  THUMB_DENSE,
-  THUMB_POSTER,
-  type ThumbSize,
-} from '@/features/plex/components/PlexThumb'
+import { PlexThumb } from '@/features/plex/components/PlexThumb'
+import { THUMB_DENSE, THUMB_POSTER, type ThumbSize } from '@/features/plex/thumbSizes'
 import { AddContentPanel } from './AddContentPanel'
 import type { Channel } from '@/shared/types'
 

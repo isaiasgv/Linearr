@@ -35,7 +35,22 @@ def test_watermark_defaults_to_absent(auth_client):
     n = _make_channel(auth_client, 701)
     r = auth_client.get(f"/api/channels/{n}/watermark")
     assert r.status_code == 200
-    assert r.json() == {"watermark": None}
+    assert r.json() == {"watermark": None, "image_url": None}
+
+
+def test_get_reports_a_resolved_image_before_any_config_is_saved(auth_client):
+    """The image route resolves an image without writing the config blob.
+
+    The editor gates its "enabled" control on a resolved image (the PUT rejects
+    enabled-without-one), so it has to be able to read the image back even while
+    `watermark` is still NULL — otherwise applying an image on a fresh channel
+    would leave "Enabled" permanently un-tickable.
+    """
+    n = _make_channel(auth_client, 711)
+    _set_image_url(n, "http://tunarr:8000/images/uploads/wm-711.png")
+    body = auth_client.get(f"/api/channels/{n}/watermark").json()
+    assert body["watermark"] is None
+    assert body["image_url"] == "http://tunarr:8000/images/uploads/wm-711.png"
 
 
 def test_put_and_get_watermark_roundtrip(auth_client):
@@ -64,7 +79,7 @@ def test_delete_watermark_clears_it(auth_client):
     })
     r = auth_client.delete(f"/api/channels/{n}/watermark")
     assert r.status_code == 200
-    assert auth_client.get(f"/api/channels/{n}/watermark").json() == {"watermark": None}
+    assert auth_client.get(f"/api/channels/{n}/watermark").json()["watermark"] is None
 
 
 @pytest.mark.parametrize("bad,field", [
@@ -113,7 +128,7 @@ def test_enabling_without_an_image_is_rejected(auth_client):
     assert r.status_code == 400, r.text
     assert "image" in r.json()["detail"].lower()
     # Nothing was stored, so the channel is still watermark-free.
-    assert auth_client.get(f"/api/channels/{n}/watermark").json() == {"watermark": None}
+    assert auth_client.get(f"/api/channels/{n}/watermark").json()["watermark"] is None
 
 
 def test_disabled_watermark_without_an_image_is_still_allowed(auth_client):

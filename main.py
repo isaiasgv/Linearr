@@ -1545,15 +1545,22 @@ def get_channel_watermark(channel_number: int):
         ).fetchone()
     if row is None:
         raise HTTPException(404, "Channel not found")
+    # `image_url` is reported at the top level too, and independently of whether a
+    # config exists: the image route resolves it WITHOUT writing the config blob,
+    # so a channel can legitimately have a resolved image and `watermark = NULL`.
+    # The editor gates its "enabled" control on a resolved image (the PUT below
+    # rejects enabled-without-one), and it must be able to see that state before
+    # the first config is saved.
+    image_url = row["watermark_image_url"]
     stored = row["watermark"]
     if not stored:
-        return {"watermark": None}
+        return {"watermark": None, "image_url": image_url}
     try:
         wm = json.loads(stored)
     except (TypeError, ValueError):
-        return {"watermark": None}
-    wm["image_url"] = row["watermark_image_url"]
-    return {"watermark": wm}
+        return {"watermark": None, "image_url": image_url}
+    wm["image_url"] = image_url
+    return {"watermark": wm, "image_url": image_url}
 
 
 @app.put("/api/channels/{channel_number}/watermark")
