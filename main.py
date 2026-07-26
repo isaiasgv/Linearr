@@ -1248,6 +1248,15 @@ async def create_channel(body: ChannelIn):
     result["tunarr_sync"] = sync
     return result
 
+# `_tunarr_resolve_transcode_config` returns None rather than a bogus id, and a
+# create without `transcodeConfigId` fails as an opaque "Tunarr 400". Both call
+# sites short-circuit with this instead.
+_NO_TRANSCODE_CONFIG_MSG = (
+    "Tunarr has no usable transcode config — Linearr cannot create a channel "
+    "without one. Open Tunarr → Settings → Transcoding and save a transcode "
+    "config (or set a default), then try again."
+)
+
 def _tunarr_write_error(status: int) -> str:
     """Format a Tunarr write-failure message. Tunarr has no 409 — a duplicate
     channel number surfaces as a 500 with an empty body, so hint at that
@@ -1352,6 +1361,12 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
                         "message": _tunarr_write_error(r.status_code)}
             else:
                 transcode_id = await _tunarr_resolve_transcode_config(client, url)
+                if not transcode_id:
+                    # Tunarr 1.3.x REQUIRES transcodeConfigId on a create, and
+                    # omitting it fails as a bare 400 that says nothing about the
+                    # real cause. Stop here with the actual reason.
+                    return {"synced": False, "action": "error",
+                            "message": _NO_TRANSCODE_CONFIG_MSG}
                 channel_obj = _tunarr_channel_obj(
                     name=ch.get("name", ""),
                     number=ch.get("number", 0),
@@ -5679,6 +5694,10 @@ async def tunarr_create_channel(body: dict):
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         transcode_id = await _tunarr_resolve_transcode_config(client, url)
+        if not transcode_id:
+            # Required by Tunarr 1.3.x; without it the create comes back as an
+            # unexplained 400. Say what is actually wrong.
+            raise HTTPException(502, _NO_TRANSCODE_CONFIG_MSG)
 
         icon_in = body.get("icon")
         channel_obj = _tunarr_channel_obj(

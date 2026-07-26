@@ -184,6 +184,53 @@ async def test_sync_create_path(monkeypatch, client):
     assert link["tunarr_number"] == number
 
 
+# ── 2b. No usable transcode config on the create path ─────────────────────────
+
+@pytest.mark.anyio
+async def test_sync_create_path_explains_a_missing_transcode_config(monkeypatch, client):
+    """`_tunarr_resolve_transcode_config` returning None used to fall through:
+    the create went out without `transcodeConfigId` (required by 1.3.x) and came
+    back as a bare "Tunarr 400" with no clue about the cause."""
+    number = 60104
+    _seed_channel(number, "No Transcode Config")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/api/transcode_configs":
+            return httpx.Response(200, json=[])          # nothing usable
+        if request.method == "GET" and request.url.path == "/api/ffmpeg-settings":
+            return httpx.Response(200, json={})          # ...and no fallback
+        if request.method == "POST":
+            raise AssertionError("must not attempt a create without a transcode config")
+        return httpx.Response(404, json={})
+
+    _install_mock_client(monkeypatch, handler)
+
+    result = await main._sync_channel_to_tunarr(number)
+
+    assert result["synced"] is False
+    assert result["action"] == "error"
+    assert "transcode config" in result["message"]
+    assert "400" not in result["message"]
+    assert _get_link(number) is None
+
+
+def test_tunarr_create_channel_route_explains_a_missing_transcode_config(
+        monkeypatch, auth_client):
+    """The second call site: POST /api/tunarr/channels."""
+    monkeypatch.setattr(main, "get_tunarr_url", lambda: "http://t.test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            raise AssertionError("must not attempt a create without a transcode config")
+        return httpx.Response(200, json=[] if request.url.path == "/api/transcode_configs" else {})
+
+    _install_mock_client(monkeypatch, handler)
+
+    r = auth_client.post("/api/tunarr/channels", json={"name": "X", "number": 60105})
+    assert r.status_code == 502, r.text
+    assert "transcode config" in r.json()["detail"]
+
+
 # ── 3. 500 on update path ─────────────────────────────────────────────────────
 
 @pytest.mark.anyio
