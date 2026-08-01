@@ -6,6 +6,8 @@ docs matching the code.
 """
 import asyncio
 import json
+import re
+from pathlib import Path
 
 import main
 from linearr_mcp import build_mcp_server
@@ -129,6 +131,57 @@ def test_put_toolsets_rejects_an_empty_selection(auth_client):
 def test_put_toolsets_requires_session(client):
     assert client.put("/api/mcp/toolsets",
                       json={"toolsets": ["channels"]}).status_code == 401
+
+
+# ── docs match code ──────────────────────────────────────────────────────────
+#
+# docs/MCP.md has drifted from the implementation before: it documented an
+# `update_filters` argument that never existed, omitted the paging arguments on
+# two tools, and reported a tool count one short. These tests make that class of
+# error impossible to ship.
+
+_DOC = Path(__file__).resolve().parents[1] / "docs" / "MCP.md"
+
+
+def _documented_tool_names() -> set[str]:
+    """Tool names from the reference tables.
+
+    Scoped to the '## Tool reference' section: the toolset overview earlier in
+    the document also has rows starting `| \\`name\\``, and those are toolset
+    names, not tools.
+    """
+    text = _DOC.read_text(encoding="utf-8")
+    start = text.index("## Tool reference")
+    end = text.index("## Resources", start)
+    return {m.group(1) for m in
+            (re.match(r"\|\s*`([a-z0-9_]+)`", line)
+             for line in text[start:end].splitlines())
+            if m}
+
+
+def test_docs_list_every_registered_tool():
+    registered = set(_tools())
+    missing = sorted(registered - _documented_tool_names())
+    assert not missing, f"undocumented tools: {missing}"
+
+
+def test_docs_do_not_invent_tools():
+    registered = set(_tools())
+    extra = sorted(_documented_tool_names() - registered)
+    assert not extra, f"documented but not registered: {extra}"
+
+
+def test_docs_tool_count_matches():
+    m = re.search(r"\*\*(\d+) tools\*\*", _DOC.read_text(encoding="utf-8"))
+    assert m, "docs/MCP.md must state the tool count as **N tools**"
+    assert int(m.group(1)) == len(_tools()), \
+        f"docs say {m.group(1)} tools, {len(_tools())} are registered"
+
+
+def test_docs_name_every_toolset():
+    text = _DOC.read_text(encoding="utf-8")
+    for name in TOOLSETS:
+        assert f"`{name}`" in text, f"toolset {name} is not documented"
 
 
 # ── resources ────────────────────────────────────────────────────────────────
