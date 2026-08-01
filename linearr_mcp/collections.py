@@ -1,6 +1,7 @@
 """collections toolset — Plex collections and the channel slots that use them."""
 from fastapi import HTTPException
 
+from ._request import json_request
 from .registry import tool_error
 
 
@@ -108,5 +109,137 @@ def register(reg, api):
         Plex and unlinks it from any channel. Library items themselves are untouched."""
         try:
             return await api.plex_delete_collection(rating_key)
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="create_collection", toolset="collections", open_world=True)
+    async def create_collection(section_id: str, title: str,
+                                rating_keys: list[str], type: str = "movie") -> dict:
+        """Create a regular (non-smart) Plex collection from a list of items.
+        type: movie | show. For a rule-based collection that keeps itself
+        current, use `create_smart_collection` instead."""
+        try:
+            return await api.plex_create_collection(json_request({
+                "section_id": section_id, "title": title,
+                "type": type, "items": rating_keys}))
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="add_collection_items", toolset="collections", open_world=True)
+    async def add_collection_items(rating_key: str, item_keys: list[str]) -> dict:
+        """Add items to an existing Plex collection, by their rating keys."""
+        try:
+            return await api.plex_add_collection_items(
+                rating_key, json_request({"items": item_keys}))
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="remove_collection_item", toolset="collections",
+              destructive=True, idempotent=True, open_world=True)
+    async def remove_collection_item(rating_key: str, item_key: str) -> dict:
+        """Remove one item from a Plex collection. The library item is untouched."""
+        try:
+            return await api.plex_remove_collection_item(rating_key, item_key)
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="update_collection", toolset="collections",
+              idempotent=True, open_world=True)
+    async def update_collection(rating_key: str, title: str | None = None,
+                                summary: str | None = None) -> dict:
+        """Rename a Plex collection or change its summary."""
+        body = {k: v for k, v in (("title", title), ("summary", summary))
+                if v is not None}
+        if not body:
+            raise RuntimeError("Pass title and/or summary")
+        try:
+            return await api.plex_update_collection(rating_key, json_request(body))
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="list_channel_collections", toolset="collections", read_only=True)
+    async def list_channel_collections(channel_number: int) -> dict:
+        """Which Plex collections a channel uses, keyed by content type
+        ('movie' / 'show'). `source` is 'owned' for a collection Linearr
+        generates and manages, 'assigned' for one the user pointed the channel
+        at; `linearr_created` marks the ones Linearr built in Plex itself."""
+        try:
+            return api.get_channel_collections(channel_number)
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="assign_collection_to_channel", toolset="collections",
+              idempotent=True)
+    async def assign_collection_to_channel(channel_number: int, plex_type: str,
+                                           collection_rating_key: str,
+                                           collection_title: str,
+                                           is_smart: bool = False) -> dict:
+        """Point a channel at an EXISTING Plex collection, BY REFERENCE.
+
+        Nothing is copied and nothing in Plex is modified — this only records
+        that the channel uses that collection. One collection per type, so
+        assigning replaces whatever was in that slot. To copy a collection's
+        items into the channel's assignments instead, use
+        `import_collection_to_channel`.
+
+        Collections named '{Channel} Movies' or '{Channel} TV' are rejected:
+        those names belong to the collections Linearr generates and manages, and
+        a later build would rewrite their contents."""
+        try:
+            return api.assign_channel_collection(
+                channel_number, api.ChannelCollectionAssignIn(
+                    plex_type=plex_type, collection_rating_key=collection_rating_key,
+                    collection_title=collection_title, is_smart=is_smart))
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="import_collection_to_channel", toolset="collections",
+              open_world=True)
+    async def import_collection_to_channel(channel_number: int, plex_type: str,
+                                           collection_rating_key: str,
+                                           collection_title: str) -> dict:
+        """COPY every item in a Plex collection into a channel's assignments.
+
+        A one-time import: later changes to the collection do not follow. To
+        track the collection instead, use `assign_collection_to_channel`."""
+        try:
+            return await api.link_channel_collection(
+                channel_number, api.ChannelCollectionIn(
+                    plex_type=plex_type, collection_rating_key=collection_rating_key,
+                    collection_title=collection_title))
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="unlink_channel_collection", toolset="collections",
+              destructive=True, idempotent=True)
+    async def unlink_channel_collection(channel_number: int, plex_type: str) -> dict:
+        """Clear a channel's collection slot for one content type. The Plex
+        collection itself is not deleted."""
+        try:
+            return api.unlink_channel_collection(channel_number, plex_type)
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="create_channel_smart_collection", toolset="collections",
+              open_world=True)
+    async def create_channel_smart_collection(
+        channel_number: int, section_id: str, title: str, type: str = "movie",
+        genres: list[str] = [], year_min: int | None = None,
+        year_max: int | None = None, decade: int | None = None,
+        unwatched: bool = False, content_rating: str | None = None,
+        title_contains: str | None = None, sort: str | None = None,
+        limit: int | None = None,
+    ) -> dict:
+        """Create a Plex smart collection AND assign it to a channel, atomically.
+        Same filters as `create_smart_collection`. If the assign fails the new
+        collection is deleted again, so a failure never leaves an orphan."""
+        body = api.SmartCollectionIn(
+            section_id=section_id, type=type, title=title, sort=sort, limit=limit,
+            filters=api.SmartCollectionFilters(
+                genres=genres, year_min=year_min, year_max=year_max, decade=decade,
+                unwatched=unwatched, content_rating=content_rating,
+                title_contains=title_contains))
+        try:
+            return await api.create_and_assign_smart_collection(channel_number, body)
         except HTTPException as e:
             raise tool_error(e)

@@ -172,3 +172,189 @@ def test_update_saved_icon_requires_a_field(auth_client):
             _call(auth_client, token, "update_saved_icon", {"icon_id": saved["id"]}))
     finally:
         _call(auth_client, token, "delete_saved_icon", {"icon_id": saved["id"]})
+
+
+# ── assignments ──────────────────────────────────────────────────────────────
+
+def test_unassign_item_reports_a_missing_item(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8823, "name": "Unassign Ch"})
+    try:
+        assert "Nothing assigned" in _error_text(
+            _call(auth_client, token, "unassign_item",
+                  {"channel_number": 8823, "rating_key": "does-not-exist"}))
+    finally:
+        auth_client.delete("/api/channels/8823")
+
+
+def test_unassign_item_removes_the_row(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8824, "name": "Unassign Ok"})
+    auth_client.post("/api/assignments", json={
+        "channel_number": 8824, "plex_rating_key": "rk-8824",
+        "plex_title": "A Movie", "plex_type": "movie"})
+    try:
+        _call(auth_client, token, "unassign_item",
+              {"channel_number": 8824, "rating_key": "rk-8824"})
+        listed = _json(_call(auth_client, token, "list_assignments",
+                             {"channel_number": 8824}))
+        assert listed["total"] == 0
+    finally:
+        auth_client.delete("/api/channels/8824")
+
+
+# ── watermark ────────────────────────────────────────────────────────────────
+
+def test_watermark_set_get_clear(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8821, "name": "WM Ch"})
+    # Enabling requires a resolved image URL — normally set by
+    # `set_watermark_image`, which uploads to Tunarr. Seed it directly so this
+    # test does not need a live Tunarr.
+    with main.get_db() as conn:
+        conn.execute("UPDATE channels SET watermark_image_url=? WHERE number=8821",
+                     ("http://tunarr:8000/images/wm.png",))
+    try:
+        assert _json(_call(auth_client, token, "get_channel_watermark",
+                           {"channel_number": 8821}))["watermark"] is None
+
+        _call(auth_client, token, "set_channel_watermark", {
+            "channel_number": 8821, "enabled": True, "position": "top-left",
+            "width": 12.5, "opacity": 80})
+        wm = _json(_call(auth_client, token, "get_channel_watermark",
+                         {"channel_number": 8821}))["watermark"]
+        assert wm["enabled"] is True
+        assert wm["position"] == "top-left"
+        assert wm["opacity"] == 80
+
+        _call(auth_client, token, "clear_channel_watermark", {"channel_number": 8821})
+        assert _json(_call(auth_client, token, "get_channel_watermark",
+                           {"channel_number": 8821}))["watermark"] is None
+    finally:
+        auth_client.delete("/api/channels/8821")
+
+
+def test_set_watermark_rejects_a_bad_position(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8822, "name": "WM Bad"})
+    try:
+        assert "position must be one of" in _error_text(
+            _call(auth_client, token, "set_channel_watermark",
+                  {"channel_number": 8822, "enabled": True, "position": "middle"}))
+    finally:
+        auth_client.delete("/api/channels/8822")
+
+
+def test_set_watermark_rejects_a_zero_width(auth_client):
+    """Tunarr requires width > 0 as a percent of frame width."""
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8825, "name": "WM Width"})
+    try:
+        assert _call(auth_client, token, "set_channel_watermark",
+                     {"channel_number": 8825, "width": 0}).get("isError")
+    finally:
+        auth_client.delete("/api/channels/8825")
+
+
+# ── collections ──────────────────────────────────────────────────────────────
+
+def test_assign_collection_to_channel_records_the_slot(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8831, "name": "Coll Ch"})
+    try:
+        _call(auth_client, token, "assign_collection_to_channel", {
+            "channel_number": 8831, "plex_type": "movie",
+            "collection_rating_key": "555",
+            "collection_title": "Someone Else's Picks"})
+        listed = _json(_call(auth_client, token, "list_channel_collections",
+                             {"channel_number": 8831}))
+        assert str(listed["movie"]["collection_rating_key"]) == "555"
+        assert listed["movie"]["source"] == "assigned", "assign links, never copies"
+
+        _call(auth_client, token, "unlink_channel_collection",
+              {"channel_number": 8831, "plex_type": "movie"})
+        listed = _json(_call(auth_client, token, "list_channel_collections",
+                             {"channel_number": 8831}))
+        assert "movie" not in listed
+    finally:
+        auth_client.delete("/api/channels/8831")
+
+
+def test_assign_collection_rejects_a_linearr_owned_title(auth_client):
+    """'{Channel} Movies' is the name Linearr's own generated collection
+    resolves by — assigning it would let a later build rewrite the user's
+    collection."""
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8832, "name": "Owned"})
+    try:
+        assert "reserved" in _error_text(
+            _call(auth_client, token, "assign_collection_to_channel", {
+                "channel_number": 8832, "plex_type": "movie",
+                "collection_rating_key": "556", "collection_title": "Owned Movies"}))
+    finally:
+        auth_client.delete("/api/channels/8832")
+
+
+def test_assign_collection_rejects_a_bad_plex_type(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8833, "name": "Bad Type"})
+    try:
+        assert _call(auth_client, token, "assign_collection_to_channel", {
+            "channel_number": 8833, "plex_type": "episode",
+            "collection_rating_key": "557", "collection_title": "Nope"}).get("isError")
+    finally:
+        auth_client.delete("/api/channels/8833")
+
+
+def test_unlink_unknown_channel_collection_errors(auth_client):
+    token = _token(auth_client)
+    assert _call(auth_client, token, "unlink_channel_collection",
+                 {"channel_number": 99999, "plex_type": "movie"}).get("isError")
+
+
+def test_update_collection_requires_a_field(auth_client):
+    token = _token(auth_client)
+    assert "title and/or summary" in _error_text(
+        _call(auth_client, token, "update_collection", {"rating_key": "1"}))
+
+
+def test_plex_stream_url_is_not_exposed():
+    """The stream URL embeds the Plex token. It must never be a tool."""
+    names = {t.name for t in main.mcp_server._tool_manager.list_tools()}
+    assert "get_stream_url" not in names
+    assert not any("stream" in n for n in names)
+
+
+# ── plex ─────────────────────────────────────────────────────────────────────
+
+def test_get_plex_auth_info_reports_a_mode(auth_client):
+    token = _token(auth_client)
+    info = _json(_call(auth_client, token, "get_plex_auth_info"))
+    assert info["mode"] in ("legacy", "jwt")
+    assert "plex_token" not in json.dumps(info)
+
+
+def test_clear_recent_events_empties_the_log(auth_client):
+    token = _token(auth_client)
+    _call(auth_client, token, "clear_recent_events")
+    assert _json(_call(auth_client, token, "get_recent_events", {"limit": 5})) == []
+
+
+def test_get_plex_highlights_rejects_an_unknown_kind(auth_client):
+    token = _token(auth_client)
+    message = _error_text(
+        _call(auth_client, token, "get_plex_highlights", {"kind": "nonsense"}))
+    assert "recently_added" in message and "on_deck" in message
+
+
+def test_enabling_a_watermark_without_an_image_is_refused(auth_client):
+    """Tunarr needs a URL to draw; an enabled watermark with none would break
+    every later save for the channel, not just the watermark."""
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8826, "name": "WM No Image"})
+    try:
+        assert "watermark image" in _error_text(
+            _call(auth_client, token, "set_channel_watermark",
+                  {"channel_number": 8826, "enabled": True}))
+    finally:
+        auth_client.delete("/api/channels/8826")
