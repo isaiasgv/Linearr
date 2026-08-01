@@ -6,4 +6,4 @@ httpx==0.28.1
 cryptography==49.0.0
 # MCP server (streamable HTTP endpoint at /mcp) — lets AI assistants manage
 # channels, browse the library, assign content, and build collections.
-mcp==1.28.1
+mcp==2.0.0
