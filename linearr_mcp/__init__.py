@@ -20,13 +20,13 @@ TOOLSET_OF: dict[str, str] = {}
 
 def build_mcp_server(api):
     """Build the FastMCP server. Returns (server, toolset_info)."""
-    from . import assignments, channels, collections, plex
+    from . import assignments, channels, collections, icons, plex
 
     mcp = FastMCP("linearr", instructions=INSTRUCTIONS)
     enabled = resolve_toolsets(api)
     reg = ToolRegistry(mcp, api, enabled)
 
-    for module in (channels, plex, assignments, collections):
+    for module in (channels, icons, assignments, plex, collections):
         module.register(reg, api)
 
     # Additive on purpose: a tool's toolset never changes, and a second build
