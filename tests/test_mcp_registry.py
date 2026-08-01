@@ -5,6 +5,7 @@ annotated, every tool instrumented, every tool in a declared toolset, and the
 docs matching the code.
 """
 import asyncio
+import json
 
 import main
 from linearr_mcp import build_mcp_server
@@ -128,6 +129,67 @@ def test_put_toolsets_rejects_an_empty_selection(auth_client):
 def test_put_toolsets_requires_session(client):
     assert client.put("/api/mcp/toolsets",
                       json={"toolsets": ["channels"]}).status_code == 401
+
+
+# ── resources ────────────────────────────────────────────────────────────────
+
+def _rpc(auth_client, method: str, params: dict | None = None):
+    token = auth_client.get("/api/mcp/info").json()["token"]
+    msg = {"jsonrpc": "2.0", "method": method, "id": 1}
+    if params is not None:
+        msg["params"] = params
+    r = auth_client.post("/mcp", json=msg, headers={
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, r.text
+    return r.json()["result"]
+
+
+def test_resources_are_listed(auth_client):
+    result = _rpc(auth_client, "resources/list")
+    uris = [x["uri"] for x in result["resources"]]
+    assert "linearr://lineup" in uris
+    assert "linearr://libraries" in uris
+    assert "linearr://status" in uris
+
+
+def test_channel_resource_is_a_template(auth_client):
+    result = _rpc(auth_client, "resources/templates/list")
+    templates = [x["uriTemplate"] for x in result["resourceTemplates"]]
+    assert "linearr://channel/{number}" in templates
+
+
+def test_lineup_resource_reads(auth_client):
+    result = _rpc(auth_client, "resources/read", {"uri": "linearr://lineup"})
+    body = json.loads(result["contents"][0]["text"])
+    assert "channels" in body and "total" in body
+
+
+def test_status_resource_leaks_no_secrets(auth_client):
+    with main.get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_token', ?)",
+                     ("super-secret-token",))
+    result = _rpc(auth_client, "resources/read", {"uri": "linearr://status"})
+    assert "super-secret-token" not in result["contents"][0]["text"]
+
+
+def test_channel_resource_reports_a_missing_channel(auth_client):
+    result = _rpc(auth_client, "resources/read",
+                  {"uri": "linearr://channel/99999"})
+    assert "not found" in result["contents"][0]["text"]
+
+
+# ── instructions ─────────────────────────────────────────────────────────────
+
+def test_instructions_warn_about_the_two_sharp_edges(auth_client):
+    result = _rpc(auth_client, "initialize", {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "pytest", "version": "1"}})
+    instructions = result["instructions"]
+    assert "RENUMBERS" in instructions
+    assert "previews by default" in instructions
 
 
 def test_gating_removes_exactly_one_toolset(monkeypatch):
