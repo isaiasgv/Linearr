@@ -338,6 +338,17 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 > sync flows run `ScanLibrariesTask` in the foreground *before* writing them.
 > Schedule slots carry an `id` (1.3 linkable slots).
 >
+> **Programming start is ALWAYS 12:00AM, and the two `startTime` fields are
+> different units.** A *channel's* `startTime` is an absolute epoch-ms anchor and
+> must land on a midnight boundary (`_previous_sunday_midnight_ms`); Linearr
+> pushes `period: "day"` schedules, so a channel anchored anywhere else shifts
+> every slot on it by the same amount. A *slot's* `startTime` is an offset
+> **within the period**, 0..86_400_000 — what `_hhmm_to_ms` returns. Never put an
+> epoch value in a slot: the base "shuffle all day" slot once used
+> `_previous_sunday_midnight_ms()` and landed ~20,000 days into the period,
+> sorting last instead of first. Guarded by `tests/test_tunarr_schedule_slots.py`
+> and the midnight assertions in `tests/test_tunarr_channel_writer.py`.
+>
 > **Channel writes go through `_tunarr_save_channel` (read-modify-write).** Tunarr's
 > `PUT /api/channels/:id` validates the body as the FULL `SaveableChannel` — only
 > `onDemand` is partial — so a partial PUT is a 400. Never compute

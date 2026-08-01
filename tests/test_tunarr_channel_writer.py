@@ -297,3 +297,33 @@ async def test_create_sends_the_union_and_does_not_retry_flat():
     assert bodies[0]["type"] == "new"
     assert bodies[0]["channel"]["name"] == "X"
     assert "id" in bodies[0]["channel"], "Tunarr's schema requires channel.id"
+
+
+# ── Programming start is always 12:00AM ──────────────────────────────────────
+#
+# A channel's `startTime` anchors its programming. Linearr pushes
+# `period: "day"` time-slot schedules whose slot times are offsets from
+# midnight, so a channel anchored anywhere other than 12:00AM shifts every slot
+# on that channel by the same amount.
+
+_DAY_MS = 24 * 60 * 60 * 1000
+
+
+def test_created_channel_starts_at_midnight():
+    obj = main._tunarr_channel_obj(
+        name="X", number=1, group_title="G", transcode_id=TC_UUID)
+    assert obj["startTime"] % _DAY_MS == 0, (
+        f"programming start {obj['startTime']} is not a 12:00AM boundary")
+
+
+def test_channel_start_helper_returns_a_midnight():
+    assert main._previous_sunday_midnight_ms() % _DAY_MS == 0
+
+
+def test_channel_start_is_a_sunday():
+    """The anchor is the most recent Sunday, so weekly patterns line up."""
+    from datetime import datetime, timezone
+    start = datetime.fromtimestamp(
+        main._previous_sunday_midnight_ms() / 1000, tz=timezone.utc)
+    assert start.weekday() == 6, "expected Sunday"
+    assert (start.hour, start.minute, start.second) == (0, 0, 0)
