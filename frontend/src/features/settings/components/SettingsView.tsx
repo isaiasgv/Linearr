@@ -17,6 +17,7 @@ import {
   useTestPlex,
   useMcpInfo,
   useRegenerateMcpToken,
+  useSetMcpToolsets,
 } from '@/features/settings/hooks'
 import { useTestTunarr, useTunarrVersionCheck } from '@/features/tunarr/hooks'
 import { useAiLogs, useClearAiLogs, useAppLogs, useClearAppLogs } from '@/features/ai/hooks'
@@ -884,7 +885,22 @@ function McpServerCard() {
   const addToast = useToastStore((s) => s.addToast)
   const { data: mcpInfo, isLoading, isError } = useMcpInfo()
   const regenerateToken = useRegenerateMcpToken()
+  const setToolsets = useSetMcpToolsets()
   const [showToken, setShowToken] = useState(false)
+  // null = "showing what the server has"; an array = an unsaved edit.
+  const [toolsetDraft, setToolsetDraft] = useState<string[] | null>(null)
+
+  const enabledToolsets =
+    toolsetDraft ??
+    (mcpInfo?.toolsets ?? []).filter((t) => t.enabled).map((t) => t.name)
+
+  const toggleToolset = (name: string) => {
+    setToolsetDraft(
+      enabledToolsets.includes(name)
+        ? enabledToolsets.filter((n) => n !== name)
+        : [...enabledToolsets, name],
+    )
+  }
 
   const endpointUrl = `${window.location.origin}${mcpInfo?.endpoint ?? '/mcp'}`
   const connectCommand = mcpInfo
@@ -1000,7 +1016,57 @@ function McpServerCard() {
             </div>
           </div>
 
-          <p className="text-xs text-slate-400">{mcpInfo.tool_count} tools available</p>
+          <div className="space-y-2">
+            <p className="text-xs text-slate-400">
+              {mcpInfo.tool_count} tools available across {mcpInfo.toolsets.length} toolsets.
+              Turn off what you don&apos;t need — every tool costs context in the client.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {mcpInfo.toolsets.map((ts) => (
+                <label
+                  key={ts.name}
+                  className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs cursor-pointer transition ${
+                    enabledToolsets.includes(ts.name)
+                      ? 'bg-indigo-500/15 text-indigo-200'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-indigo-500"
+                    checked={enabledToolsets.includes(ts.name)}
+                    onChange={() => toggleToolset(ts.name)}
+                  />
+                  {ts.name}
+                  <span className="text-slate-500">{ts.tool_count}</span>
+                </label>
+              ))}
+            </div>
+            {toolsetDraft !== null && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  disabled={enabledToolsets.length === 0 || setToolsets.isPending}
+                  onClick={() =>
+                    setToolsets.mutate(enabledToolsets, {
+                      onSuccess: () => setToolsetDraft(null),
+                    })
+                  }
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs transition disabled:opacity-40"
+                >
+                  Save toolsets
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setToolsetDraft(null)}
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs transition"
+                >
+                  Cancel
+                </button>
+                <span className="text-xs text-amber-400/80">Restart Linearr to apply</span>
+              </div>
+            )}
+          </div>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">

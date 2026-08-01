@@ -89,6 +89,22 @@ export function useRegenerateMcpToken() {
   })
 }
 
+export function useSetMcpToolsets() {
+  const queryClient = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+
+  return useMutation({
+    mutationFn: (toolsets: string[]) => settingsApi.setMcpToolsets(toolsets),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['mcp', 'info'] })
+      addToast('MCP toolsets saved — restart Linearr to apply')
+    },
+    onError: (error: Error) => {
+      addToast(error.message || 'Failed to save MCP toolsets', true)
+    },
+  })
+}
+
 export function useTestPlex() {
   const addToast = useToastStore((s) => s.addToast)
 

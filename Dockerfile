@@ -26,6 +26,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py schedule_templates.json network_blocks.json ./
+COPY linearr_mcp/ ./linearr_mcp/
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Copy built React app
