@@ -256,6 +256,326 @@ def test_set_watermark_rejects_a_zero_width(auth_client):
         auth_client.delete("/api/channels/8825")
 
 
+# ── system ───────────────────────────────────────────────────────────────────
+
+def test_get_health_reports_a_status(auth_client):
+    token = _token(auth_client)
+    health = _json(_call(auth_client, token, "get_health"))
+    assert health["status"] in ("ok", "degraded")
+
+
+def test_get_configuration_never_returns_secrets(auth_client):
+    token = _token(auth_client)
+    cfg = _json(_call(auth_client, token, "get_configuration"))
+    assert "plex_token" not in cfg
+    assert "openai_api_key" not in cfg
+    assert "plex_token_set" in cfg
+
+
+def test_update_configuration_refuses_credentials(auth_client):
+    token = _token(auth_client)
+    assert "Refusing to set plex_token" in _error_text(
+        _call(auth_client, token, "update_configuration", {"plex_token": "hunter2"}))
+    assert "Refusing to set openai_api_key" in _error_text(
+        _call(auth_client, token, "update_configuration",
+              {"openai_api_key": "sk-nope"}))
+
+
+def test_update_configuration_preserves_the_stored_plex_token(auth_client):
+    token = _token(auth_client)
+    with main.get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('plex_token', ?)",
+                     ("keep-me",))
+    _call(auth_client, token, "update_configuration",
+          {"openai_model": "gpt-4o-mini"})
+    with main.get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key='plex_token'").fetchone()
+    assert row["value"] == "keep-me"
+
+
+def test_export_lineup_whole_and_single(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8861, "name": "Export Ch"})
+    try:
+        full = _json(_call(auth_client, token, "export_lineup"))
+        assert any(c["number"] == 8861 for c in full["channels"])
+        one = _json(_call(auth_client, token, "export_lineup",
+                          {"channel_number": 8861}))
+        assert one["channel"]["number"] == 8861
+    finally:
+        auth_client.delete("/api/channels/8861")
+
+
+def test_import_lineup_merge_adds_channels(auth_client):
+    token = _token(auth_client)
+    try:
+        result = _json(_call(auth_client, token, "import_lineup", {
+            "data": {"channels": [{"number": 8862, "name": "Imported"}]},
+            "mode": "merge"}))
+        assert result["mode"] == "merge"
+        assert result["stats"]["channels_added"] == 1
+        assert any(c["number"] == 8862
+                   for c in auth_client.get("/api/channels").json())
+    finally:
+        auth_client.delete("/api/channels/8862")
+
+
+def test_import_lineup_rejects_an_unknown_mode(auth_client):
+    """'replace' wipes the lineup, so a typo must not be silently treated as one."""
+    token = _token(auth_client)
+    assert "merge" in _error_text(
+        _call(auth_client, token, "import_lineup",
+              {"data": {"channels": []}, "mode": "obliterate"}))
+
+
+def test_get_logs_kinds(auth_client):
+    token = _token(auth_client)
+    assert isinstance(
+        _json(_call(auth_client, token, "get_logs", {"kind": "app", "limit": 5})),
+        (list, dict))
+    assert isinstance(
+        _json(_call(auth_client, token, "get_logs", {"kind": "ai", "limit": 5})),
+        (list, dict))
+    assert "app" in _error_text(
+        _call(auth_client, token, "get_logs", {"kind": "nope"}))
+
+
+def test_backup_and_restore_are_not_exposed():
+    """Restore replaces the whole database. It is not an MCP tool."""
+    names = {t.name for t in main.mcp_server._tool_manager.list_tools()}
+    assert not any("restore" in n or "backup" in n for n in names)
+
+
+# ── ai ───────────────────────────────────────────────────────────────────────
+
+def test_ai_tools_are_read_only():
+    """Every ai_* tool returns a proposal and writes nothing."""
+    tools = {t.name: t for t in main.mcp_server._tool_manager.list_tools()}
+    ai_tools = [n for n in tools if n.startswith("ai_")]
+    assert len(ai_tools) == 5
+    for name in ai_tools:
+        assert tools[name].annotations.readOnlyHint is True, name
+
+
+def test_ai_tools_say_they_spend_the_operators_credits():
+    tools = {t.name: t for t in main.mcp_server._tool_manager.list_tools()}
+    for name in (n for n in tools if n.startswith("ai_")):
+        assert "credits" in (tools[name].description or ""), name
+
+
+# ── tunarr ───────────────────────────────────────────────────────────────────
+
+def test_tunarr_channel_link_round_trip(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8851, "name": "Tun Ch"})
+    try:
+        _call(auth_client, token, "link_tunarr_channel", {
+            "channel_number": 8851, "tunarr_id": "abc-123", "tunarr_name": "Tun Ch"})
+        links = _json(_call(auth_client, token, "list_tunarr_links",
+                            {"kind": "channel"}))
+        assert any(link["channel_number"] == 8851 and link["tunarr_id"] == "abc-123"
+                   for link in links["channel_links"])
+        assert "collection_links" not in links
+
+        _call(auth_client, token, "unlink_tunarr_channel", {"channel_number": 8851})
+        links = _json(_call(auth_client, token, "list_tunarr_links",
+                            {"kind": "channel"}))
+        assert not any(link["channel_number"] == 8851
+                       for link in links["channel_links"])
+    finally:
+        auth_client.delete("/api/channels/8851")
+
+
+def test_tunarr_collection_link_round_trip(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8852, "name": "Tun Coll"})
+    try:
+        _call(auth_client, token, "link_tunarr_collection", {
+            "channel_number": 8852, "plex_type": "movie",
+            "tunarr_collection_id": "sc-1", "tunarr_collection_name": "Movies"})
+        links = _json(_call(auth_client, token, "list_tunarr_links",
+                            {"kind": "collection"}))
+        assert any(link["channel_number"] == 8852
+                   for link in links["collection_links"])
+
+        _call(auth_client, token, "unlink_tunarr_collection",
+              {"channel_number": 8852, "plex_type": "movie"})
+        links = _json(_call(auth_client, token, "list_tunarr_links",
+                            {"kind": "collection"}))
+        assert not any(link["channel_number"] == 8852
+                       for link in links["collection_links"])
+    finally:
+        auth_client.delete("/api/channels/8852")
+
+
+def test_list_tunarr_links_all_returns_both(auth_client):
+    token = _token(auth_client)
+    links = _json(_call(auth_client, token, "list_tunarr_links"))
+    assert "channel_links" in links and "collection_links" in links
+
+
+def test_list_tunarr_links_rejects_an_unknown_kind(auth_client):
+    token = _token(auth_client)
+    assert "channel" in _error_text(
+        _call(auth_client, token, "list_tunarr_links", {"kind": "sideways"}))
+
+
+def test_run_tunarr_task_rejects_an_unknown_task(auth_client):
+    token = _token(auth_client)
+    message = _error_text(
+        _call(auth_client, token, "run_tunarr_task", {"task_name": "DropDatabase"}))
+    assert "UpdateXmlTvTask" in message and "ScanLibrariesTask" in message
+
+
+def test_get_tunarr_endpoints_returns_urls_not_files(auth_client):
+    token = _token(auth_client)
+    endpoints = _json(_call(auth_client, token, "get_tunarr_endpoints"))
+    assert endpoints["xmltv_url"] == "/api/tunarr/xmltv"
+    assert endpoints["m3u_url"] == "/api/tunarr/m3u"
+    assert endpoints["tunarr_url"]
+
+
+def test_push_schedule_previews_by_default():
+    """The default must be preview — applying replaces Tunarr's schedule."""
+    tool = next(t for t in main.mcp_server._tool_manager.list_tools()
+                if t.name == "push_schedule_to_tunarr")
+    assert tool.parameters["properties"]["preview"]["default"] is True
+
+
+def test_update_tunarr_smart_collection_requires_a_field(auth_client):
+    token = _token(auth_client)
+    assert "name and/or filter" in _error_text(
+        _call(auth_client, token, "update_tunarr_smart_collection", {"sc_id": "x"}))
+
+
+# ── blocks ───────────────────────────────────────────────────────────────────
+
+def test_block_lifecycle(auth_client):
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8841, "name": "Block Ch"})
+    try:
+        block = _json(_call(auth_client, token, "create_block", {
+            "name": "Prime Time", "channel_number": 8841,
+            "start_time": "20:00", "end_time": "23:00",
+            "content_type": "shows", "days": ["mon", "tue"]}))
+        bid = block["id"]
+        assert block["days"] == ["mon", "tue"]
+
+        listed = _json(_call(auth_client, token, "list_blocks",
+                             {"channel_number": 8841}))
+        assert [b["id"] for b in listed] == [bid]
+
+        _call(auth_client, token, "update_block",
+              {"block_id": bid, "name": "Late Night"})
+        listed = _json(_call(auth_client, token, "list_blocks",
+                             {"channel_number": 8841}))
+        assert listed[0]["name"] == "Late Night"
+        assert listed[0]["start_time"] == "20:00", "unpassed fields must not reset"
+        assert listed[0]["days"] == ["mon", "tue"], "unpassed fields must not reset"
+
+        _call(auth_client, token, "delete_block", {"block_id": bid})
+        assert _json(_call(auth_client, token, "list_blocks",
+                           {"channel_number": 8841})) == []
+    finally:
+        auth_client.delete("/api/channels/8841")
+
+
+def test_list_blocks_without_a_channel_returns_the_generic_ones(auth_client):
+    token = _token(auth_client)
+    block = _json(_call(auth_client, token, "create_block", {"name": "Reusable"}))
+    bid = block["id"]
+    try:
+        generic = _json(_call(auth_client, token, "list_blocks"))
+        assert any(b["id"] == bid for b in generic)
+        assert all(b["channel_number"] is None for b in generic)
+    finally:
+        _call(auth_client, token, "delete_block", {"block_id": bid})
+
+
+def test_update_block_reports_a_missing_block(auth_client):
+    token = _token(auth_client)
+    assert "not found" in _error_text(
+        _call(auth_client, token, "update_block", {"block_id": 999999, "name": "x"}))
+
+
+def test_block_slot_lifecycle(auth_client):
+    token = _token(auth_client)
+    block = _json(_call(auth_client, token, "create_block", {"name": "Slots Block"}))
+    bid = block["id"]
+    try:
+        a = _json(_call(auth_client, token, "add_block_slot", {
+            "block_id": bid, "slot_time": "09:00", "plex_rating_key": "1001",
+            "plex_title": "Show A", "plex_type": "show"}))
+        b = _json(_call(auth_client, token, "add_block_slot", {
+            "block_id": bid, "slot_time": "10:00", "plex_rating_key": "1002",
+            "plex_title": "Show B", "plex_type": "show"}))
+
+        slots = _json(_call(auth_client, token, "list_block_slots", {"block_id": bid}))
+        assert len(slots) == 2
+
+        _call(auth_client, token, "swap_block_slots",
+              {"block_id": bid, "slot_a": a["id"], "slot_b": b["id"]})
+        times = {s["id"]: s["slot_time"] for s in
+                 _json(_call(auth_client, token, "list_block_slots", {"block_id": bid}))}
+        assert times[a["id"]] == "10:00" and times[b["id"]] == "09:00"
+
+        _call(auth_client, token, "update_block_slot",
+              {"slot_id": a["id"], "slot_time": "22:30"})
+        times = {s["id"]: s["slot_time"] for s in
+                 _json(_call(auth_client, token, "list_block_slots", {"block_id": bid}))}
+        assert times[a["id"]] == "22:30"
+
+        _call(auth_client, token, "delete_block_slot", {"slot_id": a["id"]})
+        assert len(_json(_call(auth_client, token, "list_block_slots",
+                               {"block_id": bid}))) == 1
+
+        _call(auth_client, token, "clear_block_slots", {"block_id": bid})
+        assert _json(_call(auth_client, token, "list_block_slots",
+                           {"block_id": bid})) == []
+    finally:
+        _call(auth_client, token, "delete_block", {"block_id": bid})
+
+
+def test_apply_generic_block_to_a_channel(auth_client):
+    """The template must survive being applied."""
+    token = _token(auth_client)
+    auth_client.post("/api/channels", json={"number": 8842, "name": "Apply Ch"})
+    block = _json(_call(auth_client, token, "create_block",
+                        {"name": "Template Block", "start_time": "06:00"}))
+    bid = block["id"]
+    try:
+        _call(auth_client, token, "apply_block",
+              {"block_id": bid, "channel_number": 8842})
+        applied = _json(_call(auth_client, token, "list_blocks",
+                              {"channel_number": 8842}))
+        assert any(b["start_time"] == "06:00" for b in applied)
+        assert any(b["id"] == bid for b in
+                   _json(_call(auth_client, token, "list_blocks")))
+    finally:
+        _call(auth_client, token, "delete_block", {"block_id": bid})
+        auth_client.delete("/api/channels/8842")
+
+
+def test_list_schedule_templates_reaches_the_handler(auth_client):
+    """The templates file lives at /app/schedule_templates.json, so outside the
+    container the handler's own 404 is the correct answer — what this asserts is
+    that the tool delegates rather than inventing a result."""
+    token = _token(auth_client)
+    result = _call(auth_client, token, "list_schedule_templates")
+    if result.get("isError"):
+        assert "schedule_templates.json" in _error_text(result)
+    else:
+        assert isinstance(_json(result), (list, dict))
+
+
+def test_get_network_block_suggestions_needs_no_ai(auth_client):
+    token = _token(auth_client)
+    assert isinstance(
+        _json(_call(auth_client, token, "get_network_block_suggestions")),
+        (list, dict))
+
+
 # ── collections ──────────────────────────────────────────────────────────────
 
 def test_assign_collection_to_channel_records_the_slot(auth_client):
