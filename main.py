@@ -5363,7 +5363,17 @@ TUNARR_V13 = "1.3.0"
 TUNARR_SUPPORTED_VERSION = TUNARR_TESTED_VERSION
 
 def _previous_sunday_midnight_ms() -> int:
-    """Return Unix epoch milliseconds for the most recent Sunday at 00:00:00 UTC."""
+    """Unix epoch milliseconds for the most recent Sunday at 00:00:00 UTC.
+
+    This is a CHANNEL's programming start, and it must always land on 12:00AM —
+    Linearr pushes `period: "day"` time-slot schedules whose slot times are
+    offsets from midnight, so a channel anchored anywhere else shifts every slot
+    on that channel by the same amount. `test_tunarr_channel_writer.py` asserts
+    the midnight invariant directly.
+
+    Do NOT reuse this for a slot's `startTime`: a slot start is an offset within
+    the period (see `_hhmm_to_ms`), not an absolute timestamp.
+    """
     from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
     days_since_sunday = now.weekday() + 1  # Monday=0, Sunday=6 → +1 gives days since Sunday
@@ -7147,14 +7157,21 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
     # Build slots — start with smart collection at midnight as base
     slots: list[dict] = []
 
-    # Base: smart collection at midnight — shuffles all day as fallback
+    # Base: smart collection at midnight — shuffles all day as fallback.
+    #
+    # A slot's `startTime` in a `period: "day"` schedule is an OFFSET FROM
+    # MIDNIGHT (0 .. 86_400_000), the same unit `_hhmm_to_ms` produces for the
+    # block slots below — not an absolute epoch timestamp. This slot used to be
+    # built from `_previous_sunday_midnight_ms()`, an epoch value ~1.7e12, which
+    # put the "midnight" base slot roughly 20,000 days into the period and sorted
+    # it last instead of first. Programming start is always 12:00AM.
     base_col = col_links.get("show") or col_links.get("movie")
     if base_col:
         slots.append({
             "id": str(uuid.uuid4()),  # Tunarr 1.3 lineup migration: linkable slots carry an id
             "type": "smart-collection",
             "smartCollectionId": base_col["tunarr_collection_id"],
-            "startTime": _previous_sunday_midnight_ms(),
+            "startTime": _hhmm_to_ms("00:00"),
             "order": "ordered_shuffle",
             "direction": "asc",
             "padMs": 0,
