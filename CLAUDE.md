@@ -36,6 +36,7 @@ Self-hosted TV channel schedule manager for Plex and Tunarr (Galaxy Network). Ru
 
 **Key files:**
 - `main.py` — all backend logic (routes, DB, Plex proxy); serves built React app from `/app/dist/`
+- `linearr_mcp/` — the MCP server, one module per toolset. Calls `main.py`'s route handlers; never imports `main` (see "MCP Server" under API Routes)
 - `frontend/` — React + Vite app (vertical slice: `src/features/`, `src/shared/`)
 - `channels.py` — reference/seed list of Galaxy Network channels (`CHANNELS`). **Not imported at runtime** — channels live in the SQLite `channels` table; this file is a seed/reference snapshot and is excluded from the Docker image (`.dockerignore`).
 - `.env` — secrets (not committed: `PLEX_TOKEN`, `APP_PASSWORD`, `APP_SECRET`)
@@ -386,14 +387,49 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 
 ### MCP Server
 Model Context Protocol endpoint at `/mcp` (streamable HTTP, stateless, JSON responses) —
-lets AI assistants manage channels, browse Plex, assign content, and build collections.
-24 tools. Auth: `Authorization: Bearer <token>`; token auto-generated, stored as settings
-key `mcp_token`, enforced in `auth_middleware` (constant-time compare, before the cookie
-check). Shown in Settings → System → MCP Server. Code lives in the "── MCP server" section
-at the bottom of `main.py`; tools call the internal route handlers directly — no
-HTTP-to-self loop. Requires the `mcp` package (in `requirements.txt`).
-User docs: `docs/MCP.md`.
-- `GET /api/mcp/info` — `{endpoint, token, tool_count}` (session-cookie auth, for Settings UI)
+full coverage of the app: channels, Plex, assignments, collections, schedule blocks,
+Tunarr, watermarks, icons, AI advisors, and system/logs. **127 tools across 10 toolsets**
+(`channels`, `icons`, `assignments`, `plex`, `collections`, `blocks`, `tunarr`,
+`watermark`, `ai`, `system`), plus 4 resources (`linearr://lineup`,
+`linearr://channel/{number}`, `linearr://libraries`, `linearr://status`).
+
+Auth: `Authorization: Bearer <token>`; token auto-generated, stored as settings key
+`mcp_token`, enforced in `auth_middleware` (constant-time compare, before the cookie
+check). Shown in Settings → System → MCP Server. Requires the `mcp` package (in
+`requirements.txt`). User docs: `docs/MCP.md`.
+
+**Code lives in `linearr_mcp/`, one module per toolset — not in `main.py`.** Three rules
+hold it together:
+
+- **`linearr_mcp` never imports `main`.** `main.py` calls
+  `build_mcp_server(sys.modules[__name__])`; every module receives that module object as
+  `api` and reads handlers off it. That is what keeps the import acyclic — do not
+  "simplify" it into a direct import.
+- **Tools call route handlers; they never reimplement them.** A handler typed
+  `request: Request` is called with `linearr_mcp._request.json_request(body)`.
+  Reimplementing handler logic inside a tool is how the MCP surface and the HTTP surface
+  silently drift apart.
+- **`ToolRegistry.tool()` is the only way to register.** It applies the Activity-Log
+  wrapper, the annotations and the toolset gate at registration time. (The previous design
+  wrapped tools in a pass that ran after the last registration, so anything added below
+  that line lost its instrumentation.) Annotate honestly — `destructive=True` is what makes
+  a client prompt before deleting someone's channel. Argument summaries are redacted for
+  anything named like an icon, image, token, key or secret, or any `data:` value.
+
+Toolsets are gated by `MCP_TOOLSETS` (env) or the `mcp_toolsets` settings key; all are on
+by default and a change needs a restart, because tools register at import. An empty or
+unrecognised selection falls back to all. `linearr_mcp/` must stay in the Dockerfile's
+COPY list. `tests/test_mcp_registry.py` asserts every tool is annotated, instrumented, in
+a declared toolset, **and documented in `docs/MCP.md`** — that last one exists because the
+docs had drifted (a documented argument that never existed, missing paging arguments, a
+tool count one short).
+
+Deliberately NOT exposed, and the reasons are in `docs/MCP.md`: DB backup/restore, the
+Plex stream URL (embeds the token), writing `plex_token`/`openai_api_key`, the OAuth PIN
+flow, image proxies, icon-pack bulk transfer, the Plex webhook receiver, login/logout.
+
+- `GET /api/mcp/info` — `{endpoint, token, tool_count, toolsets[]}` (session-cookie auth)
+- `PUT /api/mcp/toolsets` — body `{toolsets: [...]}`, persists the selection (restart to apply)
 - `POST /api/mcp/regenerate-token` — rotate the bearer token (invalidates old immediately)
 
 ---

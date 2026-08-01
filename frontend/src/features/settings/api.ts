@@ -1,4 +1,4 @@
-import { get, post } from '@/shared/api/client'
+import { get, post, put } from '@/shared/api/client'
 import type { Settings } from '@/shared/types'
 
 function getSettings(): Promise<Settings> {
@@ -48,10 +48,17 @@ function testPlex(): Promise<PlexTestResult> {
   return post<PlexTestResult>('/api/plex/test')
 }
 
+export interface McpToolset {
+  name: string
+  enabled: boolean
+  tool_count: number
+}
+
 export interface McpInfo {
   endpoint: string
   token: string
   tool_count: number
+  toolsets: McpToolset[]
 }
 
 function getMcpInfo(): Promise<McpInfo> {
@@ -62,6 +69,16 @@ function regenerateMcpToken(): Promise<{ token: string }> {
   return post<{ token: string }>('/api/mcp/regenerate-token')
 }
 
+/** Tools register at import, so the change only lands on the next restart. */
+function setMcpToolsets(
+  toolsets: string[],
+): Promise<{ ok: boolean; toolsets: string[]; restart_required: boolean }> {
+  return put<{ ok: boolean; toolsets: string[]; restart_required: boolean }>(
+    '/api/mcp/toolsets',
+    { toolsets },
+  )
+}
+
 export const settingsApi = {
   getSettings,
   saveSettings,
@@ -70,4 +87,5 @@ export const settingsApi = {
   testPlex,
   getMcpInfo,
   regenerateMcpToken,
+  setMcpToolsets,
 }
