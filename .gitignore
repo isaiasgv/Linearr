@@ -24,4 +24,3 @@ obj/
 # Local diagnostic probe (not part of the shipped app)
 scripts/probe_upstreams.py
 .venv-mcp/
-.pytest-report.xml
