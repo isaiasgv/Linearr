@@ -7693,6 +7693,10 @@ app.mount("/mcp", _mcp_asgi)
 
 # ---- MCP management (session-cookie auth, like the rest of /api) --------------
 
+class McpToolsetsIn(BaseModel):
+    toolsets: list[str]
+
+
 @app.get("/api/mcp/info")
 def mcp_info():
     """Connection info for the MCP endpoint (shown in Settings)."""
@@ -7700,7 +7704,29 @@ def mcp_info():
         "endpoint": "/mcp",
         "token": _get_mcp_token(),
         "tool_count": len(mcp_server._tool_manager.list_tools()),
+        "toolsets": MCP_TOOLSET_INFO,
     }
+
+
+@app.put("/api/mcp/toolsets")
+def mcp_set_toolsets(body: McpToolsetsIn):
+    """Choose which MCP toolsets are registered.
+
+    Tools are registered at import, so a change takes effect on the next app
+    start — the response says so rather than pretending it was live.
+    """
+    from linearr_mcp.registry import TOOLSETS as _ALL
+    chosen = [t.strip().lower() for t in body.toolsets if t.strip()]
+    unknown = [t for t in chosen if t not in _ALL]
+    if unknown:
+        raise HTTPException(400, f"Unknown toolset(s): {', '.join(unknown)}")
+    if not chosen:
+        raise HTTPException(400, "Select at least one toolset")
+    value = ",".join(t for t in _ALL if t in chosen)
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('mcp_toolsets', ?)", (value,))
+    _log_app("system", f"MCP toolsets set to: {value}", "warn")
+    return {"ok": True, "toolsets": value.split(","), "restart_required": True}
 
 @app.post("/api/mcp/regenerate-token")
 def mcp_regenerate_token():

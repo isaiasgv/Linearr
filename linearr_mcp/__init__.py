@@ -29,7 +29,8 @@ def build_mcp_server(api):
     for module in (channels, plex, assignments, collections):
         module.register(reg, api)
 
-    TOOLSET_OF.clear()
+    # Additive on purpose: a tool's toolset never changes, and a second build
+    # (a test constructing a gated server) must not erase the first build's map.
     TOOLSET_OF.update(reg.toolset_of)
     counts = reg.counts()
     info = [{"name": t, "enabled": t in enabled, "tool_count": counts[t]}
