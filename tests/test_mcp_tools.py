@@ -667,14 +667,26 @@ def test_get_plex_highlights_rejects_an_unknown_kind(auth_client):
     assert "recently_added" in message and "on_deck" in message
 
 
-def test_enabling_a_watermark_without_an_image_is_refused(auth_client):
-    """Tunarr needs a URL to draw; an enabled watermark with none would break
-    every later save for the channel, not just the watermark."""
+def test_enabling_a_watermark_without_an_image_is_allowed(auth_client):
+    """No image needed — Linearr omits the URL and Tunarr draws the channel icon."""
     token = _token(auth_client)
     auth_client.post("/api/channels", json={"number": 8826, "name": "WM No Image"})
     try:
-        assert "watermark image" in _error_text(
-            _call(auth_client, token, "set_channel_watermark",
-                  {"channel_number": 8826, "enabled": True}))
+        _call(auth_client, token, "set_channel_watermark",
+              {"channel_number": 8826, "enabled": True})
+        wm = _json(_call(auth_client, token, "get_channel_watermark",
+                         {"channel_number": 8826}))["watermark"]
+        assert wm["enabled"] is True
     finally:
         auth_client.delete("/api/channels/8826")
+
+
+def test_watermark_tool_defaults_match_the_app(auth_client):
+    """The MCP tool must not hand out different defaults from the UI."""
+    tool = next(t for t in main.mcp_server._tool_manager.list_tools()
+                if t.name == "set_channel_watermark")
+    props = tool.parameters["properties"]
+    assert props["width"]["default"] == 7.0
+    assert props["vertical_margin"]["default"] == 5.0
+    assert props["horizontal_margin"]["default"] == 5.0
+    assert props["opacity"]["default"] == 20

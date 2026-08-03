@@ -637,6 +637,18 @@ class ChannelCollectionAssignIn(BaseModel):
 
 _WATERMARK_POSITIONS = ("top-left", "top-right", "bottom-left", "bottom-right")
 
+# Defaults for a NEW watermark. Tuned for a discreet corner bug: 7% of frame
+# width, 5% margins, 20% opacity. Mirrored in
+# `frontend/src/features/watermark/types.ts` (DEFAULT_WATERMARK) — keep the two
+# in step. Channels with a watermark already saved keep their stored values;
+# these only fill in fields a caller omits.
+_WATERMARK_DEFAULTS = {
+    "width": 7.0,
+    "vertical_margin": 5.0,
+    "horizontal_margin": 5.0,
+    "opacity": 20,
+}
+
 
 class WatermarkFade(BaseModel):
     # Tunarr requires periodMins >= 1 and silently drops entries <= 0.
@@ -654,11 +666,15 @@ class WatermarkIn(BaseModel):
     """
     enabled: bool = False
     position: str = "bottom-right"
-    width: float = Field(default=10.0, gt=0)          # percent of frame width, strictly > 0
-    vertical_margin: float = Field(default=1.0, ge=0, le=100)
-    horizontal_margin: float = Field(default=1.0, ge=0, le=100)
+    # percent of frame width, strictly > 0
+    width: float = Field(default=_WATERMARK_DEFAULTS["width"], gt=0)
+    vertical_margin: float = Field(
+        default=_WATERMARK_DEFAULTS["vertical_margin"], ge=0, le=100)
+    horizontal_margin: float = Field(
+        default=_WATERMARK_DEFAULTS["horizontal_margin"], ge=0, le=100)
     duration: float = Field(default=0.0, ge=0)        # seconds; 0 = always on
-    opacity: int = Field(default=100, ge=0, le=100)   # must be an int for Tunarr
+    # must be an int for Tunarr
+    opacity: int = Field(default=_WATERMARK_DEFAULTS["opacity"], ge=0, le=100)
     fixed_size: bool = False                          # true makes `width` inert
     use_channel_icon: bool = True
     fade: WatermarkFade | None = None
@@ -1571,18 +1587,17 @@ async def put_channel_watermark(channel_number: int, body: WatermarkIn):
         ).fetchone()
         if existing is None:
             raise HTTPException(404, "Channel not found")
-        # An enabled watermark with no resolved image maps to `url: ""`, which
-        # Tunarr may reject — and because every channel write is a full
-        # SaveableChannel PUT, that would then fail EVERY later save for this
-        # channel (name, number, tier included), not just the watermark. The
-        # mapper still emits `url: ""` by design (it has no channel context);
-        # the gate belongs here, where the resolved image is known.
-        if body.enabled and not (existing["watermark_image_url"] or "").strip():
-            raise HTTPException(
-                400, "Set a watermark image before enabling the watermark — "
-                     "Tunarr needs an image URL to draw. Apply the channel icon "
-                     "or an absolute image URL first, then enable it."
-            )
+        # No image gate here on purpose. Leaving the image blank is a valid,
+        # useful configuration: `_watermark_to_tunarr` omits the `url` key
+        # entirely and Tunarr then draws the channel's own icon, so a watermark
+        # that should just follow the logo needs no image set at all.
+        #
+        # This previously 400'd, on the theory that a blank image forced
+        # `url: ""` and Tunarr would reject it — which would have broken every
+        # later save for the channel, since each write is a full SaveableChannel
+        # PUT. Probed against Tunarr 1.3.10: `url` is optional, an absent key is
+        # accepted (200), and `url: ""` is accepted too. The premise was wrong,
+        # so the gate went with it.
         conn.execute(
             "UPDATE channels SET watermark=? WHERE number=?",
             (json.dumps(body.model_dump()), channel_number),
@@ -5528,18 +5543,29 @@ def _watermark_to_tunarr(wm: dict, image_url: str | None) -> dict:
     Only `fadeConfig[0]` is ever applied by Tunarr, so at most one entry is
     sent. `animated` and `fadeConfig[].programType` are omitted: Tunarr
     persists both but no pipeline builder reads them (1.3.6).
+
+    `url` is OMITTED when there is no resolved image, never sent as `""`.
+    Tunarr's `url` is optional, and with the key absent Tunarr draws the
+    channel's own icon — which is the behaviour you want for a channel whose
+    watermark should just follow its logo. Probed against Tunarr 1.3.10: a PUT
+    with no `url` key returns 200 and stores the watermark with no `url`, while
+    `url: ""` is also accepted but persists an explicit empty value that has no
+    image to fall back on.
     """
     out: dict = {
         "enabled": bool(wm.get("enabled", False)),
         "position": wm.get("position", "bottom-right"),
-        "width": float(wm.get("width", 10.0)),
-        "verticalMargin": float(wm.get("vertical_margin", 1.0)),
-        "horizontalMargin": float(wm.get("horizontal_margin", 1.0)),
+        "width": float(wm.get("width", _WATERMARK_DEFAULTS["width"])),
+        "verticalMargin": float(wm.get("vertical_margin",
+                                       _WATERMARK_DEFAULTS["vertical_margin"])),
+        "horizontalMargin": float(wm.get("horizontal_margin",
+                                         _WATERMARK_DEFAULTS["horizontal_margin"])),
         "duration": float(wm.get("duration", 0.0)),
-        "opacity": int(wm.get("opacity", 100)),
+        "opacity": int(wm.get("opacity", _WATERMARK_DEFAULTS["opacity"])),
         "fixedSize": bool(wm.get("fixed_size", False)),
-        "url": image_url or "",
     }
+    if (image_url or "").strip():
+        out["url"] = image_url
     fade = wm.get("fade")
     if isinstance(fade, dict) and int(fade.get("period_mins", 0)) >= 1:
         out["fadeConfig"] = [{

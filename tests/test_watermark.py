@@ -113,45 +113,49 @@ def test_fade_period_must_be_at_least_one_minute(auth_client):
     assert r.status_code == 422
 
 
-def test_enabling_without_an_image_is_rejected(auth_client):
-    """An enabled watermark with no resolved image would be pushed as
-    `url: ""`. Every channel write is a full SaveableChannel PUT, so if Tunarr
-    rejects that, EVERY later save for the channel fails — name/number/tier
-    included. Gate it at the route with an actionable message.
+def test_enabling_without_an_image_is_allowed(auth_client):
+    """Leaving the image blank is a valid configuration, not an error.
+
+    `_watermark_to_tunarr` omits the `url` key entirely, and Tunarr then draws
+    the channel's own icon — so a watermark meant to follow the logo needs no
+    image set at all. This used to 400, on the theory that a blank image forced
+    `url: ""` and Tunarr would reject it; probing Tunarr 1.3.10 showed `url` is
+    optional and an absent key is accepted (200).
     """
     n = _make_channel(auth_client, 706)
     _set_image_url(n, None)
     r = auth_client.put(f"/api/channels/{n}/watermark", json={
-        "enabled": True, "width": 10, "vertical_margin": 1,
-        "horizontal_margin": 1, "position": "bottom-right",
+        "enabled": True, "width": 7, "vertical_margin": 5,
+        "horizontal_margin": 5, "position": "bottom-right",
     })
-    assert r.status_code == 400, r.text
-    assert "image" in r.json()["detail"].lower()
-    # Nothing was stored, so the channel is still watermark-free.
-    assert auth_client.get(f"/api/channels/{n}/watermark").json()["watermark"] is None
+    assert r.status_code == 200, r.text
+    assert auth_client.get(f"/api/channels/{n}/watermark").json()["watermark"]["enabled"] is True
 
 
-def test_disabled_watermark_without_an_image_is_still_allowed(auth_client):
-    """The gate is only on `enabled` — saving a draft config is fine."""
+def test_disabled_watermark_without_an_image_is_allowed(auth_client):
     n = _make_channel(auth_client, 707)
     _set_image_url(n, None)
     r = auth_client.put(f"/api/channels/{n}/watermark", json={
-        "enabled": False, "width": 10, "vertical_margin": 1,
-        "horizontal_margin": 1, "position": "top-left",
+        "enabled": False, "width": 7, "vertical_margin": 5,
+        "horizontal_margin": 5, "position": "top-left",
     })
     assert r.status_code == 200, r.text
     assert auth_client.get(f"/api/channels/{n}/watermark").json()["watermark"]["position"] \
         == "top-left"
 
 
-def test_enabling_with_a_blank_image_url_is_rejected(auth_client):
+def test_enabling_with_a_blank_image_url_is_allowed(auth_client):
+    """A whitespace-only stored URL counts as no URL — the key is omitted from
+    the Tunarr payload rather than pushed blank."""
     n = _make_channel(auth_client, 708)
     _set_image_url(n, "   ")
     r = auth_client.put(f"/api/channels/{n}/watermark", json={
-        "enabled": True, "width": 10, "vertical_margin": 1,
-        "horizontal_margin": 1, "position": "bottom-right",
+        "enabled": True, "width": 7, "vertical_margin": 5,
+        "horizontal_margin": 5, "position": "bottom-right",
     })
-    assert r.status_code == 400, r.text
+    assert r.status_code == 200, r.text
+    import main
+    assert main._watermark_to_tunarr({"enabled": True}, "   ").get("url") is None
 
 
 def test_watermark_404_for_unknown_channel(auth_client):
@@ -197,7 +201,10 @@ def test_tunarr_payload_omits_fade_when_unset():
         "opacity": 100, "fixed_size": False, "fade": None,
     }, None)
     assert "fadeConfig" not in out
-    assert out.get("url", "") == ""
+    # No resolved image -> the key is OMITTED, never sent as "". With `url`
+    # absent Tunarr draws the channel's own icon; an explicit "" has nothing to
+    # fall back on.
+    assert "url" not in out
 
 
 import base64

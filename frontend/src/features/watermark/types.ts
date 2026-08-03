@@ -51,14 +51,22 @@ export interface Watermark {
 /** The config half of {@link Watermark} — exactly what `PUT .../watermark` takes. */
 export type WatermarkConfig = Omit<Watermark, 'image_url'>
 
+/**
+ * Defaults for a NEW watermark — a discreet corner bug: 7% of frame width, 5%
+ * margins, 20% opacity. Mirrors `_WATERMARK_DEFAULTS` in `main.py`; keep the
+ * two in step. A channel with a watermark already saved keeps its stored values.
+ *
+ * The image is intentionally left unset: with no resolved URL the backend omits
+ * `url` from the Tunarr payload and Tunarr draws the channel's own icon.
+ */
 export const DEFAULT_WATERMARK: Watermark = {
   enabled: false,
   position: 'bottom-right',
-  width: 10,
-  vertical_margin: 1,
-  horizontal_margin: 1,
+  width: 7,
+  vertical_margin: 5,
+  horizontal_margin: 5,
   duration: 0,
-  opacity: 100,
+  opacity: 20,
   fixed_size: false,
   use_channel_icon: true,
   fade: null,

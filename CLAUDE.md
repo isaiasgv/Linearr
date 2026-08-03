@@ -364,6 +364,17 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 > persisted but never read, and only `fadeConfig[0]` is applied — so clearing a watermark
 > pushes an explicit `enabled: false` (read-modify-write would otherwise echo Tunarr's
 > existing one straight back).
+>
+> **The watermark `url` is optional — omit it, never send `""`.** With the key absent
+> Tunarr draws the channel's own icon, which is what a watermark that should follow the
+> logo wants; `_watermark_to_tunarr` therefore only adds `url` when a resolved image URL
+> exists. There is deliberately NO "set an image before enabling" gate: that once 400'd
+> on the theory that a blank image forced `url: ""` and Tunarr would reject it, but a
+> probe against Tunarr **1.3.10** showed `url` is optional, an absent key is accepted
+> (200, stored with no `url`), and `url: ""` is accepted too. Defaults for a new
+> watermark live in `_WATERMARK_DEFAULTS` (width 7, margins 5/5, opacity 20), mirrored in
+> `frontend/src/features/watermark/types.ts` and in the `set_channel_watermark` MCP tool
+> — all three must agree, and `tests/test_mcp_tools.py` asserts the MCP half.
 
 - `GET /api/tunarr/channels`
 - `GET /api/tunarr/channels/{id}/schedule`

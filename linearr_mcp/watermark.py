@@ -22,9 +22,9 @@ def register(reg, api):
               idempotent=True, open_world=True)
     async def set_channel_watermark(
         channel_number: int, enabled: bool = False,
-        position: str = "bottom-right", width: float = 10.0,
-        vertical_margin: float = 1.0, horizontal_margin: float = 1.0,
-        duration: float = 0.0, opacity: int = 100, fixed_size: bool = False,
+        position: str = "bottom-right", width: float = 7.0,
+        vertical_margin: float = 5.0, horizontal_margin: float = 5.0,
+        duration: float = 0.0, opacity: int = 20, fixed_size: bool = False,
         use_channel_icon: bool = True, fade_period_mins: int | None = None,
         fade_leading_edge: bool = True,
     ) -> dict:
@@ -35,8 +35,9 @@ def register(reg, api):
         `fixed_size`). opacity 0-100, margins 0-100, `duration` in seconds
         (0 = always on). Set `fade_period_mins` (>= 1) to fade it in and out.
 
-        A watermark cannot be enabled without an image: leave `use_channel_icon`
-        true on a channel that has an icon, or call `set_watermark_image` first."""
+        No image is required. With none set, Linearr omits the image URL from the
+        Tunarr payload and Tunarr draws the channel's own icon. Call
+        `set_watermark_image` only to use a DIFFERENT image from the icon."""
         fade = (api.WatermarkFade(period_mins=fade_period_mins,
                                   leading_edge=fade_leading_edge)
                 if fade_period_mins is not None else None)
