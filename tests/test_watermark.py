@@ -5,7 +5,11 @@ instead of an opaque 400 from Tunarr:
   width strictly > 0, opacity an integer 0-100, margins 0-100,
   duration >= 0, fade period >= 1 minute.
 """
+import json
+
 import pytest
+
+import main
 
 
 def _make_channel(auth_client, number=701, *, with_image=False):
@@ -20,12 +24,8 @@ def _make_channel(auth_client, number=701, *, with_image=False):
 
 
 def _set_image_url(number: int, url: str | None) -> None:
-    """Set the resolved watermark image directly.
-
-    Enabling a watermark requires one (see `test_enabling_without_an_image_is_rejected`),
-    and the real resolve path needs a live Tunarr to upload to.
-    """
-    import main
+    """Set the resolved watermark image directly — the real resolve path uploads
+    to a live Tunarr, which these tests do not have."""
     with main.get_db() as conn:
         conn.execute("UPDATE channels SET watermark_image_url=? WHERE number=?",
                      (url, number))
@@ -39,13 +39,9 @@ def test_watermark_defaults_to_absent(auth_client):
 
 
 def test_get_reports_a_resolved_image_before_any_config_is_saved(auth_client):
-    """The image route resolves an image without writing the config blob.
-
-    The editor gates its "enabled" control on a resolved image (the PUT rejects
-    enabled-without-one), so it has to be able to read the image back even while
-    `watermark` is still NULL — otherwise applying an image on a fresh channel
-    would leave "Enabled" permanently un-tickable.
-    """
+    """The image route resolves an image without writing the config blob, so the
+    editor can read it back while `watermark` is still NULL and show which image
+    a watermark would draw."""
     n = _make_channel(auth_client, 711)
     _set_image_url(n, "http://tunarr:8000/images/uploads/wm-711.png")
     body = auth_client.get(f"/api/channels/{n}/watermark").json()
@@ -113,22 +109,30 @@ def test_fade_period_must_be_at_least_one_minute(auth_client):
     assert r.status_code == 422
 
 
-def test_enabling_without_an_image_is_allowed(auth_client):
-    """Leaving the image blank is a valid configuration, not an error.
+def test_enabling_with_no_image_resolves_the_channel_icon(auth_client, monkeypatch):
+    """"Leave the image blank and it uses the channel icon" — done by LINEARR.
 
-    `_watermark_to_tunarr` omits the `url` key entirely, and Tunarr then draws
-    the channel's own icon — so a watermark meant to follow the logo needs no
-    image set at all. This used to 400, on the theory that a blank image forced
-    `url: ""` and Tunarr would reject it; probing Tunarr 1.3.10 showed `url` is
-    optional and an absent key is accepted (200).
+    Tunarr has no such fallback: an enabled watermark with no URL makes it build
+    a dangling `-i` and the channel stops playing. So the PUT resolves the icon
+    into a real Tunarr-hosted URL first, and the user never has to visit the
+    image step at all.
     """
     n = _make_channel(auth_client, 706)
     _set_image_url(n, None)
+    resolved = "http://tunarr:8000/images/uploads/icon-706.png"
+
+    async def fake_refollow(channel_number: int):
+        assert channel_number == n
+        _set_image_url(n, resolved)
+        return resolved
+
+    monkeypatch.setattr(main, "_refollow_channel_icon_watermark", fake_refollow)
     r = auth_client.put(f"/api/channels/{n}/watermark", json={
         "enabled": True, "width": 7, "vertical_margin": 5,
         "horizontal_margin": 5, "position": "bottom-right",
     })
     assert r.status_code == 200, r.text
+    assert r.json()["image_url"] == resolved
     assert auth_client.get(f"/api/channels/{n}/watermark").json()["watermark"]["enabled"] is True
 
 
@@ -144,17 +148,23 @@ def test_disabled_watermark_without_an_image_is_allowed(auth_client):
         == "top-left"
 
 
-def test_enabling_with_a_blank_image_url_is_allowed(auth_client):
-    """A whitespace-only stored URL counts as no URL — the key is omitted from
-    the Tunarr payload rather than pushed blank."""
+def test_a_whitespace_only_image_url_counts_as_no_url(auth_client, monkeypatch):
+    """"   " must not be treated as an image — it would reach ffmpeg as nothing."""
     n = _make_channel(auth_client, 708)
     _set_image_url(n, "   ")
+    resolved = "http://tunarr:8000/images/uploads/icon-708.png"
+
+    async def fake_refollow(channel_number: int):
+        _set_image_url(n, resolved)
+        return resolved
+
+    monkeypatch.setattr(main, "_refollow_channel_icon_watermark", fake_refollow)
     r = auth_client.put(f"/api/channels/{n}/watermark", json={
         "enabled": True, "width": 7, "vertical_margin": 5,
         "horizontal_margin": 5, "position": "bottom-right",
     })
     assert r.status_code == 200, r.text
-    import main
+    assert r.json()["image_url"] == resolved, "blank must trigger icon resolution"
     assert main._watermark_to_tunarr({"enabled": True}, "   ").get("url") is None
 
 
@@ -529,3 +539,122 @@ async def test_sync_without_watermark_does_not_send_the_key(monkeypatch, client)
                    if c.method == "PUT" and c.url.path == f"/api/channels/{_WM_CH_UUID}")
     put_body = _json.loads(put_req.content or b"{}")
     assert put_body["watermark"] == live_watermark
+
+
+# ── An enabled watermark is never pushed without an image ────────────────────
+#
+# Tunarr's API accepts one (200 for both `url: ""` and an absent `url`), but its
+# ffmpeg pipeline then emits a dangling `-i` with no path: ffmpeg eats
+# `-filter_complex` as the filename, exits 254, no playlist is written, and the
+# channel 404s in a retry loop. Diagnosed on a real deployment with Tunarr's
+# Program Playback Troubleshooter. These tests pin the degradation so a blank
+# image can never take a channel off the air.
+
+def test_enabled_watermark_without_an_image_is_pushed_disabled():
+    out = main._watermark_to_tunarr({"enabled": True, "position": "top-left"}, None)
+    assert out["enabled"] is False, "an imageless watermark must never be enabled"
+    assert "url" not in out
+
+
+def test_enabled_watermark_with_a_blank_image_is_pushed_disabled():
+    for blank in ("", "   "):
+        out = main._watermark_to_tunarr({"enabled": True}, blank)
+        assert out["enabled"] is False, f"blank url {blank!r} must disable"
+        assert "url" not in out
+
+
+def test_enabled_watermark_with_an_image_stays_enabled():
+    out = main._watermark_to_tunarr(
+        {"enabled": True}, "http://tunarr:8000/images/uploads/logo.png")
+    assert out["enabled"] is True
+    assert out["url"] == "http://tunarr:8000/images/uploads/logo.png"
+
+
+def test_watermark_audit_finds_a_broken_channel(auth_client):
+    n = _make_channel(auth_client, 741)
+    try:
+        with main.get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET watermark=?, watermark_image_url=NULL WHERE number=?",
+                (json.dumps({"enabled": True, "width": 7}), n),
+            )
+        audit = auth_client.get("/api/channels/watermark-audit").json()
+        entry = next((b for b in audit["broken"] if b["number"] == n), None)
+        assert entry is not None, "an enabled imageless watermark must be reported"
+        assert entry["can_use_icon"] is False
+    finally:
+        auth_client.delete(f"/api/channels/{n}")
+
+
+def test_watermark_audit_ignores_healthy_channels(auth_client):
+    n = _make_channel(auth_client, 742)
+    try:
+        with main.get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET watermark=?, watermark_image_url=? WHERE number=?",
+                (json.dumps({"enabled": True}), "http://tunarr:8000/images/a.png", n),
+            )
+        audit = auth_client.get("/api/channels/watermark-audit").json()
+        assert not any(b["number"] == n for b in audit["broken"])
+    finally:
+        auth_client.delete(f"/api/channels/{n}")
+
+
+def test_watermark_audit_ignores_a_disabled_watermark(auth_client):
+    n = _make_channel(auth_client, 743)
+    try:
+        with main.get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET watermark=?, watermark_image_url=NULL WHERE number=?",
+                (json.dumps({"enabled": False}), n),
+            )
+        audit = auth_client.get("/api/channels/watermark-audit").json()
+        assert not any(b["number"] == n for b in audit["broken"])
+    finally:
+        auth_client.delete(f"/api/channels/{n}")
+
+
+def test_watermark_repair_disables_when_there_is_no_icon(auth_client):
+    """No icon means nothing to draw — switching it off is the only repair that
+    gets the channel playing again."""
+    n = _make_channel(auth_client, 744)
+    try:
+        with main.get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET watermark=?, watermark_image_url=NULL, icon=NULL"
+                " WHERE number=?",
+                (json.dumps({"enabled": True, "width": 7}), n),
+            )
+        r = auth_client.post(f"/api/channels/watermark-repair?channel_number={n}")
+        assert r.status_code == 200, r.text
+        assert [x["action"] for x in r.json()["repaired"]] == ["watermark_disabled"]
+
+        stored = auth_client.get(f"/api/channels/{n}/watermark").json()["watermark"]
+        assert stored["enabled"] is False
+        audit = auth_client.get("/api/channels/watermark-audit").json()
+        assert not any(b["number"] == n for b in audit["broken"])
+    finally:
+        auth_client.delete(f"/api/channels/{n}")
+
+
+def test_enabling_without_an_image_or_icon_is_refused(auth_client):
+    """The only remaining refusal: nothing to draw and nothing to derive from."""
+    n = _make_channel(auth_client, 745)
+    try:
+        with main.get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET icon=NULL, watermark_image_url=NULL WHERE number=?",
+                (n,))
+        r = auth_client.put(f"/api/channels/{n}/watermark", json={
+            "enabled": True, "width": 7, "vertical_margin": 5,
+            "horizontal_margin": 5, "position": "bottom-right",
+        })
+        assert r.status_code == 400, r.text
+        detail = r.json()["detail"].lower()
+        assert "icon" in detail and "playing" in detail
+        # A rejected request must not leave the poison row behind.
+        assert auth_client.get(f"/api/channels/{n}/watermark").json()["watermark"] is None
+        audit = auth_client.get("/api/channels/watermark-audit").json()
+        assert not any(b["number"] == n for b in audit["broken"])
+    finally:
+        auth_client.delete(f"/api/channels/{n}")

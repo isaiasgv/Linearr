@@ -78,7 +78,7 @@ Tools are grouped into ten toolsets. **All are enabled by default** — the poin
 | `ai` | Linearr's own AI advisors (these spend your OpenAI credits — see below) |
 | `system` | Health, configuration, lineup export/import, presets, logs |
 
-**Trimming the surface.** 127 tool schemas is real context cost in a client — roughly 20–25k tokens if everything is on. If you only ever use Linearr for, say, channels and Plex, turn the rest off:
+**Trimming the surface.** 129 tool schemas is real context cost in a client — roughly 20–25k tokens if everything is on. If you only ever use Linearr for, say, channels and Plex, turn the rest off:
 
 - **Settings → System → MCP Server** — tick the toolsets you want, then Save.
 - Or set the environment variable, which wins over the stored setting:
@@ -105,7 +105,7 @@ Every tool call — success or failure, with a redacted argument summary and a d
 
 ## Tool reference
 
-**127 tools**, grouped by toolset. Arguments marked `?` are optional; **⚠** marks a destructive tool.
+**129 tools**, grouped by toolset. Arguments marked `?` are optional; **⚠** marks a destructive tool.
 
 #### `channels` (11)
 
@@ -248,13 +248,15 @@ Every tool call — success or failure, with a redacted argument summary and a d
 | `import_tunarr_channels` | `actions` | Import channels from Tunarr into Linearr. Run `preview_tunarr_import` first and pass the actions you want from its result. |
 | `export_channels_to_tunarr` | `channel_numbers`?, `sync_collections`? | Create or link Tunarr channels for Linearr channels. Pass a list of numbers, or "all". With `sync_collections` it also builds the backing Tunarr smart collections. |
 
-#### `watermark` (4)
+#### `watermark` (6)
 
 | Tool | Arguments | What it does |
 |---|---|---|
 | `get_channel_watermark` | `channel_number` | Read a channel's watermark config. `{"watermark": null}` means none is set. |
-| `set_channel_watermark` | `channel_number`, `enabled`?, `position`?, `width`?, `vertical_margin`?, `horizontal_margin`?, `duration`?, `opacity`?, `fixed_size`?, `use_channel_icon`?, `fade_period_mins`?, `fade_leading_edge`? | Set a channel's watermark and re-sync it to Tunarr. position: top-left \| top-right \| bottom-left \| bottom-right. `width` is a percent of frame width and must be > 0 (inert when `fixed_size`). opacity 0-100, margins 0-100, `duration` in seconds (0 = always on). Set `fade_period_mins` (>= 1) to fade it in and out. A watermark cannot be enabled without an image: leave `use_channel_icon` true on a channel that has an icon, or call `set_watermark_image` first. |
+| `set_channel_watermark` | `channel_number`, `enabled`?, `position`?, `width`?, `vertical_margin`?, `horizontal_margin`?, `duration`?, `opacity`?, `fixed_size`?, `use_channel_icon`?, `fade_period_mins`?, `fade_leading_edge`? | Set a channel's watermark and re-sync it to Tunarr. position: top-left \| top-right \| bottom-left \| bottom-right. `width` is a percent of frame width and must be > 0 (inert when `fixed_size`). opacity 0-100, margins 0-100, `duration` in seconds (0 = always on). Set `fade_period_mins` (>= 1) to fade it in and out. No image is required. With none set, Linearr omits the image URL from the Tunarr payload and Tunarr draws the channel's own icon. Call `set_watermark_image` only to use a DIFFERENT image from the icon. |
 | `clear_channel_watermark` | `channel_number` | **⚠** Remove a channel's watermark and push `enabled: false` to Tunarr. |
+| `audit_watermarks` | — | Find channels that will NOT PLAY because their watermark is enabled with no image. Tunarr builds a dangling ffmpeg `-i` for those, the transcode exits 254, no playlist is written and the channel 404s in a retry loop. `can_use_icon` marks the ones `repair_watermarks` can fix while keeping the watermark; the rest can only be switched off. |
+| `repair_watermarks` | `channel_number`? | Fix channels stuck with an enabled, imageless watermark so they play again. Per channel: upload its icon and keep the watermark if it has one, otherwise switch the watermark off. Omit `channel_number` to repair every affected channel; run `audit_watermarks` first to see what will change. |
 | `set_watermark_image` | `channel_number`, `image`?, `url`? | Resolve the watermark image to an absolute URL Tunarr can fetch. Pass `url` (an absolute URL, stored as-is), `image` (a data URI, uploaded to Tunarr), or neither to use the channel's icon. This step exists because Tunarr hands the value to ffmpeg as an HTTP input and ffmpeg cannot read a `data:` URI — which is also why inheriting the channel icon is an upload, not a copy. |
 
 #### `ai` (5)
@@ -315,7 +317,7 @@ Some routes exist in Linearr's HTTP API but are not MCP tools, on purpose. If an
 
 ## Security
 
-- **The token is full control** of your lineup, your Plex collections, and your Tunarr channels. Among the 127 tools it reaches are `delete_channel`, `import_lineup` in `replace` mode (which wipes every channel, assignment, block and slot), `purge_tunarr_smart_collections`, `stop_tunarr_sessions`, and `clear_logs`. Treat it like a password.
+- **The token is full control** of your lineup, your Plex collections, and your Tunarr channels. Among the 129 tools it reaches are `delete_channel`, `import_lineup` in `replace` mode (which wipes every channel, assignment, block and slot), `purge_tunarr_smart_collections`, `stop_tunarr_sessions`, and `clear_logs`. Treat it like a password.
 - The destructive tools are annotated `destructiveHint`, so a client that honours annotations will ask before running them. Not every client does — that's a reason to trust the token, not the client.
 - The `/mcp` endpoint is exposed on your LAN exactly like the rest of Linearr (host port 8777). Anyone on the network with the token can use it.
 - **Rotate the token** (Settings → System → MCP Server → Regenerate) if you suspect it leaked.

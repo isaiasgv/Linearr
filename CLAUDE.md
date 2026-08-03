@@ -410,7 +410,7 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 ### MCP Server
 Model Context Protocol endpoint at `/mcp` (streamable HTTP, stateless, JSON responses) —
 full coverage of the app: channels, Plex, assignments, collections, schedule blocks,
-Tunarr, watermarks, icons, AI advisors, and system/logs. **127 tools across 10 toolsets**
+Tunarr, watermarks, icons, AI advisors, and system/logs. **129 tools across 10 toolsets**
 (`channels`, `icons`, `assignments`, `plex`, `collections`, `blocks`, `tunarr`,
 `watermark`, `ai`, `system`), plus 4 resources (`linearr://lineup`,
 `linearr://channel/{number}`, `linearr://libraries`, `linearr://status`).

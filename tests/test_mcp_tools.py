@@ -667,18 +667,27 @@ def test_get_plex_highlights_rejects_an_unknown_kind(auth_client):
     assert "recently_added" in message and "on_deck" in message
 
 
-def test_enabling_a_watermark_without_an_image_is_allowed(auth_client):
-    """No image needed — Linearr omits the URL and Tunarr draws the channel icon."""
+def test_enabling_a_watermark_with_nothing_to_draw_is_refused(auth_client):
+    """No image and no icon means nothing exists to draw. Enabling anyway takes
+    the channel off the air (Tunarr builds a dangling ffmpeg `-i`), so the tool
+    refuses and leaves no stored config behind."""
     token = _token(auth_client)
     auth_client.post("/api/channels", json={"number": 8826, "name": "WM No Image"})
     try:
-        _call(auth_client, token, "set_channel_watermark",
-              {"channel_number": 8826, "enabled": True})
+        assert "icon" in _error_text(
+            _call(auth_client, token, "set_channel_watermark",
+                  {"channel_number": 8826, "enabled": True}))
         wm = _json(_call(auth_client, token, "get_channel_watermark",
                          {"channel_number": 8826}))["watermark"]
-        assert wm["enabled"] is True
+        assert wm is None, "a refused enable must not persist the watermark"
     finally:
         auth_client.delete("/api/channels/8826")
+
+
+def test_watermark_audit_and_repair_are_exposed_over_mcp(auth_client):
+    token = _token(auth_client)
+    audit = _json(_call(auth_client, token, "audit_watermarks"))
+    assert "broken" in audit and "count" in audit
 
 
 def test_watermark_tool_defaults_match_the_app(auth_client):

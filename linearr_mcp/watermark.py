@@ -63,6 +63,30 @@ def register(reg, api):
         except HTTPException as e:
             raise tool_error(e)
 
+    @reg.tool(name="audit_watermarks", toolset="watermark", read_only=True)
+    async def audit_watermarks() -> dict:
+        """Find channels that will NOT PLAY because their watermark is enabled with
+        no image. Tunarr builds a dangling ffmpeg `-i` for those, the transcode
+        exits 254, no playlist is written and the channel 404s in a retry loop.
+        `can_use_icon` marks the ones `repair_watermarks` can fix while keeping the
+        watermark; the rest can only be switched off."""
+        try:
+            return api.watermark_audit()
+        except HTTPException as e:
+            raise tool_error(e)
+
+    @reg.tool(name="repair_watermarks", toolset="watermark",
+              idempotent=True, open_world=True)
+    async def repair_watermarks(channel_number: int | None = None) -> dict:
+        """Fix channels stuck with an enabled, imageless watermark so they play
+        again. Per channel: upload its icon and keep the watermark if it has one,
+        otherwise switch the watermark off. Omit `channel_number` to repair every
+        affected channel; run `audit_watermarks` first to see what will change."""
+        try:
+            return await api.watermark_repair(channel_number)
+        except HTTPException as e:
+            raise tool_error(e)
+
     @reg.tool(name="set_watermark_image", toolset="watermark",
               idempotent=True, open_world=True)
     async def set_watermark_image(channel_number: int, image: str | None = None,

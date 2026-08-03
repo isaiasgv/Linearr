@@ -14,22 +14,13 @@ import { WatermarkPreview } from './WatermarkPreview'
 const TITLE_ID = 'watermark-editor-title'
 const ENABLE_HINT_ID = 'watermark-enable-hint'
 
-const NEEDS_IMAGE_MSG =
-  'Apply a watermark image first — Tunarr needs an absolute image URL to draw.'
-
 /** Client-side mirror of the backend's Tunarr-derived constraints. */
-function validate(
-  form: Watermark,
-  fadeOn: boolean,
-  hasImage: boolean,
-): Partial<Record<string, string>> {
+function validate(form: Watermark, fadeOn: boolean): Partial<Record<string, string>> {
   const errors: Partial<Record<string, string>> = {}
-  // Mirrors the backend gate on PUT .../watermark. An enabled watermark with no
-  // resolved image maps to `url: ""`, and because every channel write is a full
-  // SaveableChannel PUT, Tunarr rejecting it would break EVERY later save for
-  // this channel — name, number and tier included. The user must never reach
-  // that 400, so the state is not submittable here either.
-  if (form.enabled && !hasImage) errors.enabled = NEEDS_IMAGE_MSG
+  // No image requirement. Leaving the image blank is a valid, useful setup: the
+  // backend omits `url` from the Tunarr payload and Tunarr draws the channel's
+  // own icon. (This used to block enabling, mirroring a backend gate that was
+  // removed once a probe against Tunarr 1.3.10 showed `url` is optional.)
   if (!(form.width > 0)) errors.width = 'Must be greater than 0.'
   if (form.vertical_margin < 0 || form.vertical_margin > 100)
     errors.vertical_margin = 'Must be between 0 and 100.'
@@ -86,7 +77,7 @@ export function WatermarkEditorModal() {
     setUrlInput(imageUrl ?? '')
   }, [open, isLoading, stored, imageUrl])
 
-  const errors = useMemo(() => validate(form, fadeOn, hasImage), [form, fadeOn, hasImage])
+  const errors = useMemo(() => validate(form, fadeOn), [form, fadeOn])
   const hasErrors = Object.keys(errors).length > 0
 
   function set<K extends keyof Watermark>(key: K, value: Watermark[K]) {
@@ -126,31 +117,27 @@ export function WatermarkEditorModal() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            {/* Enabling with no resolved image is not submittable (see validate),
-                so the tick itself is blocked until an image is applied. Unticking
-                stays available even in that state, so a stored config that somehow
-                lost its image can still be switched off. */}
+            {/* No image needed to enable. With none applied the backend omits
+                the url and Tunarr draws the channel's own icon, so the common
+                case — a watermark that just shows the logo — needs no image
+                step at all. */}
             <div className="flex flex-col items-end">
-              <label
-                className={`${checkboxLabel} ${!hasImage && !form.enabled ? 'text-slate-500' : ''}`}
-                title={!hasImage && !form.enabled ? NEEDS_IMAGE_MSG : undefined}
-              >
+              <label className={checkboxLabel}>
                 <input
                   type="checkbox"
                   checked={form.enabled}
-                  disabled={!hasImage && !form.enabled}
                   aria-describedby={hasImage ? undefined : ENABLE_HINT_ID}
                   onChange={(e) => set('enabled', e.target.checked)}
-                  className={`${checkbox} disabled:cursor-not-allowed disabled:opacity-50`}
+                  className={checkbox}
                 />
                 Enabled
               </label>
               {!hasImage && (
                 <p
                   id={ENABLE_HINT_ID}
-                  className="mt-0.5 max-w-56 text-right text-[11px] text-amber-300/90"
+                  className="mt-0.5 max-w-56 text-right text-[11px] text-slate-500"
                 >
-                  {errors.enabled ?? 'Apply an image below to enable this watermark.'}
+                  No image set — Tunarr will use the channel icon.
                 </p>
               )}
             </div>

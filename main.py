@@ -543,6 +543,10 @@ async def security_headers_middleware(request: Request, call_next):
         "Content-Security-Policy",
         "default-src 'self'; img-src 'self' data: blob:; "
         "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        # media-src carries blob: for the channel stream player: hls.js feeds
+        # <video> through a MediaSource, whose src is a blob: URL. Without this
+        # the player is blocked by default-src and fails silently.
+        "media-src 'self' blob:; "
         "connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
     )
     if COOKIE_SECURE:
@@ -1583,29 +1587,49 @@ def get_channel_watermark(channel_number: int):
 async def put_channel_watermark(channel_number: int, body: WatermarkIn):
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT watermark_image_url FROM channels WHERE number=?", (channel_number,)
+            "SELECT watermark, watermark_image_url FROM channels WHERE number=?",
+            (channel_number,)
         ).fetchone()
         if existing is None:
             raise HTTPException(404, "Channel not found")
-        # No image gate here on purpose. Leaving the image blank is a valid,
-        # useful configuration: `_watermark_to_tunarr` omits the `url` key
-        # entirely and Tunarr then draws the channel's own icon, so a watermark
-        # that should just follow the logo needs no image set at all.
-        #
-        # This previously 400'd, on the theory that a blank image forced
-        # `url: ""` and Tunarr would reject it — which would have broken every
-        # later save for the channel, since each write is a full SaveableChannel
-        # PUT. Probed against Tunarr 1.3.10: `url` is optional, an absent key is
-        # accepted (200), and `url: ""` is accepted too. The premise was wrong,
-        # so the gate went with it.
+        previous_watermark = existing["watermark"]
         conn.execute(
             "UPDATE channels SET watermark=? WHERE number=?",
             (json.dumps(body.model_dump()), channel_number),
         )
+
+    # "Leave the image blank and it uses the channel icon" is the behaviour
+    # people expect, but Tunarr does NOT do that fallback — an enabled watermark
+    # with no URL kills the stream (see `_watermark_to_tunarr`). So Linearr does
+    # the fallback itself: resolve the icon to a real Tunarr-hosted URL here,
+    # before the sync, so what gets pushed always has an image to draw.
+    #
+    # The config has to be written first, because the resolver reads
+    # `use_channel_icon` off the stored blob. If resolution then fails there is
+    # nothing to draw, so the write is rolled back rather than left behind — a
+    # stored enabled-with-no-image row is the exact state `watermark-audit`
+    # exists to find, and a rejected request must not create one.
+    image_url = (existing["watermark_image_url"] or "").strip()
+    if body.enabled and not image_url:
+        image_url = (await _refollow_channel_icon_watermark(channel_number)) or ""
+        if not image_url:
+            with get_db() as conn:
+                conn.execute("UPDATE channels SET watermark=? WHERE number=?",
+                             (previous_watermark, channel_number))
+            raise HTTPException(
+                400,
+                "This channel has no watermark image and no icon to derive one "
+                "from, so there is nothing for Tunarr to draw — an enabled "
+                "watermark with no image stops the channel playing entirely. "
+                "Add a channel icon (it will be used automatically) or set an "
+                "image URL, then enable the watermark.",
+            )
+
     _log_app("channel", f"Updated watermark for channel {channel_number}",
              metadata={"number": channel_number, "enabled": body.enabled})
     sync = await _sync_channel_to_tunarr(channel_number)
-    return {"ok": True, "watermark": body.model_dump(), "tunarr_sync": sync}
+    return {"ok": True, "watermark": body.model_dump(), "tunarr_sync": sync,
+            "image_url": image_url or None}
 
 
 @app.delete("/api/channels/{channel_number}/watermark")
@@ -1692,6 +1716,87 @@ async def set_channel_watermark_image(channel_number: int, body: WatermarkImageI
              metadata={"number": channel_number, "image_url": image_url})
     sync = await _sync_channel_to_tunarr(channel_number)
     return {"ok": True, "image_url": image_url, "tunarr_sync": sync}
+
+
+# ── Watermark repair ─────────────────────────────────────────────────────────
+# A channel with `watermark.enabled` and no image URL does not play at all:
+# Tunarr builds a dangling `-i` into the ffmpeg command, the transcode exits
+# 254, no playlist is ever written and the channel 404s in a retry loop. It is
+# reachable by an ordinary sequence — upload an image, then clear it — so the
+# app needs both a way to find channels in that state and a way to fix them.
+
+def _find_broken_watermarks() -> list[dict]:
+    """Channels whose watermark is enabled but has no image URL to draw."""
+    out: list[dict] = []
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT number, name, icon, watermark, watermark_image_url FROM channels "
+            "WHERE watermark IS NOT NULL ORDER BY number"
+        ).fetchall()
+    for row in rows:
+        try:
+            wm = json.loads(row["watermark"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(wm, dict) or not wm.get("enabled"):
+            continue
+        if (row["watermark_image_url"] or "").strip():
+            continue
+        out.append({
+            "number": row["number"],
+            "name": row["name"],
+            # Repairable in place when there is an icon to upload as the image.
+            "can_use_icon": bool((row["icon"] or "").strip()),
+        })
+    return out
+
+
+@app.get("/api/channels/watermark-audit")
+def watermark_audit():
+    """Channels with an enabled watermark and no image — i.e. channels that will
+    not play. `can_use_icon` marks the ones repair can fix without losing the
+    watermark; the rest can only be switched off."""
+    broken = _find_broken_watermarks()
+    return {"broken": broken, "count": len(broken)}
+
+
+@app.post("/api/channels/watermark-repair")
+async def watermark_repair(channel_number: int | None = Query(None)):
+    """Fix channels stuck with an enabled, imageless watermark.
+
+    Per channel: upload its icon and keep the watermark if it has one, otherwise
+    switch the watermark off. Either way the channel plays again afterwards.
+    Pass `channel_number` to repair just one.
+    """
+    broken = _find_broken_watermarks()
+    if channel_number is not None:
+        broken = [b for b in broken if b["number"] == channel_number]
+    results = []
+    for entry in broken:
+        n = entry["number"]
+        image_url = await _refollow_channel_icon_watermark(n)
+        if image_url:
+            action = "image_resolved_from_icon"
+        else:
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT watermark FROM channels WHERE number=?", (n,)).fetchone()
+            try:
+                wm = json.loads(row["watermark"]) if row and row["watermark"] else {}
+            except (TypeError, ValueError):
+                wm = {}
+            wm["enabled"] = False
+            with get_db() as conn:
+                conn.execute("UPDATE channels SET watermark=? WHERE number=?",
+                             (json.dumps(wm), n))
+            action = "watermark_disabled"
+        sync = await _sync_channel_to_tunarr(n)
+        results.append({"number": n, "name": entry["name"], "action": action,
+                        "image_url": image_url, "tunarr_sync": sync})
+        _log_app("channel", f"Repaired watermark for channel {n}: {action}",
+                 level="warn", metadata={"number": n, "action": action})
+    return {"repaired": results, "count": len(results)}
+
 
 @app.get("/api/icons/export")
 def export_icon_pack():
@@ -5493,6 +5598,152 @@ _TUNARR_IMAGE_HEADERS = {
 }
 
 
+# ── Tunarr stream proxy (for the browser) ────────────────────────────────────
+# Tunarr serves a channel at `{tunarr}/stream/channels/{uuid}?streamMode=hls`,
+# and the playlist it returns points at segments with ABSOLUTE urls on Tunarr's
+# own configured base — `http://tunarr:8000/...` in a default Docker deploy. A
+# LAN browser cannot resolve that hostname, so playing the URL directly is a
+# guaranteed failure. These two routes are the browser-facing pair: fetch the
+# playlist server-side, rewrite every URI back through Linearr, then stream the
+# segments.
+
+_HLS_CONTENT_TYPE = "application/vnd.apple.mpegurl"
+# Prefixes a rewritten segment path is allowed to live under. Tunarr's HLS
+# segments and playlists all hang off /stream/.
+_TUNARR_STREAM_PREFIXES = ("/stream/",)
+
+
+def _is_safe_tunarr_path(path: str, prefixes: tuple[str, ...]) -> bool:
+    """SSRF guard shared by the stream routes — same rules as /api/tunarr/image.
+
+    `path` is caller-controlled, so only a plain path under an allow-listed
+    prefix is accepted: no scheme, no `//`, no `@`, no backslash, no traversal.
+    The Tunarr base is prefixed server-side, never taken from the caller.
+    """
+    path_only = path.split("?", 1)[0]
+    return not (
+        not path.startswith("/") or path.startswith("//") or "://" in path
+        or any(c in path for c in ("@", "\\"))
+        or ".." in path_only
+        or not path_only.startswith(prefixes)
+    )
+
+
+def _rewrite_hls_playlist(text: str, tunarr_base: str) -> str:
+    """Point every URI in an HLS playlist back at `/api/tunarr/stream-segment`.
+
+    Two kinds of reference need rewriting: bare URI lines (segments, and variant
+    playlists in a master), and `URI="..."` attributes on tags like
+    EXT-X-KEY and EXT-X-MAP. Anything already relative is resolved against
+    Tunarr's base first, so the proxy only ever forwards an absolute Tunarr path.
+    """
+    from urllib.parse import quote, urljoin, urlsplit
+
+    def to_proxy(ref: str) -> str:
+        absolute = urljoin(tunarr_base + "/stream/", ref)
+        split = urlsplit(absolute)
+        path_q = split.path + (f"?{split.query}" if split.query else "")
+        return f"/api/tunarr/stream-segment?path={quote(path_q, safe='')}"
+
+    out: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            out.append(line)
+        elif stripped.startswith("#"):
+            # Rewrite any URI="..." attribute in place, leave the rest of the tag.
+            def _attr(m):
+                return f'URI="{to_proxy(m.group(1))}"'
+            out.append(_re.sub(r'URI="([^"]+)"', _attr, line))
+        else:
+            out.append(to_proxy(stripped))
+    return "\n".join(out) + "\n"
+
+
+@app.get("/api/tunarr/stream/{tunarr_id}")
+async def tunarr_stream(tunarr_id: str):
+    """HLS playlist for a Tunarr channel, rewritten to play in the browser.
+
+    Tunarr spins up ffmpeg on first request, so this can take several seconds —
+    hence the long read timeout. Redirects ARE followed here (Tunarr may bounce
+    to a session-specific playlist), but only the final playlist body is used and
+    every URI in it is rewritten to a same-origin path.
+    """
+    if not _UUID_RE.match(tunarr_id):
+        raise HTTPException(400, "Invalid Tunarr channel id")
+    url = get_tunarr_url()
+    if not url:
+        raise HTTPException(400, "Tunarr not configured")
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0), follow_redirects=True
+        ) as client:
+            resp = await client.get(f"{url}/stream/channels/{tunarr_id}",
+                                    params={"streamMode": "hls"})
+    except Exception as e:
+        log.warning("Tunarr stream proxy failed for %s: %s", tunarr_id, e)
+        raise HTTPException(502, f"Could not start the Tunarr stream: {e}")
+    if resp.status_code != 200:
+        raise HTTPException(resp.status_code,
+                            f"Tunarr stream error: {resp.text[:200]}")
+    body = _rewrite_hls_playlist(resp.text, url.rstrip("/"))
+    _log_app("tunarr", f"Started stream proxy for Tunarr channel {tunarr_id}",
+             metadata={"tunarr_id": tunarr_id})
+    return Response(
+        content=body,
+        media_type=_HLS_CONTENT_TYPE,
+        # A live playlist must never be cached — it changes every segment.
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.get("/api/tunarr/stream-segment")
+async def tunarr_stream_segment(path: str = Query(...)):
+    """Stream one HLS segment (or a nested playlist) from Tunarr.
+
+    Only reached via a path this server wrote into a rewritten playlist, but the
+    guard is applied anyway — the query string is still caller-controlled.
+    Nested playlists are rewritten in turn so a master/variant chain keeps
+    working; everything else is streamed through untouched.
+    """
+    if not _is_safe_tunarr_path(path, _TUNARR_STREAM_PREFIXES):
+        raise HTTPException(400, "Invalid Tunarr stream path")
+    url = get_tunarr_url()
+    if not url:
+        raise HTTPException(400, "Tunarr not configured")
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0),
+                               follow_redirects=True)
+    try:
+        resp = await client.get(f"{url}{path}")
+    except Exception as e:
+        await client.aclose()
+        log.warning("Tunarr segment proxy failed for %s: %s", path, e)
+        raise HTTPException(502, "Tunarr segment fetch failed")
+    if resp.status_code != 200:
+        status = resp.status_code
+        await client.aclose()
+        raise HTTPException(status, "Tunarr segment error")
+
+    content_type = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type in (_HLS_CONTENT_TYPE, "application/x-mpegurl", "audio/x-mpegurl"):
+        text = resp.text
+        await client.aclose()
+        return Response(
+            content=_rewrite_hls_playlist(text, url.rstrip("/")),
+            media_type=_HLS_CONTENT_TYPE,
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
+    body = resp.content
+    await client.aclose()
+    return Response(
+        content=body,
+        media_type=content_type or "video/mp2t",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @app.get("/api/tunarr/image")
 async def tunarr_image(path: str = Query(...)):
     """Proxy an image hosted by Tunarr, for the BROWSER.
@@ -5544,16 +5795,29 @@ def _watermark_to_tunarr(wm: dict, image_url: str | None) -> dict:
     sent. `animated` and `fadeConfig[].programType` are omitted: Tunarr
     persists both but no pipeline builder reads them (1.3.6).
 
-    `url` is OMITTED when there is no resolved image, never sent as `""`.
-    Tunarr's `url` is optional, and with the key absent Tunarr draws the
-    channel's own icon — which is the behaviour you want for a channel whose
-    watermark should just follow its logo. Probed against Tunarr 1.3.10: a PUT
-    with no `url` key returns 200 and stores the watermark with no `url`, while
-    `url: ""` is also accepted but persists an explicit empty value that has no
-    image to fall back on.
+    **An enabled watermark is never emitted without an image URL.** Tunarr's API
+    happily accepts one (both `url: ""` and an absent `url` return 200), but its
+    ffmpeg pipeline then builds a command with a dangling `-i` and no path:
+
+        ... input.mkv -i  -filter_complex [0:0]hwdownload...
+
+    ffmpeg consumes `-filter_complex` as the input filename and exits 254, the
+    filter graph still references `[1:0]` for the overlay, and the channel never
+    writes a playlist — so the stream 404s and retries forever. Diagnosed on a
+    real deployment (Tunarr's own Program Playback Troubleshooter) against two
+    channels that had an enabled watermark with a blank URL; an otherwise
+    identical channel with a valid URL transcoded fine.
+
+    So the mapper degrades instead: no URL means `enabled: false` goes to Tunarr.
+    That also self-heals a row already in the bad state — the next sync turns a
+    dead channel back into a working one with no overlay, rather than leaving it
+    unplayable. The image is resolved upstream (the watermark PUT uploads the
+    channel icon), so a channel with an icon still gets its overlay.
     """
+    image_url = (image_url or "").strip() or None
+    enabled = bool(wm.get("enabled", False)) and image_url is not None
     out: dict = {
-        "enabled": bool(wm.get("enabled", False)),
+        "enabled": enabled,
         "position": wm.get("position", "bottom-right"),
         "width": float(wm.get("width", _WATERMARK_DEFAULTS["width"])),
         "verticalMargin": float(wm.get("vertical_margin",
@@ -5564,7 +5828,7 @@ def _watermark_to_tunarr(wm: dict, image_url: str | None) -> dict:
         "opacity": int(wm.get("opacity", _WATERMARK_DEFAULTS["opacity"])),
         "fixedSize": bool(wm.get("fixed_size", False)),
     }
-    if (image_url or "").strip():
+    if image_url is not None:
         out["url"] = image_url
     fade = wm.get("fade")
     if isinstance(fade, dict) and int(fade.get("period_mins", 0)) >= 1:
