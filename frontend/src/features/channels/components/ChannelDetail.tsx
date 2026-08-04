@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useUIStore, type ActiveChannelTab } from '@/shared/store/ui.store'
 import { useChannels, useDeleteChannel } from '@/features/channels/hooks'
 import { useChannelAssignments } from '@/features/assignments/hooks'
+import { useChannelCollections, useBuildChannelCollections } from '@/features/collections/hooks'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
 import { TierBadge, tierColor } from '@/shared/components/ui/TierBadge'
 import { confirmDialog } from '@/shared/components/ui'
@@ -23,6 +24,8 @@ export function ChannelDetail() {
   const { data: channels } = useChannels()
   const { data: assignments = [] } = useChannelAssignments(selectedChannel?.number ?? 0)
   const { data: tunarrLinks = [] } = useTunarrLinks()
+  const { data: channelCollections } = useChannelCollections(selectedChannel?.number ?? 0)
+  const buildCollections = useBuildChannelCollections()
 
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -188,6 +191,73 @@ export function ChannelDetail() {
                   </svg>
                   Watermark
                 </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false)
+                    void buildCollections.build(ch.number, {
+                      movie: channelCollections?.movie,
+                      show: channelCollections?.show,
+                    })
+                  }}
+                  disabled={buildCollections.isPending}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2 disabled:opacity-50"
+                >
+                  <svg
+                    className="w-3.5 h-3.5 text-emerald-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                  >
+                    <path d="M4 7h16M4 12h16M4 17h10" />
+                    <circle cx="18" cy="17" r="3.2" />
+                    <path d="M18 15.6v2.8M16.6 17h2.8" />
+                  </svg>
+                  {channelCollections?.movie || channelCollections?.show
+                    ? 'Update Collections'
+                    : 'Build Collections'}
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false)
+                    openModal('channelGuide', { channelGuideChannel: ch.number })
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                >
+                  <svg
+                    className="w-3.5 h-3.5 text-amber-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M3 9h18M9 3v18" />
+                  </svg>
+                  Program Guide
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false)
+                    openModal('channelStream', { channelStreamChannel: ch.number })
+                  }}
+                  disabled={!tunarrLink}
+                  title={tunarrLink ? undefined : 'Link this channel to Tunarr first'}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  <svg
+                    className="w-3.5 h-3.5 text-rose-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M10 8.5l6 3.5-6 3.5z" />
+                  </svg>
+                  Watch Channel
+                </button>
+                <div className="border-t border-slate-700 my-1" />
                 <button
                   onClick={() => {
                     setMenuOpen(false)

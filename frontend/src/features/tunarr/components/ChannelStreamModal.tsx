@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
-import { ModalWrapper } from '@/shared/components/ui/ModalWrapper'
+import { IconButton, ModalWrapper } from '@/shared/components/ui'
 import { Spinner } from '@/shared/components/ui/Spinner'
 import { useUIStore } from '@/shared/store/ui.store'
+
+const TITLE_ID = 'channel-stream-title'
 
 /**
  * Watch a channel's Tunarr stream inside Linearr.
@@ -85,21 +87,32 @@ export function ChannelStreamModal() {
     }
   }, [open, src])
 
-  if (!open) return null
-
   return (
     <ModalWrapper
-      title={`Watch Channel ${channelNumber ?? ''}`}
+      open={open}
       onClose={() => closeModal('channelStream')}
-      size="lg"
+      maxWidth="max-w-4xl"
+      titleId={TITLE_ID}
     >
-      {!link ? (
-        <p className="text-sm text-slate-400">
-          This channel isn’t linked to Tunarr yet. Link it on the channel’s Tunarr tab, then
-          try again.
-        </p>
-      ) : (
-        <div className="space-y-3">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-700 px-5 py-4">
+        <h2 id={TITLE_ID} className="text-base font-semibold text-slate-100">
+          Watch Channel {channelNumber ?? ''}
+        </h2>
+        <IconButton label="Close" onClick={() => closeModal('channelStream')}>
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </IconButton>
+      </div>
+
+      <div className="p-5">
+        {!link ? (
+          <p className="text-sm text-slate-400">
+            This channel isn’t linked to Tunarr yet. Link it on the channel’s Tunarr tab, then
+            try again.
+          </p>
+        ) : (
+          <div className="space-y-3">
           <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
             <video
               ref={videoRef}
@@ -120,15 +133,16 @@ export function ChannelStreamModal() {
             )}
           </div>
 
-          {status === 'error' && <p className="text-sm text-red-400">{message}</p>}
+            {status === 'error' && <p className="text-sm text-red-400">{message}</p>}
 
-          <p className="text-xs text-slate-500">
-            Streaming through Linearr from{' '}
-            <code className="text-slate-400">{link.tunarr_name || link.tunarr_id}</code>. Tunarr
-            transcodes on demand, so the first few seconds can stutter.
-          </p>
-        </div>
-      )}
+            <p className="text-xs text-slate-500">
+              Streaming through Linearr from{' '}
+              <code className="text-slate-400">{link.tunarr_name || link.tunarr_id}</code>. Tunarr
+              transcodes on demand, so the first few seconds can stutter.
+            </p>
+          </div>
+        )}
+      </div>
     </ModalWrapper>
   )
 }

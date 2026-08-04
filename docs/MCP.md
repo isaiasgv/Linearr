@@ -218,7 +218,7 @@ Every tool call — success or failure, with a redacted argument summary and a d
 | `get_tunarr_schedule` | `tunarr_id`, `hours`? | What a Tunarr channel will play over the next `hours`. |
 | `get_tunarr_channel_shows` | `tunarr_id` | Which shows and movies a Tunarr channel draws from. |
 | `get_tunarr_guide` | `hours`? | The whole-lineup EPG for the next `hours`. |
-| `get_tunarr_endpoints` | — | URLs for the XMLTV guide and M3U playlist, for pointing a TV client at Linearr. The files themselves are downloads and are not returned here. |
+| `get_tunarr_endpoints` | `channel_number`? | URLs for the XMLTV guide, the M3U playlist, and a channel's live stream. These are Linearr-proxied paths, not Tunarr's own: Tunarr emits URLs on its container hostname, which a browser on the LAN cannot resolve. Pass `channel_number` to also get that channel's stream URL. The XMLTV, M3U and stream bodies are downloads/video and are not returned here. |
 | `get_tunarr_debug_info` | — | Diagnostic dump of what Tunarr's API reports — for troubleshooting a sync or push that is not behaving. |
 | `list_tunarr_links` | `kind`? | Which Linearr channels are linked to which Tunarr channels and collections. kind: channel \| collection \| all. |
 | `link_tunarr_channel` | `channel_number`, `tunarr_id`, `tunarr_name`?, `tunarr_number`? | Link a Linearr channel to an existing Tunarr channel by its uuid. |
@@ -310,6 +310,7 @@ Some routes exist in Linearr's HTTP API but are not MCP tools, on purpose. If an
 | Setting `plex_token` or `openai_api_key` | `update_configuration` refuses them outright. A bearer token that can also rewrite credentials is a far bigger blast radius than one that can rewrite a lineup. Credentials are set in Settings. |
 | Plex OAuth PIN start/status | Interactive browser flows an assistant can't complete. (`refresh_plex_token` and `get_plex_auth_info` *are* exposed — those are non-interactive.) |
 | Thumbnail and Tunarr image proxies | Binary image proxies for the browser. A client wants URLs, not JPEG bytes. |
+| The channel stream proxy (`/api/tunarr/stream/…`) | It serves an HLS playlist and video segments to a player. `get_tunarr_endpoints` returns the stream URL instead. |
 | Icon pack export / import / seed | Megabytes of base64 PNG — pure cost in a transcript, no interpretive value. |
 | The Plex webhook receiver | An inbound endpoint for Plex, not a user action. |
 | Login / logout | MCP authenticates with the bearer token; session cookies are the browser's business. |
@@ -317,7 +318,7 @@ Some routes exist in Linearr's HTTP API but are not MCP tools, on purpose. If an
 
 ## Security
 
-- **The token is full control** of your lineup, your Plex collections, and your Tunarr channels. Among the 129 tools it reaches are `delete_channel`, `import_lineup` in `replace` mode (which wipes every channel, assignment, block and slot), `purge_tunarr_smart_collections`, `stop_tunarr_sessions`, and `clear_logs`. Treat it like a password.
+- **The token is full control** of your lineup, your Plex collections, and your Tunarr channels. Among the 127 tools it reaches are `delete_channel`, `import_lineup` in `replace` mode (which wipes every channel, assignment, block and slot), `purge_tunarr_smart_collections`, `stop_tunarr_sessions`, and `clear_logs`. Treat it like a password.
 - The destructive tools are annotated `destructiveHint`, so a client that honours annotations will ask before running them. Not every client does — that's a reason to trust the token, not the client.
 - The `/mcp` endpoint is exposed on your LAN exactly like the rest of Linearr (host port 8777). Anyone on the network with the token can use it.
 - **Rotate the token** (Settings → System → MCP Server → Regenerate) if you suspect it leaked.

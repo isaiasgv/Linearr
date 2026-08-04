@@ -256,6 +256,10 @@ Consequences:
   report either as "the reorder failed".
 - `PUT /api/channels/{n}` also renumbers when `body.number` differs from the path number
   (409 if the target number is taken).
+- `GET /api/channels/watermark-audit` — channels whose watermark is enabled with no image,
+  i.e. channels that will not play at all (see the watermark note under Tunarr).
+  `POST /api/channels/watermark-repair[?channel_number=]` fixes them: resolve the icon into
+  a real image URL where there is one, otherwise switch the watermark off.
 - `GET|PUT|DELETE /api/channels/{n}/watermark` — per-channel Tunarr watermark config.
   `GET` returns `{watermark: null}` or the stored config plus a server-owned `image_url`;
   `PUT`/`DELETE` also re-sync the channel to Tunarr and return `tunarr_sync`. Validation
@@ -395,6 +399,19 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
   **browser**. Stored watermark URLs point at the Tunarr container (`http://tunarr:8000`),
   which a LAN browser cannot resolve; keeps the 7-day immutable cache headers like
   `/api/plex/thumb`.
+- `GET /api/tunarr/stream/{tunarr_id}` + `GET /api/tunarr/stream-segment?path=` — HLS proxy
+  for the in-app player. Same container-hostname problem as the image proxy, but worse:
+  Tunarr's playlist points at its own absolute URLs, so the playlist body is **rewritten**
+  (`_rewrite_hls_playlist`) to route every segment — and every `URI="…"` attribute on tags
+  like EXT-X-KEY/EXT-X-MAP — back through `/api/tunarr/stream-segment`. Nested playlists are
+  rewritten in turn. Both are `no-store` (a live playlist changes every segment) and share
+  the `/api/tunarr/image` SSRF guard via `_is_safe_tunarr_path`. Tunarr starts ffmpeg on the
+  first request, so the read timeout is 60s. **Not exposed over MCP** (binary/streaming);
+  `get_tunarr_endpoints` hands out the URL instead.
+  The player is `features/tunarr/components/ChannelStreamModal.tsx`. It needs **`hls.js`**
+  (the one media dependency — Chrome/Firefox have no native HLS), imported lazily so its
+  ~525 KB chunk only loads when someone actually watches a channel, and the CSP carries
+  `media-src 'self' blob:` because MSE plays from a blob URL.
 - `POST /api/tunarr/test` — body: `{url}`, returns `{ok, latency_ms}`
 - `POST /api/tunarr/tasks/UpdateXmlTvTask`
 - `POST /api/tunarr/tasks/ScanLibrariesTask`
