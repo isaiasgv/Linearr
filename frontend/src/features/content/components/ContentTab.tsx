@@ -4,7 +4,7 @@ import {
   useChannelCollections,
   useCollectionStatus,
   useDeletePlexCollection,
-  useGenerateCollections,
+  useBuildChannelCollections,
   useUnlinkCollection,
 } from '@/features/collections/hooks'
 import { useSyncCollections, useTunarrCollectionLinks } from '@/features/tunarr/hooks'
@@ -424,7 +424,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
   const { data: channelCollections } = useChannelCollections(channelNumber)
   const { data: collectionStatus } = useCollectionStatus(channelNumber)
   const { data: tunarrCollectionLinks = [] } = useTunarrCollectionLinks()
-  const generateCollections = useGenerateCollections()
+  const buildCollections = useBuildChannelCollections()
   const unlinkCollection = useUnlinkCollection()
   const deletePlexCollection = useDeletePlexCollection()
   const syncCollections = useSyncCollections()
@@ -441,7 +441,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
   )
 
   const busy =
-    generateCollections.isPending || unlinkCollection.isPending || deletePlexCollection.isPending
+    buildCollections.isPending || unlinkCollection.isPending || deletePlexCollection.isPending
 
   function openAssign(plexType: 'movie' | 'show') {
     openModal('assignCollection', {
@@ -497,19 +497,12 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
   }
 
   async function handleBuild() {
-    // Generating resolves the target purely by owned name, so an assigned slot
-    // is switched back to owned. Say so before it happens.
-    const switching = [movieCollection, showCollection].filter((c) => c?.source === 'assigned')
-    if (switching.length > 0) {
-      const names = switching.map((c) => `“${c!.collection_title}”`).join(' and ')
-      const confirmed = await confirmDialog({
-        title: 'Switch back to Linearr’s own collections?',
-        text: `This channel currently uses ${names} by reference. Building rebuilds “{Channel} Movies/TV” from the assigned items and makes that the active source again. ${switching.length > 1 ? 'Those collections' : 'That collection'} stays in Plex, untouched.`,
-        confirmText: 'Build collections',
-      })
-      if (!confirmed) return
-    }
-    generateCollections.mutate(channelNumber)
+    // Shared with the channel actions menu (ChannelDetail) so both entry points
+    // warn about the assigned -> owned switch identically.
+    await buildCollections.build(channelNumber, {
+      movie: movieCollection,
+      show: showCollection,
+    })
   }
 
   return (
@@ -600,11 +593,11 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
 
               <button
                 onClick={() => void handleBuild()}
-                disabled={generateCollections.isPending}
+                disabled={buildCollections.isPending}
                 title="Builds Linearr's own “{Channel} Movies/TV” collections from the assigned items and syncs them to Plex + Tunarr. Your own collections are never modified — but any assigned slot switches back to the owned collection."
                 className="ml-auto flex items-center gap-1.5 text-xs px-2.5 py-1 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700 text-indigo-300 hover:text-indigo-200 rounded-lg transition-colors disabled:opacity-50"
               >
-                {generateCollections.isPending ? (
+                {buildCollections.isPending ? (
                   <Spinner size="sm" />
                 ) : (
                   <svg

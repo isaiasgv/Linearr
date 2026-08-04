@@ -78,7 +78,7 @@ Tools are grouped into ten toolsets. **All are enabled by default** — the poin
 | `ai` | Linearr's own AI advisors (these spend your OpenAI credits — see below) |
 | `system` | Health, configuration, lineup export/import, presets, logs |
 
-**Trimming the surface.** 127 tool schemas is real context cost in a client — roughly 20–25k tokens if everything is on. If you only ever use Linearr for, say, channels and Plex, turn the rest off:
+**Trimming the surface.** 129 tool schemas is real context cost in a client — roughly 20–25k tokens if everything is on. If you only ever use Linearr for, say, channels and Plex, turn the rest off:
 
 - **Settings → System → MCP Server** — tick the toolsets you want, then Save.
 - Or set the environment variable, which wins over the stored setting:
@@ -105,7 +105,7 @@ Every tool call — success or failure, with a redacted argument summary and a d
 
 ## Tool reference
 
-**127 tools**, grouped by toolset. Arguments marked `?` are optional; **⚠** marks a destructive tool.
+**129 tools**, grouped by toolset. Arguments marked `?` are optional; **⚠** marks a destructive tool.
 
 #### `channels` (11)
 
@@ -218,7 +218,7 @@ Every tool call — success or failure, with a redacted argument summary and a d
 | `get_tunarr_schedule` | `tunarr_id`, `hours`? | What a Tunarr channel will play over the next `hours`. |
 | `get_tunarr_channel_shows` | `tunarr_id` | Which shows and movies a Tunarr channel draws from. |
 | `get_tunarr_guide` | `hours`? | The whole-lineup EPG for the next `hours`. |
-| `get_tunarr_endpoints` | — | URLs for the XMLTV guide and M3U playlist, for pointing a TV client at Linearr. The files themselves are downloads and are not returned here. |
+| `get_tunarr_endpoints` | `channel_number`? | URLs for the XMLTV guide, the M3U playlist, and a channel's live stream. These are Linearr-proxied paths, not Tunarr's own: Tunarr emits URLs on its container hostname, which a browser on the LAN cannot resolve. Pass `channel_number` to also get that channel's stream URL. The XMLTV, M3U and stream bodies are downloads/video and are not returned here. |
 | `get_tunarr_debug_info` | — | Diagnostic dump of what Tunarr's API reports — for troubleshooting a sync or push that is not behaving. |
 | `list_tunarr_links` | `kind`? | Which Linearr channels are linked to which Tunarr channels and collections. kind: channel \| collection \| all. |
 | `link_tunarr_channel` | `channel_number`, `tunarr_id`, `tunarr_name`?, `tunarr_number`? | Link a Linearr channel to an existing Tunarr channel by its uuid. |
@@ -248,13 +248,15 @@ Every tool call — success or failure, with a redacted argument summary and a d
 | `import_tunarr_channels` | `actions` | Import channels from Tunarr into Linearr. Run `preview_tunarr_import` first and pass the actions you want from its result. |
 | `export_channels_to_tunarr` | `channel_numbers`?, `sync_collections`? | Create or link Tunarr channels for Linearr channels. Pass a list of numbers, or "all". With `sync_collections` it also builds the backing Tunarr smart collections. |
 
-#### `watermark` (4)
+#### `watermark` (6)
 
 | Tool | Arguments | What it does |
 |---|---|---|
 | `get_channel_watermark` | `channel_number` | Read a channel's watermark config. `{"watermark": null}` means none is set. |
-| `set_channel_watermark` | `channel_number`, `enabled`?, `position`?, `width`?, `vertical_margin`?, `horizontal_margin`?, `duration`?, `opacity`?, `fixed_size`?, `use_channel_icon`?, `fade_period_mins`?, `fade_leading_edge`? | Set a channel's watermark and re-sync it to Tunarr. position: top-left \| top-right \| bottom-left \| bottom-right. `width` is a percent of frame width and must be > 0 (inert when `fixed_size`). opacity 0-100, margins 0-100, `duration` in seconds (0 = always on). Set `fade_period_mins` (>= 1) to fade it in and out. A watermark cannot be enabled without an image: leave `use_channel_icon` true on a channel that has an icon, or call `set_watermark_image` first. |
+| `set_channel_watermark` | `channel_number`, `enabled`?, `position`?, `width`?, `vertical_margin`?, `horizontal_margin`?, `duration`?, `opacity`?, `fixed_size`?, `use_channel_icon`?, `fade_period_mins`?, `fade_leading_edge`? | Set a channel's watermark and re-sync it to Tunarr. position: top-left \| top-right \| bottom-left \| bottom-right. `width` is a percent of frame width and must be > 0 (inert when `fixed_size`). opacity 0-100, margins 0-100, `duration` in seconds (0 = always on). Set `fade_period_mins` (>= 1) to fade it in and out. No image is required. With none set, Linearr omits the image URL from the Tunarr payload and Tunarr draws the channel's own icon. Call `set_watermark_image` only to use a DIFFERENT image from the icon. |
 | `clear_channel_watermark` | `channel_number` | **⚠** Remove a channel's watermark and push `enabled: false` to Tunarr. |
+| `audit_watermarks` | — | Find channels that will NOT PLAY because their watermark is enabled with no image. Tunarr builds a dangling ffmpeg `-i` for those, the transcode exits 254, no playlist is written and the channel 404s in a retry loop. `can_use_icon` marks the ones `repair_watermarks` can fix while keeping the watermark; the rest can only be switched off. |
+| `repair_watermarks` | `channel_number`? | Fix channels stuck with an enabled, imageless watermark so they play again. Per channel: upload its icon and keep the watermark if it has one, otherwise switch the watermark off. Omit `channel_number` to repair every affected channel; run `audit_watermarks` first to see what will change. |
 | `set_watermark_image` | `channel_number`, `image`?, `url`? | Resolve the watermark image to an absolute URL Tunarr can fetch. Pass `url` (an absolute URL, stored as-is), `image` (a data URI, uploaded to Tunarr), or neither to use the channel's icon. This step exists because Tunarr hands the value to ffmpeg as an HTTP input and ffmpeg cannot read a `data:` URI — which is also why inheriting the channel icon is an upload, not a copy. |
 
 #### `ai` (5)
@@ -308,6 +310,7 @@ Some routes exist in Linearr's HTTP API but are not MCP tools, on purpose. If an
 | Setting `plex_token` or `openai_api_key` | `update_configuration` refuses them outright. A bearer token that can also rewrite credentials is a far bigger blast radius than one that can rewrite a lineup. Credentials are set in Settings. |
 | Plex OAuth PIN start/status | Interactive browser flows an assistant can't complete. (`refresh_plex_token` and `get_plex_auth_info` *are* exposed — those are non-interactive.) |
 | Thumbnail and Tunarr image proxies | Binary image proxies for the browser. A client wants URLs, not JPEG bytes. |
+| The channel stream proxy (`/api/tunarr/stream/…`) | It serves an HLS playlist and video segments to a player. `get_tunarr_endpoints` returns the stream URL instead. |
 | Icon pack export / import / seed | Megabytes of base64 PNG — pure cost in a transcript, no interpretive value. |
 | The Plex webhook receiver | An inbound endpoint for Plex, not a user action. |
 | Login / logout | MCP authenticates with the bearer token; session cookies are the browser's business. |

@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { confirmDialog } from '@/shared/components/ui'
 import { useToastStore } from '@/shared/store/toast.store'
-import type { SmartCollectionInput, SmartCollectionUpdateInput } from '@/shared/types'
+import type {
+  ChannelCollection,
+  SmartCollectionInput,
+  SmartCollectionUpdateInput,
+} from '@/shared/types'
 import { collectionsApi, type AssignCollectionBody } from './api'
 
 /** Every collection mutation moves the same three caches. */
@@ -24,6 +29,45 @@ export function useChannelCollections(channelNumber: number) {
     queryFn: () => collectionsApi.getChannelCollections(channelNumber),
     enabled: Boolean(channelNumber),
   })
+}
+
+/**
+ * "Build/update this channel's own Plex collections", with the switch-back
+ * confirmation attached.
+ *
+ * Generating resolves its target purely by the owned name ("{Channel} Movies" /
+ * "{Channel} TV"), so a channel currently pointing at an assigned collection
+ * silently switches back to Linearr's own. That has to be said out loud before
+ * it happens — and it has to be said the same way from every entry point, which
+ * is why the confirmation lives here rather than in one screen's handler.
+ *
+ * `isPending` is exposed so callers can disable their control while it runs.
+ */
+export function useBuildChannelCollections() {
+  const generate = useGenerateCollections()
+
+  async function build(
+    channelNumber: number,
+    collections?: { movie?: ChannelCollection; show?: ChannelCollection },
+  ): Promise<void> {
+    const switching = [collections?.movie, collections?.show].filter(
+      (c): c is ChannelCollection => c?.source === 'assigned',
+    )
+    if (switching.length > 0) {
+      const names = switching.map((c) => `“${c.collection_title}”`).join(' and ')
+      const confirmed = await confirmDialog({
+        title: 'Switch back to Linearr’s own collections?',
+        text: `This channel currently uses ${names} by reference. Building rebuilds “{Channel} Movies/TV” from the assigned items and makes that the active source again. ${
+          switching.length > 1 ? 'Those collections' : 'That collection'
+        } stays in Plex, untouched.`,
+        confirmText: 'Build collections',
+      })
+      if (!confirmed) return
+    }
+    generate.mutate(channelNumber)
+  }
+
+  return { build, isPending: generate.isPending }
 }
 
 export function useGenerateCollections() {

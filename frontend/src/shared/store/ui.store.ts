@@ -73,6 +73,10 @@ interface UIState {
   aiContentAdvisorChannel: number | null
   /** Channel the add-content picker adds to (carried, never inferred). */
   addContentChannel: number | null
+  /** Channel whose Tunarr guide row the guide modal shows. */
+  channelGuideChannel: number | null
+  /** Channel the stream player plays. */
+  channelStreamChannel: number | null
   tunarrPreviewData: unknown | null
   iconPickerCallback: ((dataUrl: string) => void) | null
   iconEditorCallback: ((dataUrl: string, composition?: unknown) => void) | null
@@ -164,6 +168,8 @@ const defaultModals: Record<ModalName, boolean> = {
   iconPicker: false,
   watermarkEditor: false,
   addContent: false,
+  channelGuide: false,
+  channelStream: false,
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -212,6 +218,8 @@ export const useUIStore = create<UIState>((set) => ({
   itemDetailRatingKey: null,
   aiContentAdvisorChannel: null,
   addContentChannel: null,
+  channelGuideChannel: null,
+  channelStreamChannel: null,
   tunarrPreviewData: null,
   iconPickerCallback: null,
   iconEditorCallback: null,
