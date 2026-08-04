@@ -89,6 +89,17 @@ const AddContentModal = lazy(() =>
     default: m.AddContentModal,
   })),
 )
+const ChannelGuideModal = lazy(() =>
+  import('@/features/tunarr/components/ChannelGuideModal').then((m) => ({
+    default: m.ChannelGuideModal,
+  })),
+)
+// Lazy matters here: this pulls hls.js (~150 KB) on first open only.
+const ChannelStreamModal = lazy(() =>
+  import('@/features/tunarr/components/ChannelStreamModal').then((m) => ({
+    default: m.ChannelStreamModal,
+  })),
+)
 const TunarrView = lazy(() =>
   import('@/features/tunarr/components/TunarrView').then((m) => ({ default: m.TunarrView })),
 )
@@ -178,6 +189,8 @@ export default function App() {
         <IconPickerModal />
         <WatermarkEditorModal />
         <AddContentModal />
+        <ChannelGuideModal />
+        <ChannelStreamModal />
       </Suspense>
     </AppLayout>
   )

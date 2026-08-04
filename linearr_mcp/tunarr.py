@@ -83,14 +83,28 @@ def register(reg, api):
             raise tool_error(e)
 
     @reg.tool(name="get_tunarr_endpoints", toolset="tunarr", read_only=True)
-    async def get_tunarr_endpoints() -> dict:
-        """URLs for the XMLTV guide and M3U playlist, for pointing a TV client at
-        Linearr. The files themselves are downloads and are not returned here."""
-        return {
+    async def get_tunarr_endpoints(channel_number: int | None = None) -> dict:
+        """URLs for the XMLTV guide, the M3U playlist, and a channel's live stream.
+
+        These are Linearr-proxied paths, not Tunarr's own: Tunarr emits URLs on its
+        container hostname, which a browser on the LAN cannot resolve. Pass
+        `channel_number` to also get that channel's stream URL. The XMLTV, M3U and
+        stream bodies are downloads/video and are not returned here."""
+        out = {
             "tunarr_url": api.get_tunarr_url(),
             "xmltv_url": "/api/tunarr/xmltv",
             "m3u_url": "/api/tunarr/m3u",
         }
+        if channel_number is not None:
+            link = next((dict(l) for l in api.tunarr_get_channel_links()
+                         if l["channel_number"] == channel_number), None)
+            out["stream_url"] = (f"/api/tunarr/stream/{link['tunarr_id']}"
+                                 if link else None)
+            if link is None:
+                out["stream_note"] = (
+                    f"Channel {channel_number} is not linked to Tunarr, so it has "
+                    f"no stream.")
+        return out
 
     @reg.tool(name="get_tunarr_debug_info", toolset="tunarr",
               read_only=True, open_world=True)

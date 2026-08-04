@@ -384,3 +384,5 @@ export type ModalName =
   | 'iconPicker'
   | 'watermarkEditor'
   | 'addContent'
+  | 'channelGuide'
+  | 'channelStream'

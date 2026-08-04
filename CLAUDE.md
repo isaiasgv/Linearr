@@ -256,6 +256,10 @@ Consequences:
   report either as "the reorder failed".
 - `PUT /api/channels/{n}` also renumbers when `body.number` differs from the path number
   (409 if the target number is taken).
+- `GET /api/channels/watermark-audit` — channels whose watermark is enabled with no image,
+  i.e. channels that will not play at all (see the watermark note under Tunarr).
+  `POST /api/channels/watermark-repair[?channel_number=]` fixes them: resolve the icon into
+  a real image URL where there is one, otherwise switch the watermark off.
 - `GET|PUT|DELETE /api/channels/{n}/watermark` — per-channel Tunarr watermark config.
   `GET` returns `{watermark: null}` or the stored config plus a server-owned `image_url`;
   `PUT`/`DELETE` also re-sync the channel to Tunarr and return `tunarr_sync`. Validation
@@ -364,6 +368,17 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 > persisted but never read, and only `fadeConfig[0]` is applied — so clearing a watermark
 > pushes an explicit `enabled: false` (read-modify-write would otherwise echo Tunarr's
 > existing one straight back).
+>
+> **The watermark `url` is optional — omit it, never send `""`.** With the key absent
+> Tunarr draws the channel's own icon, which is what a watermark that should follow the
+> logo wants; `_watermark_to_tunarr` therefore only adds `url` when a resolved image URL
+> exists. There is deliberately NO "set an image before enabling" gate: that once 400'd
+> on the theory that a blank image forced `url: ""` and Tunarr would reject it, but a
+> probe against Tunarr **1.3.10** showed `url` is optional, an absent key is accepted
+> (200, stored with no `url`), and `url: ""` is accepted too. Defaults for a new
+> watermark live in `_WATERMARK_DEFAULTS` (width 7, margins 5/5, opacity 20), mirrored in
+> `frontend/src/features/watermark/types.ts` and in the `set_channel_watermark` MCP tool
+> — all three must agree, and `tests/test_mcp_tools.py` asserts the MCP half.
 
 - `GET /api/tunarr/channels`
 - `GET /api/tunarr/channels/{id}/schedule`
@@ -384,6 +399,19 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
   **browser**. Stored watermark URLs point at the Tunarr container (`http://tunarr:8000`),
   which a LAN browser cannot resolve; keeps the 7-day immutable cache headers like
   `/api/plex/thumb`.
+- `GET /api/tunarr/stream/{tunarr_id}` + `GET /api/tunarr/stream-segment?path=` — HLS proxy
+  for the in-app player. Same container-hostname problem as the image proxy, but worse:
+  Tunarr's playlist points at its own absolute URLs, so the playlist body is **rewritten**
+  (`_rewrite_hls_playlist`) to route every segment — and every `URI="…"` attribute on tags
+  like EXT-X-KEY/EXT-X-MAP — back through `/api/tunarr/stream-segment`. Nested playlists are
+  rewritten in turn. Both are `no-store` (a live playlist changes every segment) and share
+  the `/api/tunarr/image` SSRF guard via `_is_safe_tunarr_path`. Tunarr starts ffmpeg on the
+  first request, so the read timeout is 60s. **Not exposed over MCP** (binary/streaming);
+  `get_tunarr_endpoints` hands out the URL instead.
+  The player is `features/tunarr/components/ChannelStreamModal.tsx`. It needs **`hls.js`**
+  (the one media dependency — Chrome/Firefox have no native HLS), imported lazily so its
+  ~525 KB chunk only loads when someone actually watches a channel, and the CSP carries
+  `media-src 'self' blob:` because MSE plays from a blob URL.
 - `POST /api/tunarr/test` — body: `{url}`, returns `{ok, latency_ms}`
 - `POST /api/tunarr/tasks/UpdateXmlTvTask`
 - `POST /api/tunarr/tasks/ScanLibrariesTask`
@@ -399,7 +427,7 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 ### MCP Server
 Model Context Protocol endpoint at `/mcp` (streamable HTTP, stateless, JSON responses) —
 full coverage of the app: channels, Plex, assignments, collections, schedule blocks,
-Tunarr, watermarks, icons, AI advisors, and system/logs. **127 tools across 10 toolsets**
+Tunarr, watermarks, icons, AI advisors, and system/logs. **129 tools across 10 toolsets**
 (`channels`, `icons`, `assignments`, `plex`, `collections`, `blocks`, `tunarr`,
 `watermark`, `ai`, `system`), plus 4 resources (`linearr://lineup`,
 `linearr://channel/{number}`, `linearr://libraries`, `linearr://status`).

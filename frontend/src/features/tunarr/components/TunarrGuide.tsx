@@ -52,9 +52,15 @@ function ProgramBar({ title, episode, startMs, durationMs, timelineStart }: Prog
 
 interface TunarrGuideProps {
   onClose?: () => void
+  /**
+   * Show only this Linearr channel's row. The guide is one grid either way —
+   * filtering here rather than forking the component keeps the timeline, the
+   * now-marker and the program bars identical in both places.
+   */
+  channelNumber?: number
 }
 
-export function TunarrGuide({ onClose }: TunarrGuideProps) {
+export function TunarrGuide({ onClose, channelNumber }: TunarrGuideProps) {
   const { data, isLoading, isError } = useTunarrGuide(24)
   const scrollRef = useRef<HTMLDivElement>(null)
   const timeSlots = useMemo(() => generateTimeSlots(24), [])
@@ -70,7 +76,9 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
     }
   }, [timelineStart])
 
-  const channels = data?.channels ?? []
+  const all = data?.channels ?? []
+  const channels =
+    channelNumber == null ? all : all.filter((c) => c.channel_number === channelNumber)
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-slate-950">
@@ -79,7 +87,9 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
         <div>
           <h2 className="text-base font-bold text-slate-100">Program Guide</h2>
           <p className="text-xs text-slate-500">
-            {channels.length} channel{channels.length !== 1 ? 's' : ''} linked to Tunarr
+            {channelNumber != null
+              ? `Channel ${channelNumber} — next 24 hours`
+              : `${channels.length} channel${channels.length !== 1 ? 's' : ''} linked to Tunarr`}
           </p>
         </div>
         {onClose && (
@@ -111,7 +121,9 @@ export function TunarrGuide({ onClose }: TunarrGuideProps) {
       ) : channels.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-slate-500">
-            No channels linked to Tunarr. Link channels first.
+            {channelNumber != null
+              ? `Channel ${channelNumber} isn’t linked to Tunarr yet — link it on the Tunarr tab.`
+              : 'No channels linked to Tunarr. Link channels first.'}
           </p>
         </div>
       ) : (
