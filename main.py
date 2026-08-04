@@ -1501,7 +1501,10 @@ async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
         tunarr_url = get_tunarr_url()
         if not tunarr_url:
             return None
-        raw, content_type, filename = decoded
+        raw, content_type, _ = decoded
+        # Channel-scoped + content-addressed: a shared filename would overwrite
+        # every other channel's watermark image (see _watermark_image_filename).
+        filename = _watermark_image_filename(channel_number, raw, content_type)
         async with httpx.AsyncClient(timeout=30.0) as client:
             image_url = await _tunarr_upload_image(
                 client, tunarr_url, raw, content_type, filename)
@@ -1697,7 +1700,10 @@ async def set_channel_watermark_image(channel_number: int, body: WatermarkImageI
                 400, "No usable image — supply a data URI, an absolute URL, or "
                      "set a channel icon first"
             )
-        raw, content_type, filename = decoded
+        raw, content_type, _ = decoded
+        # Channel-scoped + content-addressed: a shared filename would overwrite
+        # every other channel's watermark image (see _watermark_image_filename).
+        filename = _watermark_image_filename(channel_number, raw, content_type)
         tunarr_url = get_tunarr_url()
         if not tunarr_url:
             raise HTTPException(400, "Tunarr not configured")
@@ -1726,7 +1732,16 @@ async def set_channel_watermark_image(channel_number: int, body: WatermarkImageI
 # app needs both a way to find channels in that state and a way to fix them.
 
 def _find_broken_watermarks() -> list[dict]:
-    """Channels whose watermark is enabled but has no image URL to draw."""
+    """Channels whose watermark needs fixing, and why.
+
+    Two distinct faults, both repairable by re-resolving the image:
+
+    - `no_image` — enabled with no URL at all. The channel does not play (Tunarr
+      builds a dangling ffmpeg `-i`).
+    - `shared_image` — pointing at the legacy `linearr-watermark.png`, which every
+      channel used to upload over. The channel plays, but draws whichever
+      channel's image was applied last.
+    """
     out: list[dict] = []
     with get_db() as conn:
         rows = conn.execute(
@@ -1740,11 +1755,17 @@ def _find_broken_watermarks() -> list[dict]:
             continue
         if not isinstance(wm, dict) or not wm.get("enabled"):
             continue
-        if (row["watermark_image_url"] or "").strip():
+        image_url = (row["watermark_image_url"] or "").strip()
+        if not image_url:
+            issue = "no_image"
+        elif _LEGACY_WATERMARK_FILENAME in image_url:
+            issue = "shared_image"
+        else:
             continue
         out.append({
             "number": row["number"],
             "name": row["name"],
+            "issue": issue,
             # Repairable in place when there is an icon to upload as the image.
             "can_use_icon": bool((row["icon"] or "").strip()),
         })
@@ -1753,20 +1774,23 @@ def _find_broken_watermarks() -> list[dict]:
 
 @app.get("/api/channels/watermark-audit")
 def watermark_audit():
-    """Channels with an enabled watermark and no image — i.e. channels that will
-    not play. `can_use_icon` marks the ones repair can fix without losing the
-    watermark; the rest can only be switched off."""
+    """Channels whose watermark needs fixing, with the `issue` per channel:
+    `no_image` (the channel will not play at all) or `shared_image` (it plays but
+    draws another channel's logo, from the legacy shared upload filename).
+    `can_use_icon` marks the ones repair can fix without losing the watermark;
+    the rest can only be switched off."""
     broken = _find_broken_watermarks()
     return {"broken": broken, "count": len(broken)}
 
 
 @app.post("/api/channels/watermark-repair")
 async def watermark_repair(channel_number: int | None = Query(None)):
-    """Fix channels stuck with an enabled, imageless watermark.
+    """Fix channels reported by `watermark-audit`.
 
-    Per channel: upload its icon and keep the watermark if it has one, otherwise
-    switch the watermark off. Either way the channel plays again afterwards.
-    Pass `channel_number` to repair just one.
+    Per channel: re-upload its icon under a collision-free filename and keep the
+    watermark if it has one, otherwise switch the watermark off. Either way the
+    channel afterwards plays and draws its own logo. Pass `channel_number` to
+    repair just one.
     """
     broken = _find_broken_watermarks()
     if channel_number is not None:
@@ -1774,6 +1798,12 @@ async def watermark_repair(channel_number: int | None = Query(None)):
     results = []
     for entry in broken:
         n = entry["number"]
+        if entry["issue"] == "shared_image":
+            # Clear it first: the resolver is a no-op for a channel that already
+            # has a URL, and this one is a URL we must stop trusting.
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE channels SET watermark_image_url=NULL WHERE number=?", (n,))
         image_url = await _refollow_channel_icon_watermark(n)
         if image_url:
             action = "image_resolved_from_icon"
@@ -1791,10 +1821,13 @@ async def watermark_repair(channel_number: int | None = Query(None)):
                              (json.dumps(wm), n))
             action = "watermark_disabled"
         sync = await _sync_channel_to_tunarr(n)
-        results.append({"number": n, "name": entry["name"], "action": action,
-                        "image_url": image_url, "tunarr_sync": sync})
-        _log_app("channel", f"Repaired watermark for channel {n}: {action}",
-                 level="warn", metadata={"number": n, "action": action})
+        results.append({"number": n, "name": entry["name"], "issue": entry["issue"],
+                        "action": action, "image_url": image_url,
+                        "tunarr_sync": sync})
+        _log_app("channel",
+                 f"Repaired watermark for channel {n} ({entry['issue']}): {action}",
+                 level="warn",
+                 metadata={"number": n, "issue": entry["issue"], "action": action})
     return {"repaired": results, "count": len(results)}
 
 
@@ -5545,6 +5578,29 @@ def _decode_data_uri(data_uri: str) -> tuple[bytes, str, str] | None:
     return raw, mime, f"linearr-watermark.{_MIME_EXT.get(mime, 'png')}"
 
 
+# Legacy shared filename. Every channel's watermark image used to upload under
+# this one name, and Tunarr keys uploads by filename — so each new upload
+# OVERWROTE the previous one and every channel ended up drawing whichever image
+# was applied last. `watermark-audit` reports channels still pointing at it.
+_LEGACY_WATERMARK_FILENAME = "linearr-watermark."
+
+
+def _watermark_image_filename(channel_number: int, raw: bytes, mime: str) -> str:
+    """A filename no other channel can collide with.
+
+    Tunarr's `POST /api/upload/image` stores by filename and returns the same
+    `fileUrl` for a repeat name, overwriting what was there (verified against
+    1.3.10). So the name has to carry both the channel and the image:
+
+    - the channel number keeps two channels apart, and keeps the uploads
+      directory readable when you are staring at an ffmpeg command;
+    - the content hash keeps one channel's *old* image intact when it gets a new
+      one, and makes re-applying an unchanged image a no-op rather than a new file.
+    """
+    digest = hashlib.sha1(raw).hexdigest()[:10]
+    return f"linearr-ch{channel_number}-{digest}.{_MIME_EXT.get(mime, 'png')}"
+
+
 async def _tunarr_upload_image(
     client: "httpx.AsyncClient", url: str, raw: bytes,
     content_type: str, filename: str,
@@ -6318,8 +6374,15 @@ def _normalize_guide_programs(programs: list) -> list[dict]:
             or listing.get("title")  # for episodes, listing.title is often the episode title
             or ""
         )
-        season_num = listing.get("seasonNumber") or program.get("seasonNumber") or lineup.get("seasonNumber") or p.get("season")
-        episode_num = listing.get("episodeNumber") or program.get("episodeNumber") or lineup.get("episodeNumber") or p.get("episode_number") or p.get("episodeNumber")
+        # `p.get("seasonNumber")` is where the bulk EPG puts it — without it the
+        # episode label came out as "S?E1", since the episode chain already
+        # covered `p` but the season chain stopped at the older `p["season"]`.
+        season_num = (listing.get("seasonNumber") or program.get("seasonNumber")
+                      or lineup.get("seasonNumber") or p.get("seasonNumber")
+                      or p.get("season"))
+        episode_num = (listing.get("episodeNumber") or program.get("episodeNumber")
+                       or lineup.get("episodeNumber") or p.get("episode_number")
+                       or p.get("episodeNumber"))
 
         # For shows: if listing has showTitle, the title is the show, ep_title is the episode
         show_title = listing.get("showTitle") or program.get("showTitle") or ""
@@ -6475,35 +6538,48 @@ async def tunarr_guide(hours: int = Query(24)):
     link_by_tunarr_id = {l["tunarr_id"]: l for l in links}
     linked_ids = set(link_by_tunarr_id.keys())
 
+    # The BULK guide is the primary source, and the per-channel endpoint is not a
+    # fallback for it at all.
+    #
+    # `GET /api/guide/channels/{id}` returns the channel's LINEUP, not its EPG:
+    # `[{index, startTimeMs, lineupItem: {durationMs, type}}]`. `lineupItem`
+    # carries no title — so every entry fell through the title chain below to the
+    # literal string "Program", which is what the guide used to render for every
+    # programme. `GET /api/guide/channels` (no id) is the materialized EPG:
+    # `{<channelId>: {id, name, number, icon, programs: [{title, start, stop,
+    # duration, type}]}}`. Verified against Tunarr 1.3.10.
+    #
+    # It is also one request instead of one per channel, which for a 40-channel
+    # lineup is the difference between 1 and 40 round trips.
+    bulk_by_channel: dict[str, list] = {}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            r = await client.get(f"{url}/api/guide/channels",
+                                 params={"dateFrom": date_from, "dateTo": date_to})
+            if r.status_code == 200:
+                bulk = r.json()
+                if isinstance(bulk, dict):
+                    # Either keyed directly by channel id, or nested under
+                    # "channels" — accept both, then read `.programs`.
+                    source = bulk.get("channels") if isinstance(
+                        bulk.get("channels"), dict) else bulk
+                    for cid, entry in (source or {}).items():
+                        if isinstance(entry, dict):
+                            bulk_by_channel[cid] = entry.get("programs") or []
+                        elif isinstance(entry, list):
+                            bulk_by_channel[cid] = entry
+        except Exception as e:
+            log.warning("Tunarr bulk guide failed: %s", e)
+
     guide_channels = []
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Strategy: fetch per-channel to avoid format guessing with the bulk API
         for link in links:
             tunarr_id = link["tunarr_id"]
-            items = []
+            items = _normalize_guide_programs(bulk_by_channel.get(tunarr_id) or [])
 
-            # 1. Try per-channel guide API (most reliable)
-            try:
-                r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
-                                     params={"dateFrom": date_from, "dateTo": date_to})
-                if r.status_code == 200:
-                    data = r.json()
-                    log.debug("Tunarr guide response for %s: type=%s keys=%s",
-                              tunarr_id, type(data).__name__,
-                              list(data.keys())[:5] if isinstance(data, dict) else f"list[{len(data)}]" if isinstance(data, list) else "?")
-                    # Extract programs from various response shapes
-                    programs = []
-                    if isinstance(data, list):
-                        programs = data
-                    elif isinstance(data, dict):
-                        programs = data.get("programs", data.get("items", data.get("lineup", [])))
-                        if not programs and isinstance(programs, list):
-                            programs = []
-                    items = _normalize_guide_programs(programs)
-            except Exception as e:
-                log.warning("Tunarr guide for %s failed: %s", tunarr_id, e)
-
-            # 2. Fallback: channel lineup API
+            # Fallback: the channel's lineup. Titleless by nature, so entries come
+            # out as "Program" — only worth showing when the EPG has not
+            # materialized yet and the alternative is an empty row.
             if not items:
                 try:
                     r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
@@ -6513,27 +6589,10 @@ async def tunarr_guide(hours: int = Query(24)):
                         raw_items = raw if isinstance(raw, list) else raw.get("items", raw.get("programs", []))
                         items = _normalize_guide_programs(raw_items)
                         if items:
-                            log.debug("Tunarr lineup fallback returned %d items for %s", len(items), tunarr_id)
+                            log.debug("Tunarr lineup fallback returned %d titleless "
+                                      "items for %s", len(items), tunarr_id)
                 except Exception as e:
                     log.warning("Tunarr lineup for %s failed: %s", tunarr_id, e)
-
-            # 3. Last fallback: bulk guide API with channel filtering
-            if not items:
-                try:
-                    r = await client.get(f"{url}/api/guide/channels",
-                                         params={"dateFrom": date_from, "dateTo": date_to})
-                    if r.status_code == 200:
-                        bulk = r.json()
-                        log.debug("Tunarr bulk guide: type=%s", type(bulk).__name__)
-                        if isinstance(bulk, dict):
-                            # Dict keyed by channel UUID
-                            ch_data = bulk.get(tunarr_id, bulk.get("channels", {}).get(tunarr_id))
-                            if isinstance(ch_data, list):
-                                items = _normalize_guide_programs(ch_data)
-                            elif isinstance(ch_data, dict):
-                                items = _normalize_guide_programs(ch_data.get("programs", []))
-                except Exception:
-                    pass
 
             guide_channels.append({
                 "channel_number": link["channel_number"],

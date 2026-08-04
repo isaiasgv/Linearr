@@ -369,6 +369,18 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 > pushes an explicit `enabled: false` (read-modify-write would otherwise echo Tunarr's
 > existing one straight back).
 >
+> **Every watermark image needs a collision-free upload filename.** Tunarr's
+> `POST /api/upload/image` keys uploads by FILENAME: repeat a name and it returns
+> the same `fileUrl` and overwrites the bytes (verified on 1.3.10 — two different
+> PNGs sent as one name, second won). Every channel used to upload as
+> `linearr-watermark.png`, so applying a watermark anywhere silently replaced the
+> image every other channel was drawing. `_watermark_image_filename` now builds
+> `linearr-ch{number}-{sha1[:10]}.{ext}` — the number separates channels, the hash
+> stops a channel's new image clobbering its old one and makes a re-apply a no-op.
+> `watermark-audit` reports legacy rows as `issue: "shared_image"` and repair
+> re-resolves them (clearing the stale URL first, since the resolver no-ops when
+> one is present).
+>
 > **The watermark `url` is optional — omit it, never send `""`.** With the key absent
 > Tunarr draws the channel's own icon, which is what a watermark that should follow the
 > logo wants; `_watermark_to_tunarr` therefore only adds `url` when a resolved image URL
@@ -382,6 +394,19 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 
 - `GET /api/tunarr/channels`
 - `GET /api/tunarr/channels/{id}/schedule`
+- `GET /api/tunarr/guide` — **reads Tunarr's BULK EPG, not the per-channel endpoint.**
+  `GET /api/guide/channels/{id}` returns the channel's *lineup* —
+  `[{index, startTimeMs, lineupItem: {durationMs, type}}]` — with no title
+  anywhere, so every entry fell through `_normalize_guide_programs`' title chain to
+  the literal `"Program"` and the guide rendered as a wall of identical blocks.
+  `GET /api/guide/channels` (no id) is the materialized EPG:
+  `{<channelId>: {id, name, number, icon, programs: [{title, episodeTitle,
+  seasonNumber, episodeNumber, start, stop, duration, type}]}}`. Note `start` /
+  `duration`, NOT `startTimeMs` / `durationMs`, and `seasonNumber` on the program
+  itself (its absence from the season chain is what produced "S?E1"). One request
+  covers the whole lineup where the old code made one per channel. The lineup
+  survives only as a fallback for a not-yet-materialized EPG, where titleless
+  entries are legitimate. Guarded by `tests/test_tunarr_guide.py`.
 - `GET /api/tunarr/channels/{id}/shows`
 - `GET /api/tunarr/custom-shows` — Tunarr 1.3 custom shows (`[]` on older)
 - `GET /api/tunarr/channel-links`

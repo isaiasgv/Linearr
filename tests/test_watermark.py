@@ -658,3 +658,137 @@ def test_enabling_without_an_image_or_icon_is_refused(auth_client):
         assert not any(b["number"] == n for b in audit["broken"])
     finally:
         auth_client.delete(f"/api/channels/{n}")
+
+
+# ── One watermark image per channel ──────────────────────────────────────────
+#
+# Tunarr's POST /api/upload/image stores by filename and returns the SAME
+# fileUrl for a repeat name, overwriting whatever was there (verified against
+# 1.3.10 by uploading two different PNGs as one name — the second won). Every
+# channel used to upload as "linearr-watermark.png", so applying a watermark
+# anywhere replaced the image every other channel was drawing.
+
+_PNG_A = b"\x89PNG\r\n\x1a\n" + b"A" * 40
+_PNG_B = b"\x89PNG\r\n\x1a\n" + b"B" * 40
+
+
+def test_watermark_filenames_differ_per_channel():
+    a = main._watermark_image_filename(131, _PNG_A, "image/png")
+    b = main._watermark_image_filename(132, _PNG_A, "image/png")
+    assert a != b, "two channels must never share an upload filename"
+    assert "ch131" in a and "ch132" in b
+
+
+def test_watermark_filenames_differ_per_image():
+    a = main._watermark_image_filename(131, _PNG_A, "image/png")
+    b = main._watermark_image_filename(131, _PNG_B, "image/png")
+    assert a != b, "a new image must not overwrite the channel's previous one"
+
+
+def test_watermark_filename_is_stable_for_the_same_image():
+    """Re-applying an unchanged icon should reuse the file, not pile up copies."""
+    a = main._watermark_image_filename(131, _PNG_A, "image/png")
+    b = main._watermark_image_filename(131, _PNG_A, "image/png")
+    assert a == b
+
+
+def test_watermark_filename_keeps_the_extension():
+    assert main._watermark_image_filename(1, _PNG_A, "image/png").endswith(".png")
+    assert main._watermark_image_filename(1, _PNG_A, "image/jpeg").endswith(".jpg")
+
+
+def test_watermark_filename_is_not_the_legacy_shared_name():
+    name = main._watermark_image_filename(131, _PNG_A, "image/png")
+    assert main._LEGACY_WATERMARK_FILENAME not in name
+
+
+def test_audit_flags_a_channel_on_the_shared_legacy_image(auth_client):
+    """These channels play, but draw whichever channel uploaded last."""
+    n = _make_channel(auth_client, 746)
+    try:
+        with main.get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET watermark=?, watermark_image_url=? WHERE number=?",
+                (json.dumps({"enabled": True, "width": 7}),
+                 "http://tunarr:8000/images/uploads/linearr-watermark.png", n),
+            )
+        audit = auth_client.get("/api/channels/watermark-audit").json()
+        entry = next((b for b in audit["broken"] if b["number"] == n), None)
+        assert entry is not None, "a channel on the shared image must be reported"
+        assert entry["issue"] == "shared_image"
+    finally:
+        auth_client.delete(f"/api/channels/{n}")
+
+
+def test_audit_distinguishes_the_two_faults(auth_client):
+    missing = _make_channel(auth_client, 747)
+    shared = _make_channel(auth_client, 748)
+    try:
+        with main.get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET watermark=?, watermark_image_url=NULL WHERE number=?",
+                (json.dumps({"enabled": True}), missing))
+            conn.execute(
+                "UPDATE channels SET watermark=?, watermark_image_url=? WHERE number=?",
+                (json.dumps({"enabled": True}),
+                 "http://tunarr:8000/images/uploads/linearr-watermark.png", shared))
+        broken = {b["number"]: b["issue"]
+                  for b in auth_client.get("/api/channels/watermark-audit").json()["broken"]}
+        assert broken[missing] == "no_image"
+        assert broken[shared] == "shared_image"
+    finally:
+        for n in (missing, shared):
+            auth_client.delete(f"/api/channels/{n}")
+
+
+def test_audit_ignores_a_channel_with_its_own_image(auth_client):
+    n = _make_channel(auth_client, 749)
+    try:
+        with main.get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET watermark=?, watermark_image_url=? WHERE number=?",
+                (json.dumps({"enabled": True}),
+                 "http://tunarr:8000/images/uploads/linearr-ch749-abc1234567.png", n),
+            )
+        audit = auth_client.get("/api/channels/watermark-audit").json()
+        assert not any(b["number"] == n for b in audit["broken"])
+    finally:
+        auth_client.delete(f"/api/channels/{n}")
+
+
+def test_repair_reresolves_a_shared_image(auth_client, monkeypatch):
+    """Repair must drop the shared URL and upload the channel's own icon — the
+    resolver is a no-op while a URL is still present, so clearing comes first."""
+    n = _make_channel(auth_client, 750)
+    resolved = f"http://tunarr:8000/images/uploads/linearr-ch{n}-deadbeef00.png"
+    cleared: list[bool] = []
+
+    async def fake_refollow(channel_number: int):
+        with main.get_db() as conn:
+            row = conn.execute(
+                "SELECT watermark_image_url FROM channels WHERE number=?",
+                (channel_number,)).fetchone()
+        cleared.append(not (row["watermark_image_url"] or "").strip())
+        _set_image_url(channel_number, resolved)
+        return resolved
+
+    monkeypatch.setattr(main, "_refollow_channel_icon_watermark", fake_refollow)
+    try:
+        with main.get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET watermark=?, watermark_image_url=? WHERE number=?",
+                (json.dumps({"enabled": True, "width": 7}),
+                 "http://tunarr:8000/images/uploads/linearr-watermark.png", n),
+            )
+        r = auth_client.post(f"/api/channels/watermark-repair?channel_number={n}")
+        assert r.status_code == 200, r.text
+        entry = r.json()["repaired"][0]
+        assert entry["issue"] == "shared_image"
+        assert entry["action"] == "image_resolved_from_icon"
+        assert entry["image_url"] == resolved
+        assert cleared == [True], "the shared URL must be cleared before re-resolving"
+
+        audit = auth_client.get("/api/channels/watermark-audit").json()
+        assert not any(b["number"] == n for b in audit["broken"])
+    finally:
+        auth_client.delete(f"/api/channels/{n}")
