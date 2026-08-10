@@ -38,11 +38,17 @@ def register(reg, api):
     @reg.tool(name="update_configuration", toolset="system", idempotent=True)
     async def update_configuration(plex_url: str | None = None,
                                    tunarr_url: str | None = None,
+                                   tunarr_public_url: str | None = None,
                                    openai_base_url: str | None = None,
                                    openai_model: str | None = None,
                                    plex_token: str | None = None,
                                    openai_api_key: str | None = None) -> dict:
         """Change Linearr's URLs and AI model.
+
+        `tunarr_public_url` is the base URL used for channel icons and watermark
+        images written into Tunarr — set it when Tunarr's own address is not
+        reachable from your Plex clients, which is what makes icons appear only
+        on the local network. Blank means "same as tunarr_url".
 
         Credentials CANNOT be set here — `plex_token` and `openai_api_key` are
         accepted only so the call fails loudly instead of appearing to work. Set
@@ -63,7 +69,9 @@ def register(reg, api):
             openai_model=(openai_model if openai_model is not None
                           else current.get("openai_model")),
             tunarr_url=(tunarr_url if tunarr_url is not None
-                        else current.get("tunarr_url")))
+                        else current.get("tunarr_url")),
+            tunarr_public_url=(tunarr_public_url if tunarr_public_url is not None
+                               else current.get("tunarr_public_url")))
         try:
             api.save_settings(body)
         except HTTPException as e:

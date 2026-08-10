@@ -228,6 +228,16 @@ export interface Settings {
   openai_base_url: string
   openai_model: string
   tunarr_url: string
+  /**
+   * Base URL that asset links written INTO Tunarr are built on — channel icons
+   * and watermark images. Empty means "same as `tunarr_url`".
+   *
+   * These are two different addresses for two different readers: `tunarr_url`
+   * is where Linearr sends API requests (container-to-container), while these
+   * links end up in XMLTV and in ffmpeg command lines, fetched by Plex clients
+   * that may be off the network entirely.
+   */
+  tunarr_public_url: string
   // Secret presence flags: GET /api/settings returns secrets as empty strings
   // when set, plus these booleans so the UI can show a "configured" placeholder
   // without ever exposing the value. POST preserves the secret if sent empty.
