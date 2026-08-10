@@ -381,16 +381,30 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 > re-resolves them (clearing the stale URL first, since the resolver no-ops when
 > one is present).
 >
-> **The watermark `url` is optional — omit it, never send `""`.** With the key absent
-> Tunarr draws the channel's own icon, which is what a watermark that should follow the
-> logo wants; `_watermark_to_tunarr` therefore only adds `url` when a resolved image URL
-> exists. There is deliberately NO "set an image before enabling" gate: that once 400'd
-> on the theory that a blank image forced `url: ""` and Tunarr would reject it, but a
-> probe against Tunarr **1.3.10** showed `url` is optional, an absent key is accepted
-> (200, stored with no `url`), and `url: ""` is accepted too. Defaults for a new
-> watermark live in `_WATERMARK_DEFAULTS` (width 7, margins 5/5, opacity 20), mirrored in
-> `frontend/src/features/watermark/types.ts` and in the `set_channel_watermark` MCP tool
-> — all three must agree, and `tests/test_mcp_tools.py` asserts the MCP half.
+> **An enabled watermark must have an image. Tunarr's API accepts one without;
+> playback does not.** A probe against **1.3.10** shows `url` is optional in the schema —
+> an absent key stores fine and returns 200, and `url: ""` is accepted too — and this
+> file once concluded from that there should be no gate. That was wrong, and the ffmpeg
+> logs settle it: with no url Tunarr builds a dangling `-i` into the command, the
+> transcode exits **254**, no playlist is ever written and the channel 404s in a retry
+> loop. Tunarr does **not** fall back to the channel logo. So:
+>
+> - `_watermark_to_tunarr` refuses to emit `enabled: true` without a resolved image URL,
+>   degrading to `enabled: false` — which also self-heals an already-poisoned row on its
+>   next sync.
+> - `put_channel_watermark` resolves the channel icon into a real uploaded image when one
+>   is enabled with no URL, and **rolls the config write back and 400s** when there is no
+>   icon to derive from — a rejected request must not leave the poison row behind.
+> - `url` is still omitted rather than sent as `""` when there genuinely is no image, so
+>   a disabled watermark stays clean.
+>
+> Defaults for a new watermark live in `_WATERMARK_DEFAULTS` (width 7, margins 5/5,
+> **opacity 30**), mirrored in `frontend/src/features/watermark/types.ts` and in the
+> `set_channel_watermark` MCP tool — all three must agree, and `tests/test_mcp_tools.py`
+> asserts the MCP half. The editor's image picker offers three sources — channel icon,
+> an uploaded file, or a pasted URL — all landing on
+> `POST /api/channels/{n}/watermark/image`; only the icon source sets `use_channel_icon`,
+> which is what makes the watermark follow later icon changes.
 
 - `GET /api/tunarr/channels`
 - `GET /api/tunarr/channels/{id}/schedule`

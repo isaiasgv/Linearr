@@ -650,7 +650,7 @@ _WATERMARK_DEFAULTS = {
     "width": 7.0,
     "vertical_margin": 5.0,
     "horizontal_margin": 5.0,
-    "opacity": 20,
+    "opacity": 30,
 }
 
 
@@ -1448,9 +1448,48 @@ async def sync_channel_to_tunarr(channel_number: int):
         raise HTTPException(502, result.get("message", "Sync failed"))
     return result
 
+async def _tunarr_delete_channel(tunarr_id: str) -> dict:
+    """Best-effort delete of a Tunarr channel. Never raises.
+
+    Deliberately tolerant of 404: a channel already gone from Tunarr is the
+    desired end state, not an error worth reporting to someone who just asked
+    for it to be deleted.
+    """
+    url = get_tunarr_url()
+    if not url:
+        return {"deleted": False, "message": "Tunarr not configured"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.delete(f"{url}/api/channels/{tunarr_id}")
+    except Exception as e:
+        log.warning("Tunarr channel delete failed for %s: %s", tunarr_id, e)
+        return {"deleted": False, "message": str(e)}
+    if r.status_code in (200, 202, 204, 404):
+        return {"deleted": True, "tunarr_id": tunarr_id}
+    return {"deleted": False, "tunarr_id": tunarr_id,
+            "message": f"Tunarr returned {r.status_code}: {r.text[:200]}"}
+
+
 @app.delete("/api/channels/{channel_number}")
-def delete_channel(channel_number: int):
+async def delete_channel(channel_number: int,
+                         delete_tunarr: bool = Query(True)):
+    """Delete a channel, and by default the Tunarr channel linked to it.
+
+    The Tunarr side used to be left behind: this route cleared
+    `tunarr_channel_links` along with every other referencing table, which
+    severed the link but stranded the actual Tunarr channel — still in the
+    lineup, still in the guide, no longer reachable from Linearr to clean up.
+
+    Order matters. Linearr is authoritative, so the local delete commits first
+    and the Tunarr call is best-effort afterwards; a Tunarr failure is reported
+    in `tunarr` but never undoes the delete the user asked for. Pass
+    `delete_tunarr=false` to keep the Tunarr channel and only unlink it.
+    """
     with get_db() as conn:
+        link = conn.execute(
+            "SELECT tunarr_id FROM tunarr_channel_links WHERE channel_number=?",
+            (channel_number,),
+        ).fetchone()
         cur = conn.execute("DELETE FROM channels WHERE number=?", (channel_number,))
         if cur.rowcount == 0:
             raise HTTPException(404, "Channel not found")
@@ -1465,7 +1504,21 @@ def delete_channel(channel_number: int):
         for table in _present_ref_tables(conn, _CHANNEL_DELETE_TABLES):
             conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
     _log_app("channel", f"Deleted channel {channel_number}", level="warn", metadata={"number": channel_number})
-    return {"ok": True}
+
+    tunarr: dict | None = None
+    if link and delete_tunarr:
+        tunarr = await _tunarr_delete_channel(link["tunarr_id"])
+        _log_app(
+            "channel",
+            f"Deleted Tunarr channel for {channel_number}" if tunarr["deleted"]
+            else f"Could not delete Tunarr channel for {channel_number}",
+            level="warn" if tunarr["deleted"] else "error",
+            metadata={"number": channel_number, **tunarr},
+        )
+    elif link:
+        tunarr = {"deleted": False, "tunarr_id": link["tunarr_id"],
+                  "message": "Kept in Tunarr — unlinked only"}
+    return {"ok": True, "tunarr": tunarr}
 
 # ── Channel Icons ─────────────────────────────────────────────────────────────
 

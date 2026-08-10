@@ -24,7 +24,7 @@ def register(reg, api):
         channel_number: int, enabled: bool = False,
         position: str = "bottom-right", width: float = 7.0,
         vertical_margin: float = 5.0, horizontal_margin: float = 5.0,
-        duration: float = 0.0, opacity: int = 20, fixed_size: bool = False,
+        duration: float = 0.0, opacity: int = 30, fixed_size: bool = False,
         use_channel_icon: bool = True, fade_period_mins: int | None = None,
         fade_leading_edge: bool = True,
     ) -> dict:

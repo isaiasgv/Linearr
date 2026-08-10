@@ -53,9 +53,14 @@ export function ChannelDetail() {
 
   async function handleDelete() {
     setMenuOpen(false)
+    // Name the Tunarr blast radius. The delete now cascades there, and a
+    // confirmation that says only "this cannot be undone" would be hiding the
+    // half of the consequence that lives in another system.
     const confirmed = await confirmDialog({
       title: `Delete channel ${ch.number} – ${ch.name}?`,
-      text: 'This cannot be undone.',
+      text: tunarrLink
+        ? `This also deletes Tunarr channel #${tunarrLink.tunarr_number ?? '?'} and its programming. Assignments, blocks and collection links go with it. This cannot be undone.`
+        : 'Assignments, blocks and collection links go with it. This cannot be undone.',
       danger: true,
     })
     if (!confirmed) return
