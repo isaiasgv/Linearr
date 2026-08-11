@@ -1,3 +1,31 @@
+## [0.0.1-rc.12](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.11...v0.0.1-rc.12) (2026-08-11)
+
+### Features
+
+* **channels:** watch a channel, see its guide, and build its collections in place ([35c5f35](https://github.com/isaiasgv/Linearr/commit/35c5f35320e6650c43103edbd861a77571be864f))
+* **icons:** resizable canvas, generated icons, and an upload path ([9d868e4](https://github.com/isaiasgv/Linearr/commit/9d868e486becc223d346ce9d771ee4b34119f24b))
+* **mcp:** annotate every tool and add toolset selection ([5550627](https://github.com/isaiasgv/Linearr/commit/5550627dc2758ea6b9f266b3eb5cb9ebfeb369f0))
+* **mcp:** blocks, tunarr, ai and system toolsets ([b308c5b](https://github.com/isaiasgv/Linearr/commit/b308c5baa675f975d6c9f95acda908eb13df9c16))
+* **mcp:** channel reorder, packages, icons and the icon library ([6eff184](https://github.com/isaiasgv/Linearr/commit/6eff18463ec06c51581b4636ada29b35ee6e33d6))
+* **mcp:** four resources and a server-instructions rewrite ([e682b15](https://github.com/isaiasgv/Linearr/commit/e682b156ad0df6bad9bcd7c02dba68d5a7aeb7f8))
+* **mcp:** watermark toolset, Plex discovery, and collection editing ([c3b98e2](https://github.com/isaiasgv/Linearr/commit/c3b98e2e974ee4abfecdef5ab9e27f801e8f2b42))
+* **tunarr:** channel icons become real HTTP assets, on a public base URL ([7deaea4](https://github.com/isaiasgv/Linearr/commit/7deaea4d520376b217fb9e02a69d75841c869165))
+* **tunarr:** now-playing on the channel view, and split TunarrView into tabs ([64ae047](https://github.com/isaiasgv/Linearr/commit/64ae0471f185640002044ad93bbfc1ea96a69a18))
+
+### Bug Fixes
+
+* **branding:** Oribion footer logo never rendered — CSP blocked the remote image ([8182662](https://github.com/isaiasgv/Linearr/commit/81826623bc6a23fb6165cdb84bec427459119408))
+* **branding:** stop duplicating the Oribion name in the footer ([9fe973e](https://github.com/isaiasgv/Linearr/commit/9fe973e20ae425461799a9add1b4d1bc954b4ec8))
+* **tunarr:** programming always starts at 12:00AM ([dce4eab](https://github.com/isaiasgv/Linearr/commit/dce4eabcf50cd32fd6ce422a75f80676c12e2ddf))
+* **watermark,channels,collections:** opacity 30, image upload, delete cascade ([7c25aea](https://github.com/isaiasgv/Linearr/commit/7c25aea9cd890e7b63994db6b72cc33d0d3cc3c1))
+* **watermark,guide:** one image per channel, and real programme titles ([2337bc2](https://github.com/isaiasgv/Linearr/commit/2337bc2f54108a8618b39c98b4e97bff4b615d6f))
+* **watermark:** an imageless watermark can no longer take a channel off the air ([aaf8488](https://github.com/isaiasgv/Linearr/commit/aaf8488ab16a8b1889850d0b02720270331ee860))
+* **watermark:** leave the image blank and Tunarr draws the channel icon ([9830269](https://github.com/isaiasgv/Linearr/commit/98302690ea989db2f5852be5589cddb223d1ccb2))
+
+### Refactoring
+
+* **mcp:** extract the MCP server into a linearr_mcp package ([4351982](https://github.com/isaiasgv/Linearr/commit/435198284df9f9570e8637d986aa39e8d087d46b))
+
 ## [0.0.1-rc.11](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.10...v0.0.1-rc.11) (2026-07-26)
 
 ### Features
