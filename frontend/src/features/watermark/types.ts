@@ -53,11 +53,14 @@ export type WatermarkConfig = Omit<Watermark, 'image_url'>
 
 /**
  * Defaults for a NEW watermark — a discreet corner bug: 7% of frame width, 5%
- * margins, 20% opacity. Mirrors `_WATERMARK_DEFAULTS` in `main.py`; keep the
- * two in step. A channel with a watermark already saved keeps its stored values.
+ * margins, 30% opacity. Mirrors `_WATERMARK_DEFAULTS` in `main.py` and the
+ * `set_channel_watermark` MCP tool; all three must agree. A channel with a
+ * watermark already saved keeps its stored values.
  *
- * The image is intentionally left unset: with no resolved URL the backend omits
- * `url` from the Tunarr payload and Tunarr draws the channel's own icon.
+ * `use_channel_icon` defaults on because an enabled watermark MUST resolve to a
+ * real image — Tunarr does not fall back to the channel logo, it feeds the URL
+ * to ffmpeg as an input and a missing one takes the channel off the air. The
+ * backend uploads the icon to cover that; see the note on `image_url`.
  */
 export const DEFAULT_WATERMARK: Watermark = {
   enabled: false,
@@ -66,7 +69,7 @@ export const DEFAULT_WATERMARK: Watermark = {
   vertical_margin: 5,
   horizontal_margin: 5,
   duration: 0,
-  opacity: 20,
+  opacity: 30,
   fixed_size: false,
   use_channel_icon: true,
   fade: null,

@@ -4,6 +4,8 @@ import { useChannels, useDeleteChannel } from '@/features/channels/hooks'
 import { useChannelAssignments } from '@/features/assignments/hooks'
 import { useChannelCollections, useBuildChannelCollections } from '@/features/collections/hooks'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
+import { useAssignIconToChannel } from '@/features/icons/hooks'
+import { NowPlayingStrip } from '@/features/tunarr/components/NowPlayingStrip'
 import { TierBadge, tierColor } from '@/shared/components/ui/TierBadge'
 import { confirmDialog } from '@/shared/components/ui'
 import { tierNumberColor } from '@/features/channels/utils'
@@ -27,8 +29,10 @@ export function ChannelDetail() {
   const { data: channelCollections } = useChannelCollections(selectedChannel?.number ?? 0)
   const buildCollections = useBuildChannelCollections()
 
+  const setIcon = useAssignIconToChannel()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const iconFileRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
@@ -53,9 +57,14 @@ export function ChannelDetail() {
 
   async function handleDelete() {
     setMenuOpen(false)
+    // Name the Tunarr blast radius. The delete now cascades there, and a
+    // confirmation that says only "this cannot be undone" would be hiding the
+    // half of the consequence that lives in another system.
     const confirmed = await confirmDialog({
       title: `Delete channel ${ch.number} – ${ch.name}?`,
-      text: 'This cannot be undone.',
+      text: tunarrLink
+        ? `This also deletes Tunarr channel #${tunarrLink.tunarr_number ?? '?'} and its programming. Assignments, blocks and collection links go with it. This cannot be undone.`
+        : 'Assignments, blocks and collection links go with it. This cannot be undone.',
       danger: true,
     })
     if (!confirmed) return
@@ -112,6 +121,17 @@ export function ChannelDetail() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Now playing — renders nothing when the channel isn't linked or the
+              EPG has no entry covering now. */}
+          <div className="min-w-0 max-w-md flex-1">
+            <NowPlayingStrip
+              channelNumber={ch.number}
+              linked={Boolean(tunarrLink)}
+              onOpenGuide={() => openModal('channelGuide', { channelGuideChannel: ch.number })}
+              onWatch={() => openModal('channelStream', { channelStreamChannel: ch.number })}
+            />
           </div>
 
           {/* Tab strip */}
@@ -171,6 +191,44 @@ export function ChannelDetail() {
                     <path d="M21 15l-5-5L5 21" />
                   </svg>
                   {ch.icon ? 'Edit Icon' : 'Add Icon'}
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false)
+                    openModal('iconGenerator')
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700"
+                >
+                  <svg
+                    className="h-3.5 w-3.5 text-fuchsia-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                  >
+                    <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  Generate Icon
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false)
+                    iconFileRef.current?.click()
+                  }}
+                  disabled={setIcon.isPending}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                >
+                  <svg
+                    className="h-3.5 w-3.5 text-teal-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                  >
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                  </svg>
+                  Upload Icon
                 </button>
                 <button
                   onClick={() => {
@@ -299,6 +357,24 @@ export function ChannelDetail() {
           </div>
         </div>
       </div>
+
+      {/* Upload target for the menu item above. Kept outside the dropdown so
+          closing the menu on click does not unmount the input mid-dialog. */}
+      <input
+        ref={iconFileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ''
+          if (!file) return
+          const reader = new FileReader()
+          reader.onload = () =>
+            setIcon.mutate({ channelNumber: ch.number, iconData: reader.result as string })
+          reader.readAsDataURL(file)
+        }}
+      />
 
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">

@@ -74,6 +74,11 @@ const IconEditorModal = lazy(() =>
     default: m.IconEditorModal,
   })),
 )
+const IconGeneratorModal = lazy(() =>
+  import('@/features/icons/components/IconGeneratorModal').then((m) => ({
+    default: m.IconGeneratorModal,
+  })),
+)
 const IconPickerModal = lazy(() =>
   import('@/features/channels/components/IconPickerModal').then((m) => ({
     default: m.IconPickerModal,
@@ -186,6 +191,7 @@ export default function App() {
         <AssignCollectionModal />
         <SmartCollectionBuilderModal />
         <IconEditorModal />
+        <IconGeneratorModal />
         <IconPickerModal />
         <WatermarkEditorModal />
         <AddContentModal />

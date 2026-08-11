@@ -12,6 +12,20 @@ export interface ChannelFormData {
   color: string
 }
 
+/**
+ * The Tunarr half of `DELETE /api/channels/{n}`.
+ *
+ * Linearr is authoritative, so its own delete commits first and this is
+ * best-effort afterwards. `deleted: false` therefore means "the Linearr channel
+ * is gone and a Tunarr channel is stranded", never "nothing happened" — it has
+ * to be surfaced, not swallowed. Null when the channel had no Tunarr link.
+ */
+export interface ChannelDeleteTunarrResult {
+  deleted: boolean
+  tunarr_id?: string
+  message?: string
+}
+
 // ── Reorder / renumber ────────────────────────────────────────────────────────
 //
 // `channels.number` is the PRIMARY KEY, so a reorder is a *renumber*. These

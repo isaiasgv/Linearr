@@ -1,5 +1,6 @@
-import { useId } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import type { Composition, Layer, TextLayer, ImageLayer } from './types'
+import { CANVAS_PRESETS, MAX_CANVAS, MIN_CANVAS, autoFitLayers, clampCanvas } from './types'
 import { FONTS } from './fonts'
 
 interface Props {
@@ -12,6 +13,116 @@ const inputClass =
   'w-full bg-slate-900 border border-slate-700 rounded-sm px-2 py-1 text-xs text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500'
 
 const labelClass = 'text-[10px] uppercase text-slate-500 font-medium tracking-wide'
+
+/**
+ * Canvas dimensions.
+ *
+ * Resizing does NOT move the layers — that would silently rearrange someone's
+ * artwork. Auto-fit is offered right here instead, so re-filling the new canvas
+ * stays a deliberate action.
+ */
+function CanvasPanel({
+  composition,
+  onChange,
+  children,
+}: {
+  composition: Composition
+  onChange: (comp: Composition) => void
+  children?: ReactNode
+}) {
+  const fieldId = useId()
+  const [locked, setLocked] = useState(true)
+  const ratio = composition.width / composition.height
+
+  function setSize(next: Partial<{ width: number; height: number }>) {
+    let width = clampCanvas(next.width ?? composition.width)
+    let height = clampCanvas(next.height ?? composition.height)
+    if (locked) {
+      if (next.width !== undefined) height = clampCanvas(width / ratio)
+      else if (next.height !== undefined) width = clampCanvas(height * ratio)
+    }
+    onChange({ ...composition, width, height })
+  }
+
+  const isPreset = (w: number, h: number) => composition.width === w && composition.height === h
+
+  return (
+    <div className="space-y-3 p-3">
+      <h3 className="text-xs font-semibold tracking-wide text-slate-300 uppercase">Canvas</h3>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label htmlFor={`${fieldId}-w`} className={labelClass}>
+            Width
+          </label>
+          <input
+            id={`${fieldId}-w`}
+            type="number"
+            min={MIN_CANVAS}
+            max={MAX_CANVAS}
+            value={composition.width}
+            onChange={(e) => setSize({ width: Number(e.target.value) })}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label htmlFor={`${fieldId}-h`} className={labelClass}>
+            Height
+          </label>
+          <input
+            id={`${fieldId}-h`}
+            type="number"
+            min={MIN_CANVAS}
+            max={MAX_CANVAS}
+            value={composition.height}
+            onChange={(e) => setSize({ height: Number(e.target.value) })}
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 text-xs text-slate-400">
+        <input
+          type="checkbox"
+          checked={locked}
+          onChange={(e) => setLocked(e.target.checked)}
+          className="h-3.5 w-3.5 accent-indigo-500"
+        />
+        Lock aspect ratio
+      </label>
+
+      <div className="flex flex-wrap gap-1">
+        {CANVAS_PRESETS.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            onClick={() => onChange({ ...composition, width: p.width, height: p.height })}
+            aria-pressed={isPreset(p.width, p.height)}
+            className={`rounded-sm px-2 py-1 text-[11px] transition-colors ${
+              isPreset(p.width, p.height)
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {composition.layers.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onChange(autoFitLayers(composition))}
+          className="w-full rounded-sm bg-slate-800 px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-700"
+        >
+          Re-fit layers to canvas
+        </button>
+      )}
+
+      {children && <div className="border-t border-slate-800 pt-3">{children}</div>}
+    </div>
+  )
+}
 
 export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
   const selected = composition.layers.find((l) => l.id === selectedId) ?? null
@@ -40,11 +151,14 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
     })
   }
 
+  // With nothing selected this used to be a dead end reading "select a layer".
+  // The canvas itself has no other home, and it is the one property that always
+  // applies, so it lives here.
   if (!selected) {
     return (
-      <div className="p-4 text-xs text-slate-500 text-center">
-        Select a layer to edit its properties.
-      </div>
+      <CanvasPanel composition={composition} onChange={onChange}>
+        <p className="text-center text-xs text-slate-500">Select a layer to edit its properties.</p>
+      </CanvasPanel>
     )
   }
 

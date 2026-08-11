@@ -698,4 +698,4 @@ def test_watermark_tool_defaults_match_the_app(auth_client):
     assert props["width"]["default"] == 7.0
     assert props["vertical_margin"]["default"] == 5.0
     assert props["horizontal_margin"]["default"] == 5.0
-    assert props["opacity"]["default"] == 20
+    assert props["opacity"]["default"] == 30

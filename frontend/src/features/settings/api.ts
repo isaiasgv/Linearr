@@ -73,10 +73,9 @@ function regenerateMcpToken(): Promise<{ token: string }> {
 function setMcpToolsets(
   toolsets: string[],
 ): Promise<{ ok: boolean; toolsets: string[]; restart_required: boolean }> {
-  return put<{ ok: boolean; toolsets: string[]; restart_required: boolean }>(
-    '/api/mcp/toolsets',
-    { toolsets },
-  )
+  return put<{ ok: boolean; toolsets: string[]; restart_required: boolean }>('/api/mcp/toolsets', {
+    toolsets,
+  })
 }
 
 export const settingsApi = {
