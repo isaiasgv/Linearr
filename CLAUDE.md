@@ -233,7 +233,8 @@ channels             -- TV channels (authoritative source; channels.py is a seed
           "Tunarr asset URLs" below; NULL = not uploaded yet)
 
 settings             -- key/value store (plex_url, plex_token, client_id, pending_pin_id,
-                        tunarr_url, tunarr_public_url, icon_brand_defaults)
+                        tunarr_url, tunarr_public_url, icon_brand_defaults,
+                        app_secret, mcp_token, plex_webhook_secret)
 ```
 
 **Schema migrations** use `ALTER TABLE ... ADD COLUMN` wrapped in `try/except sqlite3.OperationalError` — always use this pattern for new columns, never recreate tables.
@@ -273,6 +274,20 @@ Consequences:
 ### Auth
 - `POST /api/auth/login` — sets `session` cookie (30-day)
 - `POST /api/auth/logout`
+
+**The session secret IS the session store.** Cookies are stateless —
+`<issued>.<nonce>.<HMAC>` with nothing kept server-side — so changing the key
+invalidates every outstanding cookie at once. `_get_app_secret()` therefore
+resolves in this order: `APP_SECRET` env (explicit config wins, and is what
+multi-instance deployments need), else a random key generated **once** and
+persisted to `settings.app_secret`. It must never go back to minting one per
+process: `.env` is optional in `docker-compose.yml` (`required: false`), so the
+ordinary setup has no `APP_SECRET`, and a per-process key logged everyone out on
+every restart — silently, with only a startup log line to show for it. The
+shipped `default-secret-change-me` counts as unset; honouring it would let anyone
+forge `HMAC(known_secret, "admin:changeme")`. Guarded by
+`tests/test_session_secret.py`. The resolved value is cached in a module global
+because `_sign_session` runs on every authenticated request.
 
 ### Channels
 - `GET /api/channels` — returns all rows from the SQLite `channels` table (ordered by number)

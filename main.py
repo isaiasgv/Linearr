@@ -44,15 +44,52 @@ _DEFAULT_SECRET = "default-secret-change-me"
 
 APP_USERNAME = os.getenv("APP_USERNAME", "admin")
 APP_PASSWORD = os.getenv("APP_PASSWORD", _DEFAULT_PASSWORD)
-APP_SECRET   = os.getenv("APP_SECRET", _DEFAULT_SECRET)
 
-# Refuse to keep the shipped default HMAC key: if APP_SECRET is unset/default, mint a
-# random per-process secret so an attacker cannot forge HMAC(known_secret, "admin:changeme").
-# (Sessions reset on restart in that case — set APP_SECRET to make them durable.)
-if APP_SECRET == _DEFAULT_SECRET:
-    APP_SECRET = secrets.token_hex(32)
-    log.warning("APP_SECRET not set — using an ephemeral random secret. "
-                "Set APP_SECRET in your .env so sessions survive restarts.")
+# An explicitly configured secret always wins. The shipped default counts as
+# "unset" — keeping it would let anyone forge HMAC(known_secret, "admin:changeme").
+_APP_SECRET_ENV = os.getenv("APP_SECRET", "")
+if _APP_SECRET_ENV == _DEFAULT_SECRET:
+    _APP_SECRET_ENV = ""
+
+# Resolved once per process, then cached — `_sign_session` runs on every
+# authenticated request and must not hit the DB each time.
+_app_secret_cache: str | None = None
+
+
+def _get_app_secret() -> str:
+    """The HMAC key for session cookies: env var, else a persisted random one.
+
+    This used to mint a fresh `secrets.token_hex(32)` per process whenever
+    APP_SECRET was unset, which silently invalidated **every session on every
+    restart** — the sessions are stateless, so a new key means every existing
+    cookie fails verification and everyone is logged out. `.env` is optional in
+    `docker-compose.yml` (`required: false`), so the common setup hits this, and
+    the only signal was a log line nobody reads. Anyone redeploying regularly
+    was being logged out on every pull.
+
+    Generating once and persisting to the `settings` table fixes that while
+    keeping the property that mattered: the key is still random per install,
+    never the shipped default. Same get-or-create pattern as `_get_mcp_token`
+    and `_get_client_id`, and it lives on the same persisted volume.
+    """
+    global _app_secret_cache
+    if _APP_SECRET_ENV:
+        return _APP_SECRET_ENV
+    if _app_secret_cache:
+        return _app_secret_cache
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key='app_secret'").fetchone()
+        if row and row["value"]:
+            _app_secret_cache = row["value"]
+            return _app_secret_cache
+        generated = secrets.token_hex(32)
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('app_secret', ?)", (generated,))
+    _app_secret_cache = generated
+    log.info("Generated a persistent session secret and stored it in the database. "
+             "Set APP_SECRET in your .env to manage it yourself.")
+    return generated
+
+
 if APP_PASSWORD == _DEFAULT_PASSWORD:
     log.warning("APP_PASSWORD is the default 'changeme' — set a strong APP_PASSWORD in your .env.")
 
@@ -65,7 +102,7 @@ SESSION_MAX_AGE = 86400 * 30  # 30 days
 
 def _sign_session(issued: int, nonce: str) -> str:
     msg = f"{APP_USERNAME}:{APP_PASSWORD}:{issued}:{nonce}".encode()
-    return hmac.new(APP_SECRET.encode(), msg, hashlib.sha256).hexdigest()
+    return hmac.new(_get_app_secret().encode(), msg, hashlib.sha256).hexdigest()
 
 def _make_session_token() -> str:
     """Issue a fresh, single-use session value: <issued>.<nonce>.<sig>.
@@ -511,6 +548,9 @@ async def lifespan(app: FastAPI):
     init_db()
     _check_db_writable()
     _ensure_webhook_secret()
+    # Warm it at startup rather than on the first authenticated request, so a
+    # first-run install writes the secret before anyone can be mid-login.
+    _get_app_secret()
     _get_mcp_token()
     _purge_old_logs()
     _log_app("system", "Linearr started")
