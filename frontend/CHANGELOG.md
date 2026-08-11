@@ -1,3 +1,9 @@
+## [0.0.1-rc.14](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.13...v0.0.1-rc.14) (2026-08-11)
+
+### Features
+
+* **icons:** the channel icon URL is settable, and the watermark reuses it ([afb4c35](https://github.com/isaiasgv/Linearr/commit/afb4c3541510f4633ac3f3120e1dceeca5db49f3))
+
 ## [0.0.1-rc.13](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.12...v0.0.1-rc.13) (2026-08-11)
 
 ### Bug Fixes
