@@ -1,3 +1,9 @@
+## [0.0.1-rc.15](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.14...v0.0.1-rc.15) (2026-08-11)
+
+### Bug Fixes
+
+* **auth:** stop regenerating the session secret on every restart ([d64a9cb](https://github.com/isaiasgv/Linearr/commit/d64a9cba06be6d12ff2b44f4d47178622399d596))
+
 ## [0.0.1-rc.14](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.13...v0.0.1-rc.14) (2026-08-11)
 
 ### Features
