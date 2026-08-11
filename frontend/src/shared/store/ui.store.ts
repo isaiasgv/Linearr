@@ -178,6 +178,7 @@ const defaultModals: Record<ModalName, boolean> = {
   smartCollectionBuilder: false,
   iconEditor: false,
   iconGenerator: false,
+  channelIconUrl: false,
   iconPicker: false,
   watermarkEditor: false,
   addContent: false,

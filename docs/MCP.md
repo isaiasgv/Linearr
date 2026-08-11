@@ -78,7 +78,7 @@ Tools are grouped into ten toolsets. **All are enabled by default** — the poin
 | `ai` | Linearr's own AI advisors (these spend your OpenAI credits — see below) |
 | `system` | Health, configuration, lineup export/import, presets, logs |
 
-**Trimming the surface.** 130 tool schemas is real context cost in a client — roughly 20–25k tokens if everything is on. If you only ever use Linearr for, say, channels and Plex, turn the rest off:
+**Trimming the surface.** 132 tool schemas is real context cost in a client — roughly 20–25k tokens if everything is on. If you only ever use Linearr for, say, channels and Plex, turn the rest off:
 
 - **Settings → System → MCP Server** — tick the toolsets you want, then Save.
 - Or set the environment variable, which wins over the stored setting:
@@ -105,7 +105,7 @@ Every tool call — success or failure, with a redacted argument summary and a d
 
 ## Tool reference
 
-**130 tools**, grouped by toolset. Arguments marked `?` are optional; **⚠** marks a destructive tool.
+**132 tools**, grouped by toolset. Arguments marked `?` are optional; **⚠** marks a destructive tool.
 
 #### `channels` (11)
 
@@ -123,7 +123,7 @@ Every tool call — success or failure, with a redacted argument summary and a d
 | `set_channel_icon` | `channel_number`, `icon`?, `icon_id`? | Set a channel's icon, from a base64 data URI (`icon`) or an entry in the icon library (`icon_id`). Also re-syncs the channel — and any icon-following watermark — to Tunarr. |
 | `clear_channel_icon` | `channel_number` | **⚠** Remove a channel's icon, clearing it in Tunarr too. |
 
-#### `icons` (5)
+#### `icons` (8)
 
 | Tool | Arguments | What it does |
 |---|---|---|
@@ -132,6 +132,8 @@ Every tool call — success or failure, with a redacted argument summary and a d
 | `update_saved_icon` | `icon_id`, `name`?, `category`?, `data`? | Rename, recategorise or replace a saved icon. Only fields you pass change. |
 | `delete_saved_icon` | `icon_id` | **⚠** Delete an icon from the library. Channels already using it keep their copy. |
 | `import_icons_from_tunarr` | — | Pull channel logos from Tunarr into the icon library. |
+| `get_channel_icon_url` | `channel_number` | The URL Tunarr publishes for a channel's icon, and whether it was set by hand. The icon data URI itself is omitted — it is large and of no use to read. |
+| `set_channel_icon_url` | `channel_number`, `url`? | Set the URL Tunarr publishes for a channel's icon. Tunarr copies this into its guide and Plex clients fetch it over HTTP, so it must be an address those clients can reach — a LAN hostname works only on the local network. Pass an absolute `url` to set one verbatim (it is then never re-derived), or omit it to rebuild the URL from the channel's own icon. A watermark set to use the channel icon follows this URL, so setting it here covers both. |
 | `resync_channel_assets` | `channel_number`?, `force`? | Re-upload channel icons to Tunarr as real HTTP assets and push them. Fixes icons that show up only on the local network. Linearr used to give Tunarr the icon as a `data:` URI, which Tunarr copies into the guide, where remote Plex clients cannot render it. Run this after setting `tunarr_public_url` to convert an existing lineup. Omit `channel_number` for every channel. Idempotent — an unchanged icon short-circuits; `force` re-uploads anyway. |
 
 #### `assignments` (4)
@@ -319,7 +321,7 @@ Some routes exist in Linearr's HTTP API but are not MCP tools, on purpose. If an
 
 ## Security
 
-- **The token is full control** of your lineup, your Plex collections, and your Tunarr channels. Among the 130 tools it reaches are `delete_channel`, `import_lineup` in `replace` mode (which wipes every channel, assignment, block and slot), `purge_tunarr_smart_collections`, `stop_tunarr_sessions`, and `clear_logs`. Treat it like a password.
+- **The token is full control** of your lineup, your Plex collections, and your Tunarr channels. Among the 132 tools it reaches are `delete_channel`, `import_lineup` in `replace` mode (which wipes every channel, assignment, block and slot), `purge_tunarr_smart_collections`, `stop_tunarr_sessions`, and `clear_logs`. Treat it like a password.
 - The destructive tools are annotated `destructiveHint`, so a client that honours annotations will ask before running them. Not every client does — that's a reason to trust the token, not the client.
 - The `/mcp` endpoint is exposed on your LAN exactly like the rest of Linearr (host port 8777). Anyone on the network with the token can use it.
 - **Rotate the token** (Settings → System → MCP Server → Regenerate) if you suspect it leaked.

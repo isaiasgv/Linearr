@@ -378,6 +378,15 @@ def init_db():
             conn.execute("ALTER TABLE channels ADD COLUMN icon_url TEXT")
         except sqlite3.OperationalError:
             pass
+        # 1 when `icon_url` was set by hand rather than derived from `icon`.
+        # Mirrors the watermark's `use_channel_icon`: without it, the next sync
+        # would re-upload the stored icon and silently overwrite a URL the user
+        # deliberately pointed somewhere else.
+        try:
+            conn.execute(
+                "ALTER TABLE channels ADD COLUMN icon_url_manual INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS saved_icons (
@@ -1585,6 +1594,17 @@ async def _resolve_channel_icon_url(channel_number: int, icon_data: str | None) 
     Cached in `channels.icon_url`. The filename is content-addressed, so an
     unchanged icon short-circuits without touching Tunarr.
     """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT icon_url, icon_url_manual FROM channels WHERE number=?", (channel_number,)
+        ).fetchone()
+    # A hand-set URL is never re-derived. It may point at an entirely different
+    # host, and re-uploading the stored icon over it would silently undo a
+    # deliberate choice — the same reason `_refollow_channel_icon_watermark`
+    # requires `use_channel_icon` to be explicitly true.
+    if row is not None and row["icon_url_manual"]:
+        return _tunarr_asset_url(row["icon_url"])
+
     if not icon_data or not str(icon_data).startswith("data:"):
         return None
     decoded = _decode_data_uri(icon_data)
@@ -1593,10 +1613,6 @@ async def _resolve_channel_icon_url(channel_number: int, icon_data: str | None) 
     raw, content_type, _ = decoded
     filename = _channel_icon_filename(channel_number, raw, content_type)
 
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT icon_url FROM channels WHERE number=?", (channel_number,)
-        ).fetchone()
     cached = (row["icon_url"] if row else None) or ""
     # The digest is in the filename, so a matching tail means these exact bytes
     # are already uploaded. Re-base it in case the public URL changed since.
@@ -1638,7 +1654,8 @@ async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
     try:
         with get_db() as conn:
             row = conn.execute(
-                "SELECT icon, watermark FROM channels WHERE number=?", (channel_number,)
+                "SELECT icon, icon_url, watermark FROM channels WHERE number=?",
+                (channel_number,),
             ).fetchone()
         if row is None or not row["watermark"]:
             return None
@@ -1648,6 +1665,25 @@ async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
             return None
         if not isinstance(wm, dict) or wm.get("use_channel_icon") is not True:
             return None
+
+        # Prefer the icon's OWN uploaded URL. The icon is already an HTTP asset
+        # in Tunarr, and "the watermark is the channel icon" means literally the
+        # same image — so uploading a second copy under a watermark filename was
+        # pure duplication. It also forced a genuinely silly workflow: to point a
+        # watermark at a specific domain you had to upload the icon, apply it as
+        # a watermark, copy the URL that came back, then paste it into the URL
+        # field. Reusing the icon URL means setting it once is enough, and a
+        # hand-set icon URL now carries through to the watermark for free.
+        icon_url = _tunarr_asset_url(row["icon_url"])
+        if icon_url:
+            with get_db() as conn:
+                conn.execute("UPDATE channels SET watermark_image_url=? WHERE number=?",
+                             (icon_url, channel_number))
+            _log_app("channel",
+                     f"Watermark image now follows the icon URL for channel {channel_number}",
+                     metadata={"number": channel_number, "image_url": icon_url})
+            return icon_url
+
         decoded = _decode_data_uri(row["icon"] or "")
         if decoded is None:
             return None
@@ -1675,6 +1711,114 @@ async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
         return None
 
 
+@app.get("/api/channels/{channel_number}/icon")
+def get_channel_icon(channel_number: int):
+    """The channel's icon and the URL Tunarr is given for it.
+
+    Two different things, deliberately. `icon` is the data URI Linearr renders
+    in its own UI; `icon_url` is the absolute HTTP URL written into Tunarr and
+    from there into XMLTV, which is what remote Plex clients fetch. `manual`
+    says the URL was set by hand and will not be re-derived from the icon.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT icon, icon_url, icon_url_manual FROM channels WHERE number=?",
+            (channel_number,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+    return {
+        "icon": row["icon"],
+        "icon_url": _tunarr_asset_url(row["icon_url"]),
+        "manual": bool(row["icon_url_manual"]),
+    }
+
+
+class ChannelIconImageIn(BaseModel):
+    # Omit both to (re-)derive from the channel's stored icon.
+    image: str | None = None   # data URI to upload to Tunarr
+    url: str | None = None     # absolute URL to use as-is
+
+
+@app.post("/api/channels/{channel_number}/icon/image")
+async def set_channel_icon_image(channel_number: int, body: ChannelIconImageIn):
+    """Set the URL Tunarr is given for this channel's icon.
+
+    The counterpart of `POST .../watermark/image`, and for the same reason: the
+    icon Tunarr publishes has to be an HTTP URL, and which URL is sometimes a
+    decision only the user can make — a reverse-proxied domain that Plex clients
+    outside the LAN can actually reach, or an image hosted somewhere else
+    entirely.
+
+    - `{"url": ...}` stores an absolute URL verbatim and marks it manual, so no
+      later icon change or sync overwrites it.
+    - `{"image": "data:..."}` uploads those bytes to Tunarr.
+    - `{}` re-derives from the stored channel icon and clears the manual flag.
+
+    `tunarr_public_url` already re-bases Tunarr-hosted URLs globally; this is the
+    per-channel override for everything that setting cannot know about.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT icon FROM channels WHERE number=?", (channel_number,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+
+    manual = False
+    if body.url:
+        parsed = _urlparse(body.url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise HTTPException(
+                400, "Icon URL must be absolute (http:// or https://) — Tunarr "
+                     "publishes it in the guide and clients fetch it over HTTP"
+            )
+        icon_url = body.url.strip()
+        manual = True
+    elif body.image:
+        decoded = _decode_data_uri(body.image)
+        if decoded is None:
+            raise HTTPException(400, "`image` must be a base64 data URI")
+        tunarr_url = get_tunarr_url()
+        if not tunarr_url:
+            raise HTTPException(400, "Tunarr not configured")
+        raw, content_type, _ = decoded
+        filename = _channel_icon_filename(channel_number, raw, content_type)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            uploaded = await _tunarr_upload_image(
+                client, tunarr_url, raw, content_type, filename)
+        if not uploaded:
+            raise HTTPException(502, "Tunarr rejected the icon image upload")
+        icon_url = _tunarr_asset_url(uploaded) or uploaded
+        manual = True
+    else:
+        # Re-derive. Clear both first so the resolver does not short-circuit on
+        # the manual flag it is being asked to drop.
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET icon_url=NULL, icon_url_manual=0 WHERE number=?",
+                (channel_number,))
+        icon_url = await _resolve_channel_icon_url(channel_number, row["icon"])
+        if not icon_url:
+            raise HTTPException(
+                400, "No usable icon — set a channel icon first, or supply an "
+                     "absolute URL"
+            )
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE channels SET icon_url=?, icon_url_manual=? WHERE number=?",
+            (icon_url, 1 if manual else 0, channel_number),
+        )
+    _log_app("channel", f"Set icon image URL for channel {channel_number}",
+             metadata={"number": channel_number, "icon_url": icon_url, "manual": manual})
+    # The watermark follows the icon when asked to, so it may need re-pointing
+    # at the new URL before the sync carries both.
+    await _refollow_channel_icon_watermark(channel_number)
+    sync = await _sync_channel_to_tunarr(channel_number)
+    return {"ok": True, "icon_url": icon_url, "manual": manual, "tunarr_sync": sync}
+
+
 @app.put("/api/channels/{channel_number}/icon")
 async def set_channel_icon(channel_number: int, request: Request):
     """Set channel icon (base64 PNG data URL)."""
@@ -1684,12 +1828,21 @@ async def set_channel_icon(channel_number: int, request: Request):
         # Clear the cached upload URL: it points at the OLD icon, and
         # `_tunarr_channel_changes` prefers it over the data URI, so leaving it
         # would push the previous logo. The sync below re-resolves it.
-        cur = conn.execute("UPDATE channels SET icon=?, icon_url=NULL WHERE number=?",
-                           (icon_data, channel_number))
+        #
+        # A hand-set URL is left alone — the user pointed it somewhere on
+        # purpose, possibly at a host that has nothing to do with this upload.
+        cur = conn.execute(
+            "UPDATE channels SET icon=?, icon_url=CASE WHEN icon_url_manual THEN icon_url END "
+            "WHERE number=?",
+            (icon_data, channel_number),
+        )
     if cur.rowcount == 0:
         raise HTTPException(404, "Channel not found")
     _log_app("channel", f"Set icon for channel {channel_number}", metadata={"number": channel_number})
-    # Before the sync, so the pushed watermark carries the NEW image URL.
+    # Order matters. Resolve the icon's own URL first so the watermark — which
+    # now reuses it rather than uploading a duplicate — has something to follow;
+    # then re-point the watermark; then sync, so the push carries both.
+    await _resolve_channel_icon_url(channel_number, icon_data)
     await _refollow_channel_icon_watermark(channel_number)
     sync = await _sync_channel_to_tunarr(channel_number)
     return {"ok": True, "tunarr_sync": sync}
@@ -1710,8 +1863,12 @@ async def delete_channel_icon(channel_number: int):
     with get_db() as conn:
         # `icon_url` goes with it — a stale one would be pushed straight back on
         # the next sync, and `_tunarr_channel_changes` prefers it over the icon.
-        conn.execute("UPDATE channels SET icon=NULL, icon_url=NULL WHERE number=?",
-                     (channel_number,))
+        # `icon_url_manual` goes too: with no icon there is nothing for a manual
+        # override to override, and leaving the flag set would make a later icon
+        # silently keep the old URL.
+        conn.execute(
+            "UPDATE channels SET icon=NULL, icon_url=NULL, icon_url_manual=0 WHERE number=?",
+            (channel_number,))
     _log_app("channel", f"Removed icon for channel {channel_number}", metadata={"number": channel_number})
     sync = await _sync_channel_to_tunarr(
         channel_number, icon_override=_tunarr_icon_obj(None))

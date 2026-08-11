@@ -415,6 +415,7 @@ export type ModalName =
   | 'smartCollectionBuilder'
   | 'iconEditor'
   | 'iconGenerator'
+  | 'channelIconUrl'
   | 'iconPicker'
   | 'watermarkEditor'
   | 'addContent'

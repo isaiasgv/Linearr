@@ -248,6 +248,25 @@ export function ChannelDetail() {
                 <button
                   onClick={() => {
                     setMenuOpen(false)
+                    openModal('channelIconUrl')
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs text-slate-200 hover:bg-slate-700 md:py-2"
+                >
+                  <svg
+                    className="h-3.5 w-3.5 text-cyan-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                  >
+                    <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+                  </svg>
+                  Icon URL…
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false)
                     openModal('watermarkEditor')
                   }}
                   className="w-full text-left px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 md:py-2 flex items-center gap-2"

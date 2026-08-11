@@ -290,8 +290,10 @@ export function WatermarkEditorModal() {
               </p>
               {source === 'icon' && (
                 <p className="text-xs text-slate-500">
-                  This option keeps following the icon: change the channel&rsquo;s icon later and
-                  the watermark is re-uploaded to match.
+                  This reuses the icon&rsquo;s own uploaded URL rather than copying the image again,
+                  and keeps following it — change the icon later and the watermark follows. To
+                  control the domain, set it once under <em>Channel actions → Icon URL</em>; it
+                  applies to both.
                 </p>
               )}
               {imageUrl && (
