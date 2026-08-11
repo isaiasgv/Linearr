@@ -97,7 +97,10 @@ frontend/src/
     ├── content/                # ContentTab (composes plex + assignments + collections)
     ├── ai/                     # AI content advisor, network advisor, day generator
     ├── tunarr/                 # Tunarr channel links, schedules, smart collections
-    ├── settings/               # Plex URL/token, AI keys, OAuth PIN flow
+    │                           #   (TunarrView is a tab host; each tab is a file
+    │                           #    under components/panels/)
+    ├── icons/                  # Icon library, layer editor, and the icon generator
+    ├── settings/               # Plex URL/token, AI keys, OAuth PIN flow, icon defaults
     ├── watermark/              # Per-channel Tunarr watermark config + live preview
     ├── cable-plex/             # Cable+Plex combined view + add-content picker/tray
     └── generic-blocks/         # Reusable blocks view (no channel context)
@@ -194,9 +197,12 @@ channels             -- TV channels (authoritative source; channels.py is a seed
           every creation path must supply one, and a trigger backfills any
           insert that doesn't),
           watermark (JSON blob, NULL = none), watermark_image_url (absolute URL
-          Tunarr fetches — ffmpeg cannot read the data URI icons are stored as)
+          Tunarr fetches — ffmpeg cannot read the data URI icons are stored as),
+          icon_url (the icon uploaded to Tunarr as an HTTP asset — see
+          "Tunarr asset URLs" below; NULL = not uploaded yet)
 
-settings             -- key/value store (plex_url, plex_token, client_id, pending_pin_id)
+settings             -- key/value store (plex_url, plex_token, client_id, pending_pin_id,
+                        tunarr_url, tunarr_public_url, icon_brand_defaults)
 ```
 
 **Schema migrations** use `ALTER TABLE ... ADD COLUMN` wrapped in `try/except sqlite3.OperationalError` — always use this pattern for new columns, never recreate tables.
@@ -265,6 +271,14 @@ Consequences:
   `PUT`/`DELETE` also re-sync the channel to Tunarr and return `tunarr_sync`. Validation
   mirrors Tunarr's zod rules (`width` strictly > 0 as a percent of frame width, integer
   `opacity` 0–100, margins 0–100, `duration` seconds ≥ 0, `fade.period_mins` ≥ 1).
+- `DELETE /api/channels/{n}` — also deletes the **linked Tunarr channel** by default
+  (`?delete_tunarr=false` unlinks only). Linearr commits its own delete first and calls
+  Tunarr best-effort after, so a Tunarr failure is reported in `tunarr` and never rolls
+  the delete back — it means a stranded Tunarr channel, which must be surfaced, not
+  swallowed. Guarded by `tests/test_channel_delete_cascade.py`.
+- `POST /api/channels/resync-assets[?channel_number=&force=]` — re-upload channel icons
+  to Tunarr and push them. The operational half of `tunarr_public_url`; see "Tunarr asset
+  URLs" under Tunarr.
 - `POST /api/channels/{n}/watermark/image` — resolve the watermark image to an absolute
   URL Tunarr can fetch. Body `{image}` (data URI), `{url}` (absolute), or `{}` to use the
   channel icon; data URIs are uploaded via Tunarr's `POST /api/upload/image`.
@@ -368,6 +382,35 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 > persisted but never read, and only `fadeConfig[0]` is applied — so clearing a watermark
 > pushes an explicit `enabled: false` (read-modify-write would otherwise echo Tunarr's
 > existing one straight back).
+>
+> **Tunarr asset URLs: what Linearr *calls* and what it *writes* are two
+> different addresses.** `get_tunarr_url()` is where API requests go —
+> container-to-container, `http://tunarr:8000`. But the URLs Linearr writes
+> *into* Tunarr (channel icons, watermark images) are copied into XMLTV and into
+> ffmpeg command lines, and are then fetched by Plex clients that may be nowhere
+> near this network. `_tunarr_asset_base()` is the base for those, from the
+> optional `tunarr_public_url` setting; empty falls back to the internal URL.
+>
+> **The channel icon must be an uploaded HTTP asset, not a data URI.**
+> `_tunarr_icon_obj` used to be handed the base64 `data:` icon directly, and
+> Tunarr writes whatever it is given straight into XMLTV — which renders locally
+> and nowhere else, because a remote client cannot resolve a data URI it was
+> served as an image source. `_resolve_channel_icon_url` uploads it (filename
+> `linearr-icon-ch{n}-{sha1[:10]}.{ext}`) and caches the result in
+> `channels.icon_url`, which `_tunarr_channel_changes` prefers. Best-effort: a
+> failed upload falls back to the data URI, because an icon that renders only
+> locally still beats no icon. **Any path that changes or clears `icon` must
+> also null `icon_url`** — it is preferred over the icon itself, so a stale one
+> pushes the previous logo.
+>
+> **Stored asset URLs are re-based on read, never migrated.** `_tunarr_asset_url`
+> rewrites a stored URL onto the current asset base **only** when its path is
+> under `/images/` AND its host is a known Tunarr one. That second condition is
+> load-bearing: a user may paste a third-party watermark URL, and rewriting it
+> onto the Tunarr domain would point at a 404 — which, for an enabled watermark,
+> takes the channel off the air. `POST /api/channels/resync-assets` converts an
+> existing lineup after the setting changes. Guarded by
+> `tests/test_tunarr_asset_urls.py`.
 >
 > **Every watermark image needs a collision-free upload filename.** Tunarr's
 > `POST /api/upload/image` keys uploads by FILENAME: repeat a name and it returns

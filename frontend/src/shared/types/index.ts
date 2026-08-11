@@ -293,7 +293,13 @@ export interface SmartCollection {
 }
 
 export interface TunarrScheduleItem {
-  startTime: string
+  /**
+   * Epoch milliseconds. Declared as a union because the bulk EPG returns a
+   * number while some Tunarr payloads carry an ISO string, and this was typed
+   * `string` while the server was already sending numbers — every consumer
+   * either coerced it or got lucky with `new Date(...)`.
+   */
+  startTime: number | string
   duration: number
   type: string
   title?: string

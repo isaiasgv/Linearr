@@ -5,6 +5,7 @@ import { useChannelAssignments } from '@/features/assignments/hooks'
 import { useChannelCollections, useBuildChannelCollections } from '@/features/collections/hooks'
 import { useTunarrLinks } from '@/features/tunarr/hooks'
 import { useAssignIconToChannel } from '@/features/icons/hooks'
+import { NowPlayingStrip } from '@/features/tunarr/components/NowPlayingStrip'
 import { TierBadge, tierColor } from '@/shared/components/ui/TierBadge'
 import { confirmDialog } from '@/shared/components/ui'
 import { tierNumberColor } from '@/features/channels/utils'
@@ -120,6 +121,17 @@ export function ChannelDetail() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Now playing — renders nothing when the channel isn't linked or the
+              EPG has no entry covering now. */}
+          <div className="min-w-0 max-w-md flex-1">
+            <NowPlayingStrip
+              channelNumber={ch.number}
+              linked={Boolean(tunarrLink)}
+              onOpenGuide={() => openModal('channelGuide', { channelGuideChannel: ch.number })}
+              onWatch={() => openModal('channelStream', { channelStreamChannel: ch.number })}
+            />
           </div>
 
           {/* Tab strip */}

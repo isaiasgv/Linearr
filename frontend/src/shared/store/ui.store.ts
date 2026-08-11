@@ -100,9 +100,12 @@ interface UIState {
   // Cable Plex view preferences (persisted) — defaults to the expanded layout,
   // but a previously persisted choice always wins.
   cablePlexViewMode: CablePlexViewMode
+  /** Which Tunarr sub-tab is open. Persisted, like the Cable Plex view mode. */
+  tunarrTab: TunarrTab
   setCablePlexViewMode: (mode: CablePlexViewMode) => void
   cablePlexPosterSize: BrowsePosterSize
   setCablePlexPosterSize: (size: BrowsePosterSize) => void
+  setTunarrTab: (tab: TunarrTab) => void
 
   openModal: (name: ModalName, data?: Partial<UIState>) => void
   closeModal: (name: ModalName) => void
@@ -131,10 +134,19 @@ const BROWSE_VIEW_KEY = 'linearr:browseViewMode'
 const BROWSE_SIZE_KEY = 'linearr:browsePosterSize'
 const CABLE_PLEX_VIEW_KEY = 'linearr:cablePlexViewMode'
 const CABLE_PLEX_SIZE_KEY = 'linearr:cablePlexPosterSize'
+const TUNARR_TAB_KEY = 'linearr:tunarrTab'
 
 type BrowseViewMode = 'wall' | 'grid' | 'list'
 type BrowsePosterSize = 'small' | 'medium' | 'large'
 export type CablePlexViewMode = 'compact' | 'expanded'
+export type TunarrTab = 'channels' | 'guide' | 'collections' | 'build' | 'system'
+export const TUNARR_TABS: readonly TunarrTab[] = [
+  'channels',
+  'guide',
+  'collections',
+  'build',
+  'system',
+]
 
 function readLS<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -274,6 +286,12 @@ export const useUIStore = create<UIState>((set) => ({
   setCablePlexPosterSize: (cablePlexPosterSize) => {
     writeLS(CABLE_PLEX_SIZE_KEY, cablePlexPosterSize)
     set({ cablePlexPosterSize })
+  },
+
+  tunarrTab: readLS<TunarrTab>(TUNARR_TAB_KEY, TUNARR_TABS, 'channels'),
+  setTunarrTab: (tunarrTab) => {
+    writeLS(TUNARR_TAB_KEY, tunarrTab)
+    set({ tunarrTab })
   },
 
   openModal: (name, data) =>
