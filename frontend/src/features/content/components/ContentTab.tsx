@@ -191,8 +191,10 @@ function CollectionTypeStatus({
   const title = isAssigned ? collection!.collection_title : (status?.name ?? '—')
 
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="flex items-center gap-1 text-slate-300 font-medium">
+    // Wraps within itself: this row is ~380px of chips, which is wider than a
+    // phone, and letting it overflow pushed the actions menu off-screen.
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <span className="flex items-center gap-1 font-medium text-slate-300">
         {icon}
         {label}
       </span>
@@ -430,7 +432,12 @@ function PurgeMenu({
 
 export function ContentTab({ channelNumber }: ContentTabProps) {
   const [subTab, setSubTab] = useState<ContentSubTab>('assigned')
-  const [barOpen, setBarOpen] = useState(true)
+  // Collapsed by default on a phone. Expanded it is three stacked rows of
+  // chips, which pushed the actual content — the posters people came for —
+  // most of the way off a 375px screen before anything loaded.
+  const [barOpen, setBarOpen] = useState(
+    () => typeof window === 'undefined' || window.innerWidth >= 768,
+  )
 
   const { data: assignments = [] } = useChannelAssignments(channelNumber)
   const { data: channelCollections } = useChannelCollections(channelNumber)
@@ -521,7 +528,9 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
     <div className="flex flex-col h-full overflow-hidden">
       {/* Collection status bar — slim + collapsible */}
       <div className="shrink-0 bg-slate-900/60 border-b border-slate-800">
-        <div className="flex items-center gap-2 px-3 py-1.5 flex-wrap">
+        {/* Column on mobile so each collection slot gets its own line; the
+            desktop single wrapping row is unchanged from md up. */}
+        <div className="flex flex-col items-stretch gap-2 px-3 py-1.5 md:flex-row md:flex-wrap md:items-center">
           <button
             onClick={() => setBarOpen((v) => !v)}
             className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
@@ -573,7 +582,9 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 buildPending={buildCollections.isPending}
               />
 
-              <span className="text-slate-700">|</span>
+              {/* Separator only makes sense when the two slots share a line. */}
+              <span className="hidden text-slate-700 md:inline">|</span>
+              <span className="h-px bg-slate-800 md:hidden" />
 
               <CollectionTypeStatus
                 label="Shows"
@@ -611,7 +622,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 onClick={() => void handleBuild()}
                 disabled={buildCollections.isPending}
                 title="Builds Linearr's own “{Channel} Movies/TV” collections from the assigned items and syncs them to Plex + Tunarr. Your own collections are never modified — but any assigned slot switches back to the owned collection."
-                className="ml-auto flex items-center gap-1.5 text-xs px-2.5 py-1 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700 text-indigo-300 hover:text-indigo-200 rounded-lg transition-colors disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-indigo-700 bg-indigo-900/40 px-2.5 py-2 text-xs text-indigo-300 transition-colors hover:bg-indigo-900/70 hover:text-indigo-200 disabled:opacity-50 md:ml-auto md:py-1"
               >
                 {buildCollections.isPending ? (
                   <Spinner size="sm" />

@@ -1,4 +1,4 @@
-import { useState, useMemo, type ReactNode } from 'react'
+import { useState, useMemo, useRef, type ReactNode } from 'react'
 import { useUIStore, type TierFilter } from '@/shared/store/ui.store'
 import { useChannels, useReorderChannels } from '@/features/channels/hooks'
 import { useAssignments } from '@/features/assignments/hooks'
@@ -132,6 +132,75 @@ export function ChannelSidebar() {
   const canReorder = !collapsed && !search
   const dragEnabled = canReorder && !reorderChannels.isPending
 
+  // ── Touch reordering ───────────────────────────────────────────────────────
+  // HTML5 drag-and-drop does not exist on touch: `dragstart` never fires from a
+  // finger, so the sidebar was simply not reorderable on a phone. This is a
+  // hand-rolled pointer-event path — deliberately no drag library, per the
+  // project's standing rule — that ends in the same `commitReorder`.
+  //
+  // Long-press to arm rather than drag-on-touch, because the row is also a tap
+  // target: starting a drag immediately would make every tap feel unstable and
+  // would fight the list's own scrolling.
+  const LONG_PRESS_MS = 350
+  const touchDrag = useRef<{ timer: number | null; number: number | null; armed: boolean }>({
+    timer: null,
+    number: null,
+    armed: false,
+  })
+
+  function cancelTouchDrag() {
+    if (touchDrag.current.timer !== null) window.clearTimeout(touchDrag.current.timer)
+    touchDrag.current = { timer: null, number: null, armed: false }
+  }
+
+  function handleGripPointerDown(e: React.PointerEvent, ch: Channel) {
+    if (e.pointerType === 'mouse' || !dragEnabled) return
+    const grip = e.currentTarget as HTMLElement
+    touchDrag.current.number = ch.number
+    touchDrag.current.timer = window.setTimeout(() => {
+      touchDrag.current.armed = true
+      setDraggingChannel(ch.number)
+      // Capture so the whole gesture keeps reporting to this element even once
+      // the finger has moved far away from it.
+      try {
+        grip.setPointerCapture(e.pointerId)
+      } catch {
+        /* capture is best-effort */
+      }
+      // A short buzz is the only feedback that the row is now draggable —
+      // without it a long-press is indistinguishable from a missed tap.
+      navigator.vibrate?.(15)
+    }, LONG_PRESS_MS)
+  }
+
+  function handleGripPointerMove(e: React.PointerEvent) {
+    if (!touchDrag.current.armed) {
+      // Moved before the press armed — that is a scroll, not a drag.
+      if (touchDrag.current.timer !== null) cancelTouchDrag()
+      return
+    }
+    e.preventDefault()
+    // There is no `dragover` here, so the row under the finger has to be found
+    // by hit-testing. `data-channel-number` on the row is what makes that work.
+    const el = document.elementFromPoint(e.clientX, e.clientY)
+    const row = el?.closest<HTMLElement>('[data-channel-number]')
+    const n = row ? Number(row.dataset.channelNumber) : NaN
+    setDragOverChannel(Number.isFinite(n) ? n : null)
+  }
+
+  async function handleGripPointerUp(e: React.PointerEvent) {
+    const { armed, number } = touchDrag.current
+    cancelTouchDrag()
+    if (!armed || number === null) return
+    const el = document.elementFromPoint(e.clientX, e.clientY)
+    const row = el?.closest<HTMLElement>('[data-channel-number]')
+    const targetNumber = row ? Number(row.dataset.channelNumber) : NaN
+    clearChannelDrag()
+    if (!Number.isFinite(targetNumber)) return
+    const target = channels.find((c) => c.number === targetNumber)
+    if (target) await commitReorder(number, target)
+  }
+
   function handleDragStart(e: React.DragEvent, ch: Channel) {
     // Firefox refuses to start a drag unless dataTransfer carries something.
     e.dataTransfer.setData('text/plain', String(ch.number))
@@ -150,6 +219,17 @@ export function ChannelSidebar() {
     e.preventDefault()
     const movedNumber = draggingChannelNumber
     clearChannelDrag()
+    await commitReorder(movedNumber, target)
+  }
+
+  /**
+   * Apply a reorder, with the confirmations it warrants.
+   *
+   * Shared by the two input paths — HTML5 drag-and-drop on desktop and the
+   * pointer-driven long-press on touch — so the confirmation rules cannot drift
+   * between them. A renumber is the same consequence however it was triggered.
+   */
+  async function commitReorder(movedNumber: number | null, target: Channel) {
     if (movedNumber === null || movedNumber === target.number) return
 
     const moved = channels.find((c) => c.number === movedNumber)
@@ -465,6 +545,9 @@ export function ChannelSidebar() {
           return (
             <div
               key={rowKey}
+              // Hit-testing target for the touch path: `elementFromPoint` finds
+              // the row under the finger and reads the number back off here.
+              data-channel-number={ch.number}
               draggable={dragEnabled}
               onDragStart={(e) => handleDragStart(e, ch)}
               onDragEnd={clearChannelDrag}
@@ -480,8 +563,18 @@ export function ChannelSidebar() {
             >
               {canReorder && (
                 <span
-                  title="Drag to reorder (renumbers the channel)"
-                  className="shrink-0 pl-1 -mr-1 text-slate-700 group-hover:text-slate-500"
+                  title="Drag to reorder (renumbers the channel). On touch, press and hold."
+                  aria-label={`Reorder ${ch.name}. Press and hold, then drag.`}
+                  onPointerDown={(e) => handleGripPointerDown(e, ch)}
+                  onPointerMove={handleGripPointerMove}
+                  onPointerUp={(e) => void handleGripPointerUp(e)}
+                  onPointerCancel={cancelTouchDrag}
+                  // `touch-action: none` ONLY on the grip. Putting it on the row
+                  // would kill scrolling of the channel list; here it just stops
+                  // the browser claiming the gesture as a scroll once a finger
+                  // is on the handle.
+                  style={{ touchAction: 'none' }}
+                  className="-mr-1 shrink-0 py-2 pr-1 pl-2 text-slate-700 group-hover:text-slate-500 md:py-0 md:pr-0 md:pl-1"
                 >
                   <DragGrip />
                 </span>

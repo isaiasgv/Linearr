@@ -137,6 +137,37 @@ no drag library in `frontend/package.json` and there must not be one.
 uniqueness constraint on `(channel_number, plex_rating_key)` skips them and the
 response reports `{added, skipped}`.
 
+### Fonts are self-hosted, and the CSP is why
+
+`public/fonts/` holds the woff2 files (latin + latin-ext), declared in
+`src/fonts.css` and imported from `index.css`. **Do not switch anything back to
+Google Fonts.** The CSP (`default-src 'self'`, `style-src 'self' 'unsafe-inline'`,
+`connect-src 'self'`, no `font-src`) blocks all three routes at once — the
+stylesheet `<link>`, the woff2 fetch from gstatic, and the `fetch()` that inlines
+a face for PNG export. Everything falls back to `cursive` (Comic Sans on Windows)
+with no console error. **`npm run dev` does not reproduce it** — Vite's dev server
+sends no CSP — which is how it shipped unnoticed. `--font-sans` is Inter, so this
+was the whole app, not just the icon editor.
+
+Three things that must stay true:
+- Files live in `public/`, **not** `src/assets/`. Tailwind v4 inlines `@import`ed
+  CSS without rebasing relative `url()`s, so `./x.woff2` next to the stylesheet
+  resolved to `/assets/x.woff2` while the emitted file was content-hashed — a
+  clean build where every font 404s.
+- `_STATIC_PREFIXES` in `main.py` must include `fonts/`. The SPA fallback
+  otherwise answers a `.woff2` request with `index.html`, which fails to parse as
+  a font and falls back silently — the same symptom as the CSP bug.
+  `tests/test_static_assets.py` guards it.
+- `FontDef.weights` lists the weights the file **actually contains**. A browser
+  asked for a missing weight synthesizes one; Baloo Thambi ships only 400, so
+  asking for 500 produced a faux bold that looked almost-but-not-quite right.
+  Baloo Thambi 2 is the variable sibling (400–800). `nearestWeight` snaps on font
+  change, and the weight controls only offer real values.
+
+`getEmbeddableFontFace` base64-inlines the face into the exported SVG. That is
+required, not an optimisation: `rasterizeToPng` draws through an `<img>`, and an
+SVG loaded that way resolves no external references at all.
+
 ### Path alias
 `@/` maps to `frontend/src/` (configured in `vite.config.ts`). Use `@/shared/...` and `@/features/...`.
 

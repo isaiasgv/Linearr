@@ -8,9 +8,9 @@
  */
 import { useEffect, useState } from 'react'
 import type { IconBrandDefaults } from '@/shared/types'
-import { FONTS } from '@/features/icons/editor/fonts'
+import { FONTS, nearestWeight, weightsFor } from '@/features/icons/editor/fonts'
 import { MAX_CANVAS, MIN_CANVAS, type Composition } from '@/features/icons/editor/types'
-import { ICON_FONT_WEIGHTS, generateIconComposition } from '@/features/icons/generate'
+import { generateIconComposition } from '@/features/icons/generate'
 import { compositionToPngDataUrl } from '@/features/icons/editor/render'
 
 const inputClass =
@@ -55,6 +55,24 @@ export function IconBrandPanel({
   function set<K extends keyof IconBrandDefaults>(key: K, v: IconBrandDefaults[K]) {
     onChange({ ...value, [key]: v })
   }
+
+  /**
+   * Changing a font also snaps its weight onto one that family really has.
+   * Baloo Thambi ships a single weight (400); leaving 500 selected would make
+   * the browser synthesize a faux bold, which looks subtly wrong and is
+   * impossible to diagnose from the UI.
+   */
+  function setFont(fontKey: 'brand_font' | 'name_font', font: string) {
+    const weightKey = fontKey === 'brand_font' ? 'brand_weight' : 'name_weight'
+    onChange({ ...value, [fontKey]: font, [weightKey]: nearestWeight(font, value[weightKey]) })
+  }
+
+  const brandWeights = weightsFor(value.brand_font)
+  const nameWeights = weightsFor(value.name_font)
+  const singleWeight = [
+    brandWeights.length === 1 ? value.brand_font : null,
+    nameWeights.length === 1 ? value.name_font : null,
+  ].filter(Boolean) as string[]
 
   return (
     <div className="space-y-5">
@@ -110,12 +128,13 @@ export function IconBrandPanel({
           <select
             id="icon-brand-font"
             value={value.brand_font}
-            onChange={(e) => set('brand_font', e.target.value)}
+            onChange={(e) => setFont('brand_font', e.target.value)}
             className={inputClass}
           >
             {FONTS.map((f) => (
               <option key={f.name} value={f.name}>
                 {f.name}
+                {f.weights?.length === 1 ? ' (one weight)' : ''}
               </option>
             ))}
           </select>
@@ -128,9 +147,10 @@ export function IconBrandPanel({
             id="icon-brand-weight"
             value={value.brand_weight}
             onChange={(e) => set('brand_weight', Number(e.target.value))}
+            disabled={brandWeights.length === 1}
             className={inputClass}
           >
-            {ICON_FONT_WEIGHTS.map((w) => (
+            {brandWeights.map((w) => (
               <option key={w} value={w}>
                 {w}
               </option>
@@ -144,12 +164,13 @@ export function IconBrandPanel({
           <select
             id="icon-name-font"
             value={value.name_font}
-            onChange={(e) => set('name_font', e.target.value)}
+            onChange={(e) => setFont('name_font', e.target.value)}
             className={inputClass}
           >
             {FONTS.map((f) => (
               <option key={f.name} value={f.name}>
                 {f.name}
+                {f.weights?.length === 1 ? ' (one weight)' : ''}
               </option>
             ))}
           </select>
@@ -162,9 +183,10 @@ export function IconBrandPanel({
             id="icon-name-weight"
             value={value.name_weight}
             onChange={(e) => set('name_weight', Number(e.target.value))}
+            disabled={nameWeights.length === 1}
             className={inputClass}
           >
-            {ICON_FONT_WEIGHTS.map((w) => (
+            {nameWeights.map((w) => (
               <option key={w} value={w}>
                 {w}
               </option>
@@ -172,6 +194,19 @@ export function IconBrandPanel({
           </select>
         </div>
       </div>
+
+      {singleWeight.length > 0 && (
+        <p className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 text-xs leading-relaxed text-amber-200/80">
+          <strong className="text-amber-200">
+            {singleWeight.join(' and ')} {singleWeight.length > 1 ? 'ship' : 'ships'} a single
+            weight.
+          </strong>{' '}
+          The weight control is fixed for {singleWeight.length > 1 ? 'those' : 'that'} font — asking
+          for another makes the browser fake it, which is how you get letterforms that look
+          almost-but-not-quite right. If you want a heavier brand line, use <em>Baloo Thambi 2</em>,
+          which is variable from 400 to 800 and has the same letterforms.
+        </p>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <div>

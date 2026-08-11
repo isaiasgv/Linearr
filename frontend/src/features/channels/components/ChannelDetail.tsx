@@ -75,11 +75,17 @@ export function ChannelDetail() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-      {/* Header — single compact row: identity · tabs · actions */}
-      <div className="shrink-0 px-4 md:px-6 py-2.5 bg-slate-900 border-b border-slate-800">
-        <div className="flex items-center gap-3 flex-wrap">
+      {/* Header.
+          Mobile stacks it into three rows — identity + actions, then the tab
+          strip full width, then now-playing — using `order` so the DOM keeps a
+          sensible reading order while the desktop row stays identity ·
+          now-playing · tabs · actions. Wrapping alone was not enough: on a
+          375px screen all four groups landed in one wrapping row and the tabs
+          ended up orphaned mid-line. */}
+      <div className="shrink-0 border-b border-slate-800 bg-slate-900 px-3 py-2 sm:px-4 md:px-6 md:py-2.5">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           {/* Identity */}
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="order-1 flex min-w-0 flex-1 items-center gap-2.5 md:flex-none">
             {ch.icon ? (
               <div className="relative shrink-0">
                 <img
@@ -101,21 +107,26 @@ export function ChannelDetail() {
               </span>
             )}
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base font-semibold text-slate-100 truncate">{ch.name}</h2>
+              <h2 className="truncate text-sm font-semibold text-slate-100 md:text-base">
+                {ch.name}
+              </h2>
+              {/* Badges scroll sideways rather than wrapping: on a phone they
+                  wrapped to a second and third line and pushed the whole header
+                  down before you could read anything. */}
+              <div className="-mx-0.5 flex items-center gap-1.5 overflow-x-auto px-0.5 md:mt-0 md:flex-wrap md:gap-2 md:overflow-visible [&::-webkit-scrollbar]:hidden">
                 <TierBadge tier={ch.tier} />
                 <span
-                  className={`text-xs font-medium border rounded-sm px-1.5 py-0.5 ${tierColor(ch.tier)}`}
+                  className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-xs font-medium ${tierColor(ch.tier)}`}
                 >
                   {assignments.length} assigned
                 </span>
                 {tunarrLink && (
-                  <span className="text-xs px-2 py-0.5 rounded-sm border bg-emerald-900/40 text-emerald-300 border-emerald-700">
+                  <span className="shrink-0 rounded-sm border border-emerald-700 bg-emerald-900/40 px-2 py-0.5 text-xs text-emerald-300">
                     Tunarr #{tunarrLink.tunarr_number ?? '?'}
                   </span>
                 )}
                 {ch.vibe && (
-                  <span className="hidden lg:inline text-xs text-slate-500 italic truncate">
+                  <span className="hidden truncate text-xs text-slate-500 italic lg:inline">
                     {ch.vibe}
                   </span>
                 )}
@@ -124,8 +135,10 @@ export function ChannelDetail() {
           </div>
 
           {/* Now playing — renders nothing when the channel isn't linked or the
-              EPG has no entry covering now. */}
-          <div className="min-w-0 max-w-md flex-1">
+              EPG has no entry covering now. Last on mobile: it is the most
+              informative thing here but also the tallest, so it goes below the
+              controls rather than pushing them off-screen. */}
+          <div className="order-4 w-full min-w-0 md:order-2 md:max-w-md md:flex-1">
             <NowPlayingStrip
               channelNumber={ch.number}
               linked={Boolean(tunarrLink)}
@@ -134,16 +147,18 @@ export function ChannelDetail() {
             />
           </div>
 
-          {/* Tab strip */}
-          <div className="flex gap-1 ml-auto">
+          {/* Tab strip — full-width equal thirds on mobile, so each is a
+              comfortable tap target instead of three small pills. */}
+          <div className="order-3 grid w-full grid-cols-3 gap-1 rounded-lg bg-slate-950/40 p-0.5 md:order-3 md:ml-auto md:flex md:w-auto md:bg-transparent md:p-0">
             {TABS.map(({ label, value }) => (
               <button
                 key={value}
                 onClick={() => setActiveChannelTab(value)}
-                className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                aria-current={activeChannelTab === value ? 'page' : undefined}
+                className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors md:py-1.5 ${
                   activeChannelTab === value
                     ? 'bg-indigo-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                 }`}
               >
                 {label}
@@ -154,10 +169,10 @@ export function ChannelDetail() {
           {/* Actions overflow menu — ml-auto keeps it (and the right-anchored
               dropdown) at the pane's right edge when the header wraps, so the
               menu isn't clipped by the content pane's overflow-hidden */}
-          <div className="relative shrink-0 ml-auto" ref={menuRef}>
+          <div className="relative order-2 shrink-0 md:order-4 md:ml-auto" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 md:p-1.5"
               aria-label="Channel actions"
               title="Channel actions"
               aria-haspopup="menu"
@@ -177,7 +192,7 @@ export function ChannelDetail() {
                     setMenuOpen(false)
                     openModal('iconEditor')
                   }}
-                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                  className="w-full text-left px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 md:py-2 flex items-center gap-2"
                 >
                   <svg
                     className="w-3.5 h-3.5 text-purple-400"
@@ -235,7 +250,7 @@ export function ChannelDetail() {
                     setMenuOpen(false)
                     openModal('watermarkEditor')
                   }}
-                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                  className="w-full text-left px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 md:py-2 flex items-center gap-2"
                 >
                   <svg
                     className="w-3.5 h-3.5 text-sky-400"
@@ -258,7 +273,7 @@ export function ChannelDetail() {
                     })
                   }}
                   disabled={buildCollections.isPending}
-                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2 disabled:opacity-50"
+                  className="w-full text-left px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 md:py-2 flex items-center gap-2 disabled:opacity-50"
                 >
                   <svg
                     className="w-3.5 h-3.5 text-emerald-400"
@@ -280,7 +295,7 @@ export function ChannelDetail() {
                     setMenuOpen(false)
                     openModal('channelGuide', { channelGuideChannel: ch.number })
                   }}
-                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                  className="w-full text-left px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 md:py-2 flex items-center gap-2"
                 >
                   <svg
                     className="w-3.5 h-3.5 text-amber-400"
@@ -301,7 +316,7 @@ export function ChannelDetail() {
                   }}
                   disabled={!tunarrLink}
                   title={tunarrLink ? undefined : 'Link this channel to Tunarr first'}
-                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2 disabled:opacity-40 disabled:hover:bg-transparent"
+                  className="w-full text-left px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 md:py-2 flex items-center gap-2 disabled:opacity-40 disabled:hover:bg-transparent"
                 >
                   <svg
                     className="w-3.5 h-3.5 text-rose-400"
@@ -321,7 +336,7 @@ export function ChannelDetail() {
                     setMenuOpen(false)
                     openModal('channelForm', { editingChannel: ch })
                   }}
-                  className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                  className="w-full text-left px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 md:py-2 flex items-center gap-2"
                 >
                   <svg
                     className="w-3.5 h-3.5 text-slate-400"
@@ -339,7 +354,7 @@ export function ChannelDetail() {
                 <button
                   onClick={handleDelete}
                   disabled={deleteChannel.isPending}
-                  className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-slate-700 flex items-center gap-2 disabled:opacity-50"
+                  className="w-full text-left px-3 py-2.5 text-xs text-red-400 hover:bg-slate-700 md:py-2 flex items-center gap-2 disabled:opacity-50"
                 >
                   <svg
                     className="w-3.5 h-3.5"

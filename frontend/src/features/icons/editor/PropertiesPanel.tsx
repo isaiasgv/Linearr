@@ -1,7 +1,7 @@
 import { useId, useState, type ReactNode } from 'react'
 import type { Composition, Layer, TextLayer, ImageLayer } from './types'
 import { CANVAS_PRESETS, MAX_CANVAS, MIN_CANVAS, autoFitLayers, clampCanvas } from './types'
-import { FONTS } from './fonts'
+import { FONTS, nearestWeight, weightsFor } from './fonts'
 
 interface Props {
   composition: Composition
@@ -164,6 +164,7 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
 
   if (selected.kind === 'text') {
     const layer = selected as TextLayer
+    const layerWeights = weightsFor(layer.font)
     return (
       <div className="p-3 space-y-3 overflow-y-auto">
         <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Text Layer</h3>
@@ -186,12 +187,21 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
           <select
             id={ids.font}
             value={layer.font}
-            onChange={(e) => update({ font: e.target.value })}
+            onChange={(e) =>
+              // Snap the weight too: a family that lacks the current weight
+              // would have the browser synthesize one, which is why "Baloo
+              // Thambi at 500" never matched the intended design.
+              update({
+                font: e.target.value,
+                weight: nearestWeight(e.target.value, layer.weight),
+              })
+            }
             className={inputClass}
           >
             {FONTS.map((f) => (
               <option key={f.name} value={f.name}>
                 {f.name}
+                {f.weights?.length === 1 ? ' (one weight)' : ''}
               </option>
             ))}
           </select>
@@ -219,9 +229,15 @@ export function PropertiesPanel({ composition, selectedId, onChange }: Props) {
               id={ids.weight}
               value={layer.weight}
               onChange={(e) => update({ weight: parseInt(e.target.value) })}
+              disabled={layerWeights.length === 1}
+              title={
+                layerWeights.length === 1
+                  ? `${layer.font} ships a single weight (${layerWeights[0]})`
+                  : undefined
+              }
               className={inputClass}
             >
-              {[100, 300, 400, 500, 700, 900].map((w) => (
+              {layerWeights.map((w) => (
                 <option key={w} value={w}>
                   {w}
                 </option>
