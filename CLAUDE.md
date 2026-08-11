@@ -310,6 +310,14 @@ Consequences:
 - `POST /api/channels/resync-assets[?channel_number=&force=]` — re-upload channel icons
   to Tunarr and push them. The operational half of `tunarr_public_url`; see "Tunarr asset
   URLs" under Tunarr.
+- `GET /api/channels/{n}/icon` — `{icon, icon_url, manual}`. `icon` is the data URI
+  Linearr renders; `icon_url` is what Tunarr publishes in the guide.
+- `POST /api/channels/{n}/icon/image` — the per-channel override for that URL, with the
+  same body shape as the watermark's image route: `{url}` (verbatim, sets
+  `icon_url_manual`), `{image}` (data URI, uploaded), or `{}` (re-derive from the icon
+  and clear the flag). **A manual URL is never re-derived** — `_resolve_channel_icon_url`
+  and `set_channel_icon` both skip it, because it may point at a host that has nothing to
+  do with Tunarr. Guarded by `tests/test_channel_icon_url.py`.
 - `POST /api/channels/{n}/watermark/image` — resolve the watermark image to an absolute
   URL Tunarr can fetch. Body `{image}` (data URI), `{url}` (absolute), or `{}` to use the
   channel icon; data URIs are uploaded via Tunarr's `POST /api/upload/image`.
@@ -432,7 +440,20 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 > failed upload falls back to the data URI, because an icon that renders only
 > locally still beats no icon. **Any path that changes or clears `icon` must
 > also null `icon_url`** — it is preferred over the icon itself, so a stale one
-> pushes the previous logo.
+> pushes the previous logo. The exception is `icon_url_manual`: a URL set by hand
+> via `POST /api/channels/{n}/icon/image` is never re-derived or cleared by an
+> icon change, because it may point at a host unrelated to Tunarr.
+>
+> **A watermark that follows the channel icon reuses `icon_url` — it does NOT
+> upload a second copy.** "The watermark is the channel icon" means literally the
+> same image, so `_refollow_channel_icon_watermark` points at the icon's own
+> uploaded URL and only falls back to uploading when there isn't one. Ordering
+> matters: `set_channel_icon` resolves the icon URL *before* re-following the
+> watermark, otherwise the watermark finds nothing to follow and duplicates the
+> upload. This also removes a genuinely silly workflow — to get a chosen domain
+> onto a channel logo you previously had to upload the icon, apply it as a
+> watermark, copy the URL that came back, and paste it into the watermark's URL
+> field, because the icon URL itself could not be set.
 >
 > **Stored asset URLs are re-based on read, never migrated.** `_tunarr_asset_url`
 > rewrites a stored URL onto the current asset base **only** when its path is

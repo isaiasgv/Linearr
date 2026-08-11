@@ -50,6 +50,31 @@ function importFromTunarr(): Promise<{ ok: boolean; imported: number; assigned: 
   return post<{ ok: boolean; imported: number; assigned: number }>('/api/icons/import-from-tunarr')
 }
 
+/**
+ * The channel icon, and the URL Tunarr is given for it.
+ *
+ * Two different things: `icon` is the data URI Linearr renders itself, while
+ * `icon_url` is the absolute HTTP URL Tunarr publishes in the guide and Plex
+ * clients fetch. `manual` means it was set by hand and will not be re-derived.
+ */
+export interface ChannelIcon {
+  icon: string | null
+  icon_url: string | null
+  manual: boolean
+}
+
+function getChannelIcon(channelNumber: number): Promise<ChannelIcon> {
+  return get<ChannelIcon>(`/api/channels/${channelNumber}/icon`)
+}
+
+/** `{url}` to set one verbatim, `{image}` to upload bytes, `{}` to re-derive. */
+function setChannelIconImage(
+  channelNumber: number,
+  body: { url?: string; image?: string },
+): Promise<{ ok: boolean; icon_url: string; manual: boolean }> {
+  return post(`/api/channels/${channelNumber}/icon/image`, body)
+}
+
 export const iconsApi = {
   listIcons,
   saveIcon,
@@ -58,4 +83,6 @@ export const iconsApi = {
   assignToChannel,
   seedPack,
   importFromTunarr,
+  getChannelIcon,
+  setChannelIconImage,
 }

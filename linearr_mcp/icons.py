@@ -63,6 +63,35 @@ def register(reg, api):
         except HTTPException as e:
             raise tool_error(e)
 
+    @reg.tool(name="get_channel_icon_url", toolset="icons", read_only=True)
+    async def get_channel_icon_url(channel_number: int) -> dict:
+        """The URL Tunarr publishes for a channel's icon, and whether it was set
+        by hand. The icon data URI itself is omitted — it is large and of no use
+        to read."""
+        try:
+            result = dict(api.get_channel_icon(channel_number))
+        except HTTPException as e:
+            raise tool_error(e)
+        result.pop("icon", None)
+        return result
+
+    @reg.tool(name="set_channel_icon_url", toolset="icons",
+              idempotent=True, open_world=True)
+    async def set_channel_icon_url(channel_number: int, url: str | None = None) -> dict:
+        """Set the URL Tunarr publishes for a channel's icon.
+
+        Tunarr copies this into its guide and Plex clients fetch it over HTTP, so
+        it must be an address those clients can reach — a LAN hostname works only
+        on the local network. Pass an absolute `url` to set one verbatim (it is
+        then never re-derived), or omit it to rebuild the URL from the channel's
+        own icon. A watermark set to use the channel icon follows this URL, so
+        setting it here covers both."""
+        try:
+            return await api.set_channel_icon_image(
+                channel_number, api.ChannelIconImageIn(url=url))
+        except HTTPException as e:
+            raise tool_error(e)
+
     @reg.tool(name="resync_channel_assets", toolset="icons",
               idempotent=True, open_world=True)
     async def resync_channel_assets(channel_number: int | None = None,

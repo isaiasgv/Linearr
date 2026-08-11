@@ -72,10 +72,42 @@ export function useAssignIconToChannel() {
   return useMutation({
     mutationFn: ({ channelNumber, iconData }: { channelNumber: number; iconData: string }) =>
       iconsApi.assignToChannel(channelNumber, iconData),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       void qc.invalidateQueries({ queryKey: ['channels'] })
+      // Changing the icon re-derives the Tunarr URL (unless it was hand-set),
+      // and a following watermark is re-pointed at it.
+      void qc.invalidateQueries({ queryKey: ['channel-icon', vars.channelNumber] })
+      void qc.invalidateQueries({ queryKey: ['watermark', vars.channelNumber] })
       addToast('Icon assigned to channel')
     },
     onError: (err: Error) => addToast(err.message || 'Failed to assign icon', true),
+  })
+}
+
+/** The channel's icon plus the URL Tunarr publishes for it. */
+export function useChannelIcon(channelNumber: number) {
+  return useQuery({
+    queryKey: ['channel-icon', channelNumber],
+    queryFn: () => iconsApi.getChannelIcon(channelNumber),
+    enabled: channelNumber > 0,
+  })
+}
+
+export function useSetChannelIconImage(channelNumber: number) {
+  const qc = useQueryClient()
+  const addToast = useToastStore((s) => s.addToast)
+  return useMutation({
+    mutationFn: (body: { url?: string; image?: string }) =>
+      iconsApi.setChannelIconImage(channelNumber, body),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ['channel-icon', channelNumber] })
+      void qc.invalidateQueries({ queryKey: ['channels'] })
+      // A watermark set to follow the icon now points at this same URL.
+      void qc.invalidateQueries({ queryKey: ['watermark', channelNumber] })
+      addToast(
+        data.manual ? 'Icon URL set and pushed to Tunarr' : 'Icon URL re-derived from the icon',
+      )
+    },
+    onError: (err: Error) => addToast(err.message || 'Failed to set the icon URL', true),
   })
 }
