@@ -154,7 +154,9 @@ function CollectionTypeStatus({
   onImportItems,
   onUnassign,
   onPushToTunarr,
+  onBuildToPlex,
   pushPending,
+  buildPending,
   busy,
 }: {
   label: string
@@ -169,7 +171,9 @@ function CollectionTypeStatus({
   onImportItems: () => void
   onUnassign: () => void
   onPushToTunarr: () => void
+  onBuildToPlex: () => void
   pushPending: boolean
+  buildPending: boolean
   busy: boolean
 }) {
   const plexExists = Boolean(status?.exists)
@@ -221,21 +225,29 @@ function CollectionTypeStatus({
         {!isAssigned && <span className="text-slate-600">(generated)</span>}
       </span>
 
-      {/* Plex existence */}
-      <span
-        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 rounded-sm px-1.5 py-0.5"
+      {/* Plex existence — the counterpart of the Tunarr chip beside it, and a
+          button for the same reason: the two are styled identically, so a
+          static one reads as a dead button. Building is the Plex-side push. */}
+      <button
+        onClick={onBuildToPlex}
+        disabled={buildPending}
         title={
           plexExists
-            ? `Collection exists on Plex (${plexCount} item${plexCount !== 1 ? 's' : ''})`
-            : 'No Plex collection yet'
+            ? `Collection exists on Plex (${plexCount} item${plexCount !== 1 ? 's' : ''}) — click to rebuild it from this channel's assignments`
+            : 'No Plex collection yet — click to build it from this channel’s assignments'
         }
+        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 hover:border-slate-500 rounded-sm px-1.5 py-0.5 transition-colors disabled:opacity-50 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
       >
         <img src="/plex.svg" alt="Plex" className="w-3 h-3 rounded-xs" />
-        <StatusDot state={plexExists ? 'ok' : 'unknown'} pulse={false} />
+        {buildPending ? (
+          <Spinner size="sm" />
+        ) : (
+          <StatusDot state={plexExists ? 'ok' : 'unknown'} pulse={false} />
+        )}
         <span className={plexExists ? 'text-slate-300' : 'text-slate-500'}>
-          {plexExists ? plexCount : 'none'}
+          {plexExists ? plexCount : 'build'}
         </span>
-      </span>
+      </button>
 
       {/* Tunarr linkage */}
       <button
@@ -557,6 +569,8 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 onImportItems={() => setSubTab('browse')}
                 onUnassign={() => movieCollection && void handleUnassign('movie', movieCollection)}
                 onPushToTunarr={() => syncCollections.mutate(channelNumber)}
+                onBuildToPlex={() => void handleBuild()}
+                buildPending={buildCollections.isPending}
               />
 
               <span className="text-slate-700">|</span>
@@ -589,6 +603,8 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 onImportItems={() => setSubTab('browse')}
                 onUnassign={() => showCollection && void handleUnassign('show', showCollection)}
                 onPushToTunarr={() => syncCollections.mutate(channelNumber)}
+                onBuildToPlex={() => void handleBuild()}
+                buildPending={buildCollections.isPending}
               />
 
               <button

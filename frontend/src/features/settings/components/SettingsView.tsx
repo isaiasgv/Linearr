@@ -24,9 +24,11 @@ import { useAiLogs, useClearAiLogs, useAppLogs, useClearAppLogs } from '@/featur
 import { usePlexServerInfo } from '@/features/plex/hooks'
 import { useToastStore } from '@/shared/store/toast.store'
 import { plexApi } from '@/features/plex/api'
-import type { AiLog, AppLog, Settings } from '@/shared/types'
+import type { AiLog, AppLog, IconBrandDefaults, Settings } from '@/shared/types'
+import { FALLBACK_BRAND_DEFAULTS } from '@/features/icons/generate'
+import { IconBrandPanel } from './IconBrandPanel'
 
-type SettingsTab = 'plex' | 'ai' | 'tunarr' | 'logs' | 'system'
+type SettingsTab = 'plex' | 'ai' | 'tunarr' | 'icons' | 'logs' | 'system'
 
 function formatDate(iso: string): string {
   try {
@@ -99,6 +101,8 @@ export function SettingsView() {
   const [aiModels, setAiModels] = useState<string[]>([])
 
   const [tunarrUrl, setTunarrUrl] = useState('')
+  const [tunarrPublicUrl, setTunarrPublicUrl] = useState('')
+  const [iconBrand, setIconBrand] = useState<IconBrandDefaults>(FALLBACK_BRAND_DEFAULTS)
 
   useEffect(() => {
     if (settings) {
@@ -108,6 +112,8 @@ export function SettingsView() {
       setAiBaseUrl(settings.openai_base_url ?? '')
       setAiModel(settings.openai_model ?? '')
       setTunarrUrl(settings.tunarr_url ?? '')
+      setTunarrPublicUrl(settings.tunarr_public_url ?? '')
+      setIconBrand(settings.icon_brand_defaults ?? FALLBACK_BRAND_DEFAULTS)
     }
   }, [settings])
 
@@ -189,6 +195,8 @@ export function SettingsView() {
       openai_base_url: aiBaseUrl,
       openai_model: aiModel,
       tunarr_url: tunarrUrl,
+      tunarr_public_url: tunarrPublicUrl,
+      icon_brand_defaults: iconBrand,
     }
     // Only send secrets when the user actually typed something. The backend
     // preserves the existing secret on an empty value, but omitting it keeps the
@@ -210,6 +218,7 @@ export function SettingsView() {
     { id: 'plex', label: 'Plex' },
     { id: 'ai', label: 'AI' },
     { id: 'tunarr', label: 'Tunarr' },
+    { id: 'icons', label: 'Icons' },
     { id: 'logs', label: 'Logs' },
     { id: 'system', label: 'System' },
   ]
@@ -732,8 +741,42 @@ export function SettingsView() {
                     Use Docker hostname if on the same network (e.g. http://tunarr:8000)
                   </p>
                 </div>
+
+                {/* Public asset URL */}
+                <div>
+                  <label
+                    htmlFor="settings-tunarr-public-url"
+                    className="block text-xs text-slate-400 mb-1.5"
+                  >
+                    Public Tunarr URL{' '}
+                    <span className="text-slate-500">— for icons &amp; watermarks</span>
+                  </label>
+                  <input
+                    id="settings-tunarr-public-url"
+                    type="url"
+                    value={tunarrPublicUrl}
+                    onChange={(e) => setTunarrPublicUrl(e.target.value)}
+                    placeholder="https://tunarr.example.com (optional)"
+                    className={inputClass}
+                  />
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    Channel icons and watermark images are uploaded to Tunarr, and the URL is
+                    written into the guide Tunarr publishes. That URL is fetched by your{' '}
+                    <strong>Plex clients</strong> — so if it is a Docker hostname or a LAN address,
+                    icons only appear on devices inside your network. Set a publicly reachable
+                    address here to fix that. Leave blank to use the Tunarr URL above.
+                  </p>
+                  <p className="text-xs text-amber-300/80 mt-1.5">
+                    Watermark images are fetched by ffmpeg <em>inside the Tunarr container</em>, so
+                    this address must resolve from there too. An enabled watermark whose image
+                    cannot be loaded stops the channel playing — test a channel after changing this.
+                  </p>
+                </div>
               </div>
             )}
+
+            {/* ── Icons ── */}
+            {tab === 'icons' && <IconBrandPanel value={iconBrand} onChange={setIconBrand} />}
 
             {/* ── Logs ── */}
             {tab === 'logs' && <LogsPanelContainer />}
@@ -891,8 +934,7 @@ function McpServerCard() {
   const [toolsetDraft, setToolsetDraft] = useState<string[] | null>(null)
 
   const enabledToolsets =
-    toolsetDraft ??
-    (mcpInfo?.toolsets ?? []).filter((t) => t.enabled).map((t) => t.name)
+    toolsetDraft ?? (mcpInfo?.toolsets ?? []).filter((t) => t.enabled).map((t) => t.name)
 
   const toggleToolset = (name: string) => {
     setToolsetDraft(
@@ -1018,8 +1060,8 @@ function McpServerCard() {
 
           <div className="space-y-2">
             <p className="text-xs text-slate-400">
-              {mcpInfo.tool_count} tools available across {mcpInfo.toolsets.length} toolsets.
-              Turn off what you don&apos;t need — every tool costs context in the client.
+              {mcpInfo.tool_count} tools available across {mcpInfo.toolsets.length} toolsets. Turn
+              off what you don&apos;t need — every tool costs context in the client.
             </p>
             <div className="flex flex-wrap gap-1.5">
               {mcpInfo.toolsets.map((ts) => (

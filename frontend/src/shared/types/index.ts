@@ -221,6 +221,21 @@ export interface CollectionStatus {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+/**
+ * House style for auto-generated channel icons — a brand line over the channel
+ * line. Mirrors `_ICON_BRAND_DEFAULTS` in `main.py`.
+ */
+export interface IconBrandDefaults {
+  brand_line: string
+  brand_font: string
+  brand_weight: number
+  name_font: string
+  name_weight: number
+  color: string
+  width: number
+  height: number
+}
+
 export interface Settings {
   plex_url: string
   plex_token: string
@@ -228,6 +243,18 @@ export interface Settings {
   openai_base_url: string
   openai_model: string
   tunarr_url: string
+  /**
+   * Base URL that asset links written INTO Tunarr are built on — channel icons
+   * and watermark images. Empty means "same as `tunarr_url`".
+   *
+   * These are two different addresses for two different readers: `tunarr_url`
+   * is where Linearr sends API requests (container-to-container), while these
+   * links end up in XMLTV and in ffmpeg command lines, fetched by Plex clients
+   * that may be off the network entirely.
+   */
+  tunarr_public_url: string
+  /** House style for generated channel icons. See `features/icons/generate.ts`. */
+  icon_brand_defaults: IconBrandDefaults
   // Secret presence flags: GET /api/settings returns secrets as empty strings
   // when set, plus these booleans so the UI can show a "configured" placeholder
   // without ever exposing the value. POST preserves the secret if sent empty.
@@ -266,7 +293,13 @@ export interface SmartCollection {
 }
 
 export interface TunarrScheduleItem {
-  startTime: string
+  /**
+   * Epoch milliseconds. Declared as a union because the bulk EPG returns a
+   * number while some Tunarr payloads carry an ISO string, and this was typed
+   * `string` while the server was already sending numbers — every consumer
+   * either coerced it or got lucky with `new Date(...)`.
+   */
+  startTime: number | string
   duration: number
   type: string
   title?: string
@@ -381,6 +414,7 @@ export type ModalName =
   | 'assignCollection'
   | 'smartCollectionBuilder'
   | 'iconEditor'
+  | 'iconGenerator'
   | 'iconPicker'
   | 'watermarkEditor'
   | 'addContent'

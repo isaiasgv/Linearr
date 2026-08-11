@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToastStore } from '@/shared/store/toast.store'
+import { findNowPlaying } from './nowPlaying'
 import type {
   SmartCollection,
   TunarrChannel,
@@ -242,6 +244,37 @@ export function useTunarrGuide(hours = 24) {
     queryFn: () => tunarrApi.getGuide(hours),
     refetchInterval: 5 * 60 * 1000, // refresh every 5 minutes
   })
+}
+
+/**
+ * What is playing on one channel right now.
+ *
+ * Reads the SHARED bulk-guide query rather than fetching per channel: one
+ * request already covers the whole lineup, and the backend only reads the bulk
+ * EPG for exactly that reason (a per-channel guide request also returns the
+ * titleless *lineup*, which is what once rendered the guide as a wall of
+ * "Program"). Selecting out of the shared query keeps that to one round trip
+ * however many channel views are mounted.
+ *
+ * The 60-second tick is local: it re-derives "now" against already-fetched data
+ * so the progress bar advances without re-querying Tunarr.
+ */
+export function useNowPlaying(channelNumber: number | undefined, enabled = true) {
+  const { data, isLoading } = useTunarrGuide(6)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!enabled) return
+    const t = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(t)
+  }, [enabled])
+
+  const entry = data?.channels.find((c) => c.channel_number === channelNumber)
+  return {
+    isLoading,
+    hasGuide: Boolean(entry?.schedule?.length),
+    nowPlaying: enabled ? findNowPlaying(entry?.schedule, now) : null,
+  }
 }
 
 interface UpdateSmartCollectionVars {

@@ -75,11 +75,13 @@ def register(reg, api):
 
     @reg.tool(name="delete_channel", toolset="channels",
               destructive=True, idempotent=True, open_world=True)
-    async def delete_channel(number: int) -> dict:
+    async def delete_channel(number: int, delete_tunarr: bool = True) -> dict:
         """Delete a channel. DESTRUCTIVE: also removes its assignments, schedule
-        blocks, collection links and Tunarr links. Cannot be undone."""
+        blocks, collection links and Tunarr links. Cannot be undone.
+        By default this ALSO deletes the linked Tunarr channel and its
+        programming; pass delete_tunarr=false to keep it and only unlink."""
         try:
-            return api.delete_channel(number)
+            return await api.delete_channel(number, delete_tunarr=delete_tunarr)
         except HTTPException as e:
             raise tool_error(e)
 

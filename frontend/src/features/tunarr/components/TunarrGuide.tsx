@@ -203,7 +203,7 @@ export function TunarrGuide({ onClose, channelNumber }: TunarrGuideProps) {
                   return (
                     <ProgramBar
                       key={`${ch.tunarr_id}-${idx}`}
-                      title={item.title}
+                      title={item.title ?? 'Program'}
                       episode={item.episode}
                       startMs={startMs}
                       durationMs={durationMs}

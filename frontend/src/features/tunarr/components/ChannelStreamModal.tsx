@@ -99,7 +99,13 @@ export function ChannelStreamModal() {
           Watch Channel {channelNumber ?? ''}
         </h2>
         <IconButton label="Close" onClick={() => closeModal('channelStream')}>
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg
+            className="h-5 w-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </IconButton>
@@ -108,30 +114,30 @@ export function ChannelStreamModal() {
       <div className="p-5">
         {!link ? (
           <p className="text-sm text-slate-400">
-            This channel isn’t linked to Tunarr yet. Link it on the channel’s Tunarr tab, then
-            try again.
+            This channel isn’t linked to Tunarr yet. Link it on the channel’s Tunarr tab, then try
+            again.
           </p>
         ) : (
           <div className="space-y-3">
-          <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
-            <video
-              ref={videoRef}
-              controls
-              autoPlay
-              playsInline
-              className="w-full h-full"
-              onPlaying={() => {
-                setStatus('playing')
-                setMessage('')
-              }}
-            />
-            {status === 'starting' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 pointer-events-none">
-                <Spinner size="lg" />
-                <p className="text-xs text-slate-300 px-4 text-center">{message}</p>
-              </div>
-            )}
-          </div>
+            <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+              <video
+                ref={videoRef}
+                controls
+                autoPlay
+                playsInline
+                className="w-full h-full"
+                onPlaying={() => {
+                  setStatus('playing')
+                  setMessage('')
+                }}
+              />
+              {status === 'starting' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 pointer-events-none">
+                  <Spinner size="lg" />
+                  <p className="text-xs text-slate-300 px-4 text-center">{message}</p>
+                </div>
+              )}
+            </div>
 
             {status === 'error' && <p className="text-sm text-red-400">{message}</p>}
 

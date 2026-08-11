@@ -369,6 +369,15 @@ def init_db():
             conn.execute("ALTER TABLE channels ADD COLUMN watermark_image_url TEXT")
         except sqlite3.OperationalError:
             pass
+        # Absolute URL of the channel ICON hosted by Tunarr, for exactly the same
+        # reason as the watermark above. The icon itself stays a data URI in
+        # `icon` — that is what Linearr's own UI renders — but Tunarr writes
+        # whatever it is given straight into XMLTV, and a data URI there is
+        # unreadable to remote Plex clients. NULL = not uploaded yet.
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN icon_url TEXT")
+        except sqlite3.OperationalError:
+            pass
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS saved_icons (
@@ -584,6 +593,14 @@ class SettingsIn(BaseModel):
     openai_base_url: str | None = None
     openai_model: str | None = None
     tunarr_url: str | None = None
+    # Optional. The base URL asset links written INTO Tunarr are built on, when
+    # Tunarr's own address is not reachable from the clients that read them.
+    # Empty means "same as tunarr_url". See `_tunarr_asset_base`.
+    tunarr_public_url: str | None = None
+    # House style for generated channel icons. Stored as one JSON blob rather
+    # than eight settings rows — it is read and written as a unit, and the
+    # renderer that consumes it lives entirely in the frontend.
+    icon_brand_defaults: dict | None = None
 
 class TunarrChannelLinkIn(BaseModel):
     channel_number: int
@@ -650,7 +667,7 @@ _WATERMARK_DEFAULTS = {
     "width": 7.0,
     "vertical_margin": 5.0,
     "horizontal_margin": 5.0,
-    "opacity": 20,
+    "opacity": 30,
 }
 
 
@@ -1299,7 +1316,9 @@ def _watermark_for_tunarr(ch: dict) -> dict | None:
         return None
     if not isinstance(wm, dict):
         return None
-    return _watermark_to_tunarr(wm, ch.get("watermark_image_url"))
+    # Re-based, not used verbatim: the URL was stored against whatever the asset
+    # base was at upload time, and `tunarr_public_url` may have changed since.
+    return _watermark_to_tunarr(wm, _tunarr_asset_url(ch.get("watermark_image_url")))
 
 def _disabled_watermark_for_tunarr() -> dict:
     """A valid watermark payload that turns the overlay off.
@@ -1334,8 +1353,16 @@ def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None,
         "groupTitle": ch.get("tier", "Linearr"),
     }
     icon_data = ch.get("icon")
+    # `icon_url` is the icon uploaded to Tunarr as an ordinary HTTP asset, and is
+    # strongly preferred: Tunarr copies whatever it gets into XMLTV, where a
+    # data URI is unreadable to any Plex client that is not on this machine.
+    # The data URI remains the fallback for when the upload could not be done —
+    # it still renders locally, which beats no icon.
+    icon_url = _tunarr_asset_url(ch.get("icon_url"))
     if icon_override is not None:
         changes["icon"] = icon_override
+    elif icon_url:
+        changes["icon"] = _tunarr_icon_obj(icon_url)
     elif icon_data and str(icon_data).startswith("data:"):
         changes["icon"] = _tunarr_icon_obj(icon_data)
     watermark = watermark_override if watermark_override is not None else _watermark_for_tunarr(ch)
@@ -1359,6 +1386,14 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
     url = get_tunarr_url()
     if not url:
         return {"synced": False, "action": "error", "message": "Tunarr not configured"}
+
+    # Upload the icon BEFORE building the payload, so the push carries an HTTP
+    # URL rather than the data URI. Best-effort: a failure leaves `icon_url`
+    # unset and `_tunarr_channel_changes` falls back to the data URI.
+    if icon_override is None and ch.get("icon"):
+        resolved_icon = await _resolve_channel_icon_url(channel_number, ch.get("icon"))
+        if resolved_icon:
+            ch["icon_url"] = resolved_icon
 
     # Only the keys Linearr owns; _tunarr_save_channel preserves everything else.
     changes = _tunarr_channel_changes(ch, watermark_override, icon_override)
@@ -1448,9 +1483,48 @@ async def sync_channel_to_tunarr(channel_number: int):
         raise HTTPException(502, result.get("message", "Sync failed"))
     return result
 
+async def _tunarr_delete_channel(tunarr_id: str) -> dict:
+    """Best-effort delete of a Tunarr channel. Never raises.
+
+    Deliberately tolerant of 404: a channel already gone from Tunarr is the
+    desired end state, not an error worth reporting to someone who just asked
+    for it to be deleted.
+    """
+    url = get_tunarr_url()
+    if not url:
+        return {"deleted": False, "message": "Tunarr not configured"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.delete(f"{url}/api/channels/{tunarr_id}")
+    except Exception as e:
+        log.warning("Tunarr channel delete failed for %s: %s", tunarr_id, e)
+        return {"deleted": False, "message": str(e)}
+    if r.status_code in (200, 202, 204, 404):
+        return {"deleted": True, "tunarr_id": tunarr_id}
+    return {"deleted": False, "tunarr_id": tunarr_id,
+            "message": f"Tunarr returned {r.status_code}: {r.text[:200]}"}
+
+
 @app.delete("/api/channels/{channel_number}")
-def delete_channel(channel_number: int):
+async def delete_channel(channel_number: int,
+                         delete_tunarr: bool = Query(True)):
+    """Delete a channel, and by default the Tunarr channel linked to it.
+
+    The Tunarr side used to be left behind: this route cleared
+    `tunarr_channel_links` along with every other referencing table, which
+    severed the link but stranded the actual Tunarr channel — still in the
+    lineup, still in the guide, no longer reachable from Linearr to clean up.
+
+    Order matters. Linearr is authoritative, so the local delete commits first
+    and the Tunarr call is best-effort afterwards; a Tunarr failure is reported
+    in `tunarr` but never undoes the delete the user asked for. Pass
+    `delete_tunarr=false` to keep the Tunarr channel and only unlink it.
+    """
     with get_db() as conn:
+        link = conn.execute(
+            "SELECT tunarr_id FROM tunarr_channel_links WHERE channel_number=?",
+            (channel_number,),
+        ).fetchone()
         cur = conn.execute("DELETE FROM channels WHERE number=?", (channel_number,))
         if cur.rowcount == 0:
             raise HTTPException(404, "Channel not found")
@@ -1465,9 +1539,88 @@ def delete_channel(channel_number: int):
         for table in _present_ref_tables(conn, _CHANNEL_DELETE_TABLES):
             conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
     _log_app("channel", f"Deleted channel {channel_number}", level="warn", metadata={"number": channel_number})
-    return {"ok": True}
+
+    tunarr: dict | None = None
+    if link and delete_tunarr:
+        tunarr = await _tunarr_delete_channel(link["tunarr_id"])
+        _log_app(
+            "channel",
+            f"Deleted Tunarr channel for {channel_number}" if tunarr["deleted"]
+            else f"Could not delete Tunarr channel for {channel_number}",
+            level="warn" if tunarr["deleted"] else "error",
+            metadata={"number": channel_number, **tunarr},
+        )
+    elif link:
+        tunarr = {"deleted": False, "tunarr_id": link["tunarr_id"],
+                  "message": "Kept in Tunarr — unlinked only"}
+    return {"ok": True, "tunarr": tunarr}
 
 # ── Channel Icons ─────────────────────────────────────────────────────────────
+
+def _channel_icon_filename(channel_number: int, raw: bytes, mime: str) -> str:
+    """Collision-free upload name for a channel icon.
+
+    Same scheme and same reasoning as `_watermark_image_filename`: Tunarr keys
+    uploads by FILENAME and silently overwrites on a repeat, so the channel
+    number keeps two channels apart and the content hash keeps a channel's old
+    icon intact when it gets a new one.
+    """
+    digest = hashlib.sha1(raw).hexdigest()[:10]
+    return f"linearr-icon-ch{channel_number}-{digest}.{_MIME_EXT.get(mime, 'png')}"
+
+
+async def _resolve_channel_icon_url(channel_number: int, icon_data: str | None) -> str | None:
+    """Upload the channel's icon to Tunarr and return an absolute URL for it.
+
+    Tunarr writes whatever it is given as the icon straight into XMLTV. Linearr
+    used to hand it the base64 `data:` URI the icon is stored as, which renders
+    in Tunarr's own UI and in Plex clients on the same machine — and nowhere
+    else, because a remote client cannot resolve a data URI it was served as an
+    image *source*. Uploading makes it an ordinary HTTP asset.
+
+    Best-effort by design: on any failure the caller falls back to the data URI.
+    An icon that renders only locally is better than no icon at all, and this
+    must never be able to break a channel sync.
+
+    Cached in `channels.icon_url`. The filename is content-addressed, so an
+    unchanged icon short-circuits without touching Tunarr.
+    """
+    if not icon_data or not str(icon_data).startswith("data:"):
+        return None
+    decoded = _decode_data_uri(icon_data)
+    if decoded is None:
+        return None
+    raw, content_type, _ = decoded
+    filename = _channel_icon_filename(channel_number, raw, content_type)
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT icon_url FROM channels WHERE number=?", (channel_number,)
+        ).fetchone()
+    cached = (row["icon_url"] if row else None) or ""
+    # The digest is in the filename, so a matching tail means these exact bytes
+    # are already uploaded. Re-base it in case the public URL changed since.
+    if cached and cached.rsplit("/", 1)[-1] == filename:
+        return _tunarr_asset_url(cached)
+
+    tunarr_url = get_tunarr_url()
+    if not tunarr_url:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            uploaded = await _tunarr_upload_image(
+                client, tunarr_url, raw, content_type, filename)
+    except Exception as e:
+        log.warning("Channel icon upload failed for CH %s: %s", channel_number, e)
+        return None
+    if not uploaded:
+        return None
+    public = _tunarr_asset_url(uploaded)
+    with get_db() as conn:
+        conn.execute("UPDATE channels SET icon_url=? WHERE number=?",
+                     (public, channel_number))
+    return public
+
 
 async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
     """Re-upload the channel's icon as its watermark image, if it follows it.
@@ -1528,7 +1681,11 @@ async def set_channel_icon(channel_number: int, request: Request):
     body = await request.json()
     icon_data = body.get("icon", "")
     with get_db() as conn:
-        cur = conn.execute("UPDATE channels SET icon=? WHERE number=?", (icon_data, channel_number))
+        # Clear the cached upload URL: it points at the OLD icon, and
+        # `_tunarr_channel_changes` prefers it over the data URI, so leaving it
+        # would push the previous logo. The sync below re-resolves it.
+        cur = conn.execute("UPDATE channels SET icon=?, icon_url=NULL WHERE number=?",
+                           (icon_data, channel_number))
     if cur.rowcount == 0:
         raise HTTPException(404, "Channel not found")
     _log_app("channel", f"Set icon for channel {channel_number}", metadata={"number": channel_number})
@@ -1551,7 +1708,10 @@ async def delete_channel_icon(channel_number: int):
     still sends no icon key, leaving one set directly in Tunarr's own UI alone.
     """
     with get_db() as conn:
-        conn.execute("UPDATE channels SET icon=NULL WHERE number=?", (channel_number,))
+        # `icon_url` goes with it — a stale one would be pushed straight back on
+        # the next sync, and `_tunarr_channel_changes` prefers it over the icon.
+        conn.execute("UPDATE channels SET icon=NULL, icon_url=NULL WHERE number=?",
+                     (channel_number,))
     _log_app("channel", f"Removed icon for channel {channel_number}", metadata={"number": channel_number})
     sync = await _sync_channel_to_tunarr(
         channel_number, icon_override=_tunarr_icon_obj(None))
@@ -1850,10 +2010,79 @@ async def import_icon_pack(request: Request):
             icon_data = data.get("icon", data) if isinstance(data, dict) else data
             if not icon_data:
                 continue
-            conn.execute("UPDATE channels SET icon=? WHERE number=?", (icon_data, int(ch_num)))
+            # icon_url follows the icon; a stale one would be pushed instead.
+            conn.execute("UPDATE channels SET icon=?, icon_url=NULL WHERE number=?",
+                         (icon_data, int(ch_num)))
             imported += 1
     _log_app("icons", f"Imported {imported} channel icons")
     return {"ok": True, "imported": imported}
+
+
+@app.post("/api/channels/resync-assets")
+async def resync_channel_assets(channel_number: int | None = Query(None),
+                                force: bool = Query(False)):
+    """Re-upload every channel's icon to Tunarr and push the result.
+
+    The operational counterpart of the `tunarr_public_url` setting. Channels
+    synced before that setting existed hold their icon in Tunarr as a `data:`
+    URI, which no remote Plex client can render; this walks the lineup and
+    replaces each one with a real uploaded asset. Without it, adopting the
+    setting would mean re-saving every channel by hand.
+
+    Icon uploads are content-addressed, so this is naturally idempotent — an
+    unchanged icon short-circuits without touching Tunarr. `force=true` clears
+    the cached URL first, for when Tunarr's upload directory has been wiped and
+    the cache is lying about what exists there.
+
+    Per-channel failures are collected rather than raised: one unreachable
+    channel must not abandon the rest of the lineup half-done.
+    """
+    with get_db() as conn:
+        if channel_number is not None:
+            rows = conn.execute(
+                "SELECT number FROM channels WHERE number=? AND icon IS NOT NULL AND icon != ''",
+                (channel_number,)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT number FROM channels WHERE icon IS NOT NULL AND icon != '' "
+                "ORDER BY number").fetchall()
+        if force:
+            numbers = [r["number"] for r in rows]
+            for n in numbers:
+                conn.execute("UPDATE channels SET icon_url=NULL WHERE number=?", (n,))
+
+    results: list[dict] = []
+    for row in rows:
+        n = row["number"]
+        url = await _resolve_channel_icon_url(
+            n, _channel_icon_data(n))
+        entry = {"channel_number": n, "icon_url": url, "uploaded": bool(url)}
+        if url:
+            sync = await _sync_channel_to_tunarr(n)
+            entry["synced"] = bool(sync.get("synced"))
+            if not sync.get("synced"):
+                entry["message"] = sync.get("message", "")
+        else:
+            entry["synced"] = False
+            entry["message"] = "Icon could not be uploaded to Tunarr"
+        results.append(entry)
+
+    uploaded = sum(1 for r in results if r["uploaded"])
+    _log_app("icons",
+             f"Re-synced assets for {uploaded}/{len(results)} channels",
+             level="warn" if uploaded < len(results) else "info",
+             metadata={"asset_base": _tunarr_asset_base()})
+    return {"ok": True, "asset_base": _tunarr_asset_base(),
+            "total": len(results), "uploaded": uploaded,
+            "failed": [r for r in results if not r["uploaded"] or not r["synced"]],
+            "channels": results}
+
+
+def _channel_icon_data(channel_number: int) -> str | None:
+    with get_db() as conn:
+        row = conn.execute("SELECT icon FROM channels WHERE number=?",
+                           (channel_number,)).fetchone()
+    return row["icon"] if row else None
 
 # ── Icon Library ─────────────────────────────────────────────────────────────
 
@@ -2066,6 +2295,44 @@ def purge_channel_assignments(channel_number: int, content_type: str = Query("bo
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 
+# House style for generated channel icons: a brand line over the channel line.
+# The values are the Galaxy Network defaults; every one is user-editable. Only
+# the frontend renders from these — the backend just stores and serves them, so
+# it deliberately knows nothing about fonts or canvases beyond these key names.
+_ICON_BRAND_DEFAULTS = {
+    "brand_line": "Galaxy",
+    "brand_font": "Baloo Thambi",
+    "brand_weight": 500,
+    "name_font": "Baloo Thambi 2",
+    "name_weight": 400,
+    "color": "#ffffff",
+    "width": 512,
+    "height": 512,
+}
+
+
+def _icon_brand_defaults(stored: str | None) -> dict:
+    """Stored icon defaults merged over the built-ins.
+
+    Merged rather than replaced so a blob written before a key existed still
+    produces a complete config, and unknown keys are dropped rather than
+    reaching the renderer.
+    """
+    out = dict(_ICON_BRAND_DEFAULTS)
+    if not stored:
+        return out
+    try:
+        parsed = json.loads(stored)
+    except (TypeError, ValueError):
+        return out
+    if not isinstance(parsed, dict):
+        return out
+    for k in _ICON_BRAND_DEFAULTS:
+        if k in parsed and parsed[k] not in (None, ""):
+            out[k] = parsed[k]
+    return out
+
+
 @app.get("/api/settings")
 def get_settings():
     with get_db() as conn:
@@ -2084,6 +2351,8 @@ def get_settings():
         "openai_base_url": rows.get("openai_base_url", "https://api.openai.com/v1"),
         "openai_model": rows.get("openai_model", "gpt-4o-mini"),
         "tunarr_url": rows.get("tunarr_url", "http://tunarr:8000"),
+        "tunarr_public_url": rows.get("tunarr_public_url", ""),
+        "icon_brand_defaults": _icon_brand_defaults(rows.get("icon_brand_defaults")),
         "plex_webhook_path": f"/api/plex/webhook?token={webhook_secret}" if webhook_secret else "",
     }
 
@@ -2103,6 +2372,17 @@ def save_settings(body: SettingsIn):
             conn.execute("INSERT OR REPLACE INTO settings VALUES ('openai_model', ?)", (body.openai_model,))
         if body.tunarr_url is not None:
             conn.execute("INSERT OR REPLACE INTO settings VALUES ('tunarr_url', ?)", (body.tunarr_url,))
+        if body.tunarr_public_url is not None:
+            # Stored even when blank — clearing it is a meaningful action that
+            # reverts asset links to the internal Tunarr URL.
+            conn.execute("INSERT OR REPLACE INTO settings VALUES ('tunarr_public_url', ?)",
+                         (body.tunarr_public_url.strip().rstrip("/"),))
+        if body.icon_brand_defaults is not None:
+            # Merged through the same reader used on GET, so an unknown key
+            # cannot be persisted and a partial write keeps the other values.
+            merged = _icon_brand_defaults(json.dumps(body.icon_brand_defaults))
+            conn.execute("INSERT OR REPLACE INTO settings VALUES ('icon_brand_defaults', ?)",
+                         (json.dumps(merged),))
     _log_app("settings", "Settings saved")
     return {"ok": True}
 
@@ -5548,6 +5828,63 @@ def get_tunarr_url() -> str:
     with get_db() as conn:
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
     return rows.get("tunarr_url", "http://tunarr:8000").rstrip("/")
+
+
+def get_tunarr_public_url() -> str:
+    """The configured public base, or "" when none is set."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key='tunarr_public_url'").fetchone()
+    return (row["value"] if row else "").strip().rstrip("/")
+
+
+def _tunarr_asset_base() -> str:
+    """Base URL for asset links written INTO Tunarr — icons and watermarks.
+
+    Distinct from `get_tunarr_url`, which is where Linearr sends API requests.
+    The two differ because they are read by different things: Linearr talks to
+    Tunarr container-to-container (`http://tunarr:8000`), but the URLs Tunarr
+    stores end up in XMLTV and in ffmpeg command lines, where they are fetched
+    by Plex clients that may be nowhere near this network. A LAN-only address
+    there is why icons render locally and nowhere else.
+
+    Falls back to the internal URL, so an install that never sets this behaves
+    exactly as before.
+    """
+    return get_tunarr_public_url() or get_tunarr_url()
+
+
+def _tunarr_asset_url(stored: str | None) -> str | None:
+    """Re-base a stored Tunarr asset URL onto the CURRENT asset base.
+
+    Stored URLs are absolute and already in the database, so changing
+    `tunarr_public_url` must not require a migration or leave a row pointing at
+    the old host. Rather than rewrite rows, every read passes through here.
+
+    Only Tunarr's own uploads are re-based: the path must live under
+    `/images/` AND the host must be one we recognise as Tunarr. That second
+    condition is the important one — a user may paste a third-party watermark
+    URL (`https://example.com/logo.png`), and rewriting that onto the Tunarr
+    domain would silently point at a 404.
+    """
+    if not stored or not str(stored).strip():
+        return None
+    stored = str(stored).strip()
+    parsed = _urlparse(stored)
+    path = parsed.path or ""
+    if not path.startswith(tuple(_TUNARR_IMAGE_ALLOWED_PREFIXES)):
+        return stored
+    known = {
+        _urlparse(u).netloc
+        for u in (get_tunarr_url(), get_tunarr_public_url())
+        if u
+    }
+    if parsed.netloc and parsed.netloc not in known:
+        return stored
+    suffix = path
+    if parsed.query:
+        suffix = f"{suffix}?{parsed.query}"
+    return f"{_tunarr_asset_base().rstrip('/')}{suffix}"
 
 _DATA_URI_RE = _re.compile(r"^data:(?P<mime>[\w.+/-]+);base64,(?P<b64>.+)$", _re.DOTALL)
 

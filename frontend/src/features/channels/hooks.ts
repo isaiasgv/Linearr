@@ -205,13 +205,29 @@ export function useDeleteChannel() {
 
   return useMutation({
     mutationFn: (number: number) => channelsApi.remove(number),
-    onSuccess: (_, number) => {
+    onSuccess: (res, number) => {
       qc.setQueryData<Channel[]>(['channels'], (old = []) => old.filter((c) => c.number !== number))
       qc.removeQueries({ queryKey: ['blocks', number] })
       qc.removeQueries({ queryKey: ['channel-collections', number] })
       qc.removeQueries({ queryKey: ['collection-status', number] })
+      qc.removeQueries({ queryKey: ['watermark', number] })
       void qc.invalidateQueries({ queryKey: ['assignments'] })
-      addToast('Channel deleted')
+      // The delete cascades into Tunarr now, so both the link list and Tunarr's
+      // own channel list are stale.
+      void qc.invalidateQueries({ queryKey: ['tunarr', 'links'] })
+      void qc.invalidateQueries({ queryKey: ['tunarr', 'channels'] })
+      // Linearr's delete already committed — a Tunarr failure leaves a stranded
+      // channel there, which is worth saying out loud rather than swallowing.
+      if (res?.tunarr && !res.tunarr.deleted) {
+        addToast(
+          `Channel deleted, but the Tunarr channel could not be removed: ${res.tunarr.message ?? 'unknown error'}`,
+          true,
+        )
+      } else {
+        addToast(
+          res?.tunarr?.deleted ? 'Channel deleted from Linearr and Tunarr' : 'Channel deleted',
+        )
+      }
     },
     onError: (err: Error) => addToast(err.message, true),
   })

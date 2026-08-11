@@ -157,13 +157,7 @@ interface GuideChannel {
   tunarr_id: string
   tunarr_name: string
   tunarr_number: number | null
-  schedule: Array<{
-    startTime: string
-    duration: number
-    type: string
-    title: string
-    episode?: { title?: string; season?: number; episode?: number }
-  }>
+  schedule: TunarrScheduleItem[]
 }
 
 function getGuide(hours = 24): Promise<{ channels: GuideChannel[] }> {

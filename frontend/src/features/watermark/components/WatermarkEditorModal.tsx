@@ -14,13 +14,26 @@ import { WatermarkPreview } from './WatermarkPreview'
 const TITLE_ID = 'watermark-editor-title'
 const ENABLE_HINT_ID = 'watermark-enable-hint'
 
+/** The three things a watermark image can come from. */
+type ImageSource = 'icon' | 'upload' | 'url'
+
+const SOURCE_LABELS: Record<ImageSource, string> = {
+  icon: 'Channel icon',
+  upload: 'Upload a file',
+  url: 'Image URL',
+}
+
+/** Anything ffmpeg can decode as an overlay input. SVG is excluded on purpose. */
+const UPLOAD_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif'
+
 /** Client-side mirror of the backend's Tunarr-derived constraints. */
 function validate(form: Watermark, fadeOn: boolean): Partial<Record<string, string>> {
   const errors: Partial<Record<string, string>> = {}
-  // No image requirement. Leaving the image blank is a valid, useful setup: the
-  // backend omits `url` from the Tunarr payload and Tunarr draws the channel's
-  // own icon. (This used to block enabling, mirroring a backend gate that was
-  // removed once a probe against Tunarr 1.3.10 showed `url` is optional.)
+  // No image check here on purpose, even though an enabled watermark does need
+  // one: only the backend knows whether the channel has an icon to derive it
+  // from, and it does that resolution itself on save. Blocking here would
+  // refuse the ordinary case (icon present, no image applied yet) that the
+  // backend handles fine.
   if (!(form.width > 0)) errors.width = 'Must be greater than 0.'
   if (form.vertical_margin < 0 || form.vertical_margin > 100)
     errors.vertical_margin = 'Must be between 0 and 100.'
@@ -53,6 +66,12 @@ export function WatermarkEditorModal() {
   // Transient: the resolved absolute URL is owned by the backend
   // (watermark_image_url), so this input is only what to send next.
   const [urlInput, setUrlInput] = useState('')
+  // Where the next "Apply image" takes its bytes from. `use_channel_icon` is
+  // persisted (it is what makes the watermark follow later icon changes, via
+  // _refollow_channel_icon_watermark) and is true only for the 'icon' source.
+  const [source, setSource] = useState<ImageSource>('icon')
+  const [upload, setUpload] = useState<{ dataUrl: string; name: string } | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const stored = data?.watermark ?? null
   // Top-level `image_url` first: an image applied before any config was saved
@@ -72,9 +91,15 @@ export function WatermarkEditorModal() {
     }
     if (isLoading || hydrated.current) return
     hydrated.current = true
-    setForm(stored ? { ...DEFAULT_WATERMARK, ...stored } : DEFAULT_WATERMARK)
+    const next = stored ? { ...DEFAULT_WATERMARK, ...stored } : DEFAULT_WATERMARK
+    setForm(next)
     setFadeOn(Boolean(stored?.fade))
     setUrlInput(imageUrl ?? '')
+    setUpload(null)
+    // An upload leaves no trace to hydrate from — the bytes live in Tunarr and
+    // only the resolved URL comes back. A channel whose image was uploaded
+    // therefore reopens on 'url' showing that URL, which is accurate.
+    setSource(next.use_channel_icon ? 'icon' : 'url')
   }, [open, isLoading, stored, imageUrl])
 
   const errors = useMemo(() => validate(form, fadeOn), [form, fadeOn])
@@ -96,9 +121,26 @@ export function WatermarkEditorModal() {
     )
   }
 
-  function handleApplyImage() {
-    setImage.mutate(form.use_channel_icon ? {} : { url: urlInput.trim() })
+  /** Switching source also rewrites `use_channel_icon`, which is persisted. */
+  function pickSource(next: ImageSource) {
+    setSource(next)
+    set('use_channel_icon', next === 'icon')
   }
+
+  function handleFile(file: File | undefined) {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setUpload({ dataUrl: reader.result as string, name: file.name })
+    reader.readAsDataURL(file)
+  }
+
+  function handleApplyImage() {
+    if (source === 'icon') setImage.mutate({})
+    else if (source === 'upload' && upload) setImage.mutate({ image: upload.dataUrl })
+    else if (source === 'url') setImage.mutate({ url: urlInput.trim() })
+  }
+
+  const applyDisabled = (source === 'upload' && !upload) || (source === 'url' && !urlInput.trim())
 
   const checkbox = 'h-4 w-4 accent-indigo-500'
   const checkboxLabel = 'flex items-center gap-2 text-sm text-slate-300'
@@ -117,10 +159,14 @@ export function WatermarkEditorModal() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            {/* No image needed to enable. With none applied the backend omits
-                the url and Tunarr draws the channel's own icon, so the common
-                case — a watermark that just shows the logo — needs no image
-                step at all. */}
+            {/* Tunarr does NOT fall back to the channel logo when the url is
+                absent — it hands the value to ffmpeg as an input, and a missing
+                one is a dangling `-i` that exits 254 and takes the channel off
+                the air entirely. So the backend resolves the channel icon into
+                a real uploaded image on save, and rejects the save outright if
+                there is no icon to derive one from. Saying "Tunarr will use the
+                channel icon" here, as this hint used to, described behaviour
+                that does not exist. */}
             <div className="flex flex-col items-end">
               <label className={checkboxLabel}>
                 <input
@@ -135,9 +181,10 @@ export function WatermarkEditorModal() {
               {!hasImage && (
                 <p
                   id={ENABLE_HINT_ID}
-                  className="mt-0.5 max-w-56 text-right text-[11px] text-slate-500"
+                  className="mt-0.5 max-w-64 text-right text-[11px] text-slate-500"
                 >
-                  No image set — Tunarr will use the channel icon.
+                  No image yet — saving will upload the channel icon. Without an icon the save is
+                  rejected, because a watermark with no image stops the channel playing.
                 </p>
               )}
             </div>
@@ -163,16 +210,57 @@ export function WatermarkEditorModal() {
               <legend className="px-1 text-xs font-semibold tracking-wide text-slate-400 uppercase">
                 Image
               </legend>
-              <label className={checkboxLabel}>
-                <input
-                  type="checkbox"
-                  checked={form.use_channel_icon}
-                  onChange={(e) => set('use_channel_icon', e.target.checked)}
-                  className={checkbox}
-                />
-                Use this channel&rsquo;s icon
-              </label>
-              {!form.use_channel_icon && (
+              <div className="flex flex-wrap gap-1">
+                {(Object.keys(SOURCE_LABELS) as ImageSource[]).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => pickSource(s)}
+                    aria-pressed={source === s}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                      source === s
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {SOURCE_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+
+              {source === 'upload' && (
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept={UPLOAD_ACCEPT}
+                    className="hidden"
+                    onChange={(e) => {
+                      handleFile(e.target.files?.[0])
+                      e.target.value = ''
+                    }}
+                  />
+                  {upload && (
+                    <img
+                      src={upload.dataUrl}
+                      alt=""
+                      className="h-12 w-12 shrink-0 rounded-md border border-slate-700 bg-slate-900 object-contain"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
+                      {upload ? 'Choose a different file' : 'Choose a file…'}
+                    </Button>
+                    {upload && (
+                      <p className="mt-1 truncate text-[11px] text-slate-500" title={upload.name}>
+                        {upload.name}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {source === 'url' && (
                 <Input
                   type="url"
                   value={urlInput}
@@ -181,20 +269,31 @@ export function WatermarkEditorModal() {
                   aria-label="Watermark image URL"
                 />
               )}
+
               <Button
                 size="sm"
                 variant="secondary"
                 loading={setImage.isPending}
-                disabled={!form.use_channel_icon && !urlInput.trim()}
+                disabled={applyDisabled}
                 onClick={handleApplyImage}
               >
-                {form.use_channel_icon ? 'Upload channel icon to Tunarr' : 'Use this URL'}
+                {source === 'icon'
+                  ? 'Upload channel icon to Tunarr'
+                  : source === 'upload'
+                    ? 'Upload this image to Tunarr'
+                    : 'Use this URL'}
               </Button>
               <p className="text-xs text-slate-500">
-                Tunarr fetches the image over HTTP as an ffmpeg input, so it must be hosted at an
-                absolute URL — the channel icon is copied to Tunarr for you. Applying an image saves
-                immediately, separately from the settings below.
+                Tunarr feeds this image to ffmpeg as an input, so it has to be reachable over HTTP —
+                a file you pick here is uploaded to Tunarr for you, as is the channel icon. Applying
+                an image saves immediately, separately from the settings below.
               </p>
+              {source === 'icon' && (
+                <p className="text-xs text-slate-500">
+                  This option keeps following the icon: change the channel&rsquo;s icon later and
+                  the watermark is re-uploaded to match.
+                </p>
+              )}
               {imageUrl && (
                 <p className="truncate font-mono text-[11px] text-emerald-400/80" title={imageUrl}>
                   {imageUrl}

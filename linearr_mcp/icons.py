@@ -62,3 +62,21 @@ def register(reg, api):
             return await api.import_icons_from_tunarr()
         except HTTPException as e:
             raise tool_error(e)
+
+    @reg.tool(name="resync_channel_assets", toolset="icons",
+              idempotent=True, open_world=True)
+    async def resync_channel_assets(channel_number: int | None = None,
+                                    force: bool = False) -> dict:
+        """Re-upload channel icons to Tunarr as real HTTP assets and push them.
+
+        Fixes icons that show up only on the local network. Linearr used to give
+        Tunarr the icon as a `data:` URI, which Tunarr copies into the guide,
+        where remote Plex clients cannot render it. Run this after setting
+        `tunarr_public_url` to convert an existing lineup. Omit
+        `channel_number` for every channel. Idempotent — an unchanged icon
+        short-circuits; `force` re-uploads anyway."""
+        try:
+            return await api.resync_channel_assets(
+                channel_number=channel_number, force=force)
+        except HTTPException as e:
+            raise tool_error(e)
