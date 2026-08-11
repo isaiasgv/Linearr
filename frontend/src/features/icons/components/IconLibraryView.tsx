@@ -23,7 +23,13 @@ import { useUIStore } from '@/shared/store/ui.store'
 import { useToastStore } from '@/shared/store/toast.store'
 import type { SavedIcon } from '../api'
 import { IconEditor } from '../editor/IconEditor'
-import { defaultComposition, newTextLayer, type Composition, type ColorMode } from '../editor/types'
+import {
+  CANVAS_SIZE,
+  defaultComposition,
+  newTextLayer,
+  type Composition,
+  type ColorMode,
+} from '../editor/types'
 import {
   compositionToPngDataUrl,
   applyColorMode,
@@ -166,7 +172,7 @@ export function IconLibraryView() {
         for (const v of COLOR_VARIANTS) {
           const recolored = applyColorMode(composition, v.id)
           const svg = await renderSVGWithFonts(recolored)
-          const blob = await rasterizeToPng(svg, composition.size)
+          const blob = await rasterizeToPng(svg, composition.width, composition.height)
           const dataUrl = await blobToDataUrl(blob)
           await iconsApi.saveIcon({
             name: `${baseName}${v.suffix}`,
@@ -209,7 +215,8 @@ export function IconLibraryView() {
     setComposition({
       layers: [layer],
       background: { type: 'gradient', value: `135|${c1}|${c2}` },
-      size: 512,
+      width: CANVAS_SIZE,
+      height: CANVAS_SIZE,
     })
     setEditorSelectedId(layer.id)
     setIconName(name)
@@ -217,6 +224,7 @@ export function IconLibraryView() {
   }
 
   const [loadingPack, setLoadingPack] = useState(false)
+  const uploadRef = useRef<HTMLInputElement>(null)
 
   async function handleImportClassicsPack() {
     setLoadingPack(true)
@@ -253,22 +261,55 @@ export function IconLibraryView() {
       {/* Header */}
       <div className="shrink-0 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
         <h2 className="text-base font-semibold text-slate-100">Icon Library</h2>
-        <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
-          {(['library', 'editor', 'presets'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                tab === t ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-200'
-              }`}
-            >
-              {t === 'library'
-                ? `Library (${icons.length})`
-                : t === 'editor'
-                  ? 'Create'
-                  : 'Presets'}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          {/* An icon made elsewhere had no way into the library at all — the
+              only routes in were the designer and the Tunarr import. */}
+          <button
+            onClick={() => uploadRef.current?.click()}
+            className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            Upload icon
+          </button>
+          <input
+            ref={uploadRef}
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? [])
+              e.target.value = ''
+              for (const file of files) {
+                const reader = new FileReader()
+                reader.onload = () =>
+                  saveIcon.mutate({
+                    // Filename minus extension: the closest thing to a name the
+                    // user has already chosen.
+                    name: file.name.replace(/\.[^.]+$/, '') || 'Uploaded',
+                    category: file.type === 'image/svg+xml' ? 'svg' : 'png',
+                    data: reader.result as string,
+                  })
+                reader.readAsDataURL(file)
+              }
+            }}
+          />
+          <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
+            {(['library', 'editor', 'presets'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                  tab === t ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-200'
+                }`}
+              >
+                {t === 'library'
+                  ? `Library (${icons.length})`
+                  : t === 'editor'
+                    ? 'Create'
+                    : 'Presets'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

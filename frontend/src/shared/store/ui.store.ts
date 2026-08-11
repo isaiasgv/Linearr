@@ -165,6 +165,7 @@ const defaultModals: Record<ModalName, boolean> = {
   assignCollection: false,
   smartCollectionBuilder: false,
   iconEditor: false,
+  iconGenerator: false,
   iconPicker: false,
   watermarkEditor: false,
   addContent: false,

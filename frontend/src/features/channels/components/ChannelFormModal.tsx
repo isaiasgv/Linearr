@@ -11,6 +11,7 @@ import {
 } from '@/features/channels/presets/networks'
 import { VIBE_TEMPLATES, STYLE_TEMPLATES } from '@/features/channels/presets/templates'
 import { nextAvailableNumber } from '@/features/channels/presets/numbering'
+import { IconGeneratorPanel } from '@/features/icons/components/IconGeneratorPanel'
 
 const TIERS: Channel['tier'][] = ['Galaxy Main', 'Classics', 'Galaxy Premium']
 const MODES = ['Shuffle', 'Flex', 'Sequential']
@@ -159,9 +160,9 @@ function QuickStart({
           <p className="text-[10px] text-slate-500 mb-1.5">
             {filteredPresets.length} preset{filteredPresets.length !== 1 ? 's' : ''}
           </p>
-          <div className="flex flex-col gap-1 max-h-56 overflow-y-auto pr-1">
+          <div className="grid max-h-[52vh] grid-cols-2 gap-1 overflow-y-auto pr-1 xl:grid-cols-3">
             {filteredPresets.length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-4">
+              <p className="col-span-full py-4 text-center text-xs text-slate-500">
                 No presets match. Try a different search or category.
               </p>
             ) : (
@@ -212,7 +213,7 @@ function QuickStart({
             </div>
           )}
           {aiChannels.length > 0 && (
-            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+            <div className="grid max-h-[52vh] grid-cols-1 gap-1.5 overflow-y-auto pr-1 lg:grid-cols-2">
               {aiChannels.map((s, i) => (
                 <button
                   key={`${s.number}-${i}`}
@@ -260,7 +261,7 @@ function QuickStart({
               <p className="text-[10px] text-slate-500 mb-1.5">
                 {suggestions247.length} shows/franchises with enough content for a dedicated channel
               </p>
-              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+              <div className="grid max-h-[52vh] grid-cols-1 gap-1.5 overflow-y-auto pr-1 lg:grid-cols-2">
                 {suggestions247.map((s) => (
                   <button
                     key={s.rating_key}
@@ -337,6 +338,7 @@ export function ChannelFormModal() {
   const [style, setStyle] = useState('')
   const [color, setColor] = useState('')
   const [icon, setIcon] = useState<string | null>(null)
+  const [generatorOpen, setGeneratorOpen] = useState(false)
 
   // Smart channel creation: preset picker + AI suggestions
   const [presetCategory, setPresetCategory] = useState<string>('all')
@@ -370,6 +372,9 @@ export function ChannelFormModal() {
       setStyle(editingChannel?.style ?? '')
       setColor(editingChannel?.color ?? '')
       setIcon(editingChannel?.icon ?? null)
+      // Offered up front for a new channel with no icon — that is the case it
+      // exists for; opening it while editing an existing icon would be noise.
+      setGeneratorOpen(!editingChannel)
       setPresetCategory('all')
       setPresetSearch('')
       setQuickStartMode('collapsed')
@@ -477,10 +482,13 @@ export function ChannelFormModal() {
     (typeof CSS !== 'undefined' && CSS.supports('color', trimmedColor))
 
   return (
+    // Wide, because quick start sits beside the form rather than above it. The
+    // old max-w-lg meant a single-column preset list showing ~4 of 60 rows in a
+    // 224px scroller, so choosing a preset was mostly scrolling.
     <ModalWrapper
       open={open}
       onClose={handleClose}
-      maxWidth="max-w-lg"
+      maxWidth={isEditing ? 'max-w-lg' : 'max-w-5xl'}
       titleId="channel-form-title"
     >
       <form onSubmit={handleSubmit}>
@@ -506,281 +514,324 @@ export function ChannelFormModal() {
           </button>
         </div>
 
-        <div className="px-6 py-4 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
+        {/* Two panes on lg+: quick start on the left at full height, the form on
+            the right. Below lg they stack, quick start first. Each pane scrolls
+            on its own so a long preset list does not push the form off-screen. */}
+        <div
+          className={`max-h-[75vh] overflow-y-auto px-6 py-4 lg:overflow-hidden ${
+            isEditing ? '' : 'lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-5'
+          }`}
+        >
           {/* Quick start — create mode only */}
           {!isEditing && (
-            <QuickStart
-              mode={quickStartMode}
-              setMode={setQuickStartMode}
-              presetSearch={presetSearch}
-              setPresetSearch={setPresetSearch}
-              presetCategory={presetCategory}
-              setPresetCategory={setPresetCategory}
-              filteredPresets={filteredPresets}
-              applyPreset={applyPreset}
-              aiSuggest={aiSuggest}
-              aiChannels={aiChannels}
-              applyAiSuggestion={applyAiSuggestion}
-              suggest247={suggest247}
-              suggestions247={suggestions247}
-              apply247={apply247}
-            />
+            <div className="mb-4 lg:mb-0 lg:max-h-[75vh] lg:overflow-y-auto lg:pr-1">
+              <QuickStart
+                mode={quickStartMode}
+                setMode={setQuickStartMode}
+                presetSearch={presetSearch}
+                setPresetSearch={setPresetSearch}
+                presetCategory={presetCategory}
+                setPresetCategory={setPresetCategory}
+                filteredPresets={filteredPresets}
+                applyPreset={applyPreset}
+                aiSuggest={aiSuggest}
+                aiChannels={aiChannels}
+                applyAiSuggestion={applyAiSuggestion}
+                suggest247={suggest247}
+                suggestions247={suggestions247}
+                apply247={apply247}
+              />
+            </div>
           )}
 
-          {/* Icon */}
-          <div>
-            <label className="block text-xs text-slate-400 mb-1.5">Channel Icon</label>
-            <div className="flex items-center gap-3">
-              {icon ? (
-                <img
-                  src={icon}
-                  alt="Icon"
-                  className="w-16 h-16 rounded-lg border border-slate-700 object-contain bg-slate-900"
-                />
-              ) : (
-                <div className="w-16 h-16 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-500 text-[10px]">
-                  No icon
-                </div>
-              )}
-              <div className="flex flex-wrap gap-1.5 flex-1">
+          <div className="flex flex-col gap-4 lg:max-h-[75vh] lg:overflow-y-auto lg:pr-1">
+            {/* Icon */}
+            <div className="rounded-lg border border-slate-700 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <label className="text-xs text-slate-400">Channel Icon</label>
                 <button
                   type="button"
-                  onClick={() =>
-                    openModal('iconPicker', {
-                      iconPickerCallback: (dataUrl: string) => setIcon(dataUrl),
-                    })
-                  }
-                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-sm"
+                  onClick={() => setGeneratorOpen((v) => !v)}
+                  aria-expanded={generatorOpen}
+                  className="text-xs text-indigo-400 transition-colors hover:text-indigo-300"
                 >
-                  Pick from Library
+                  {generatorOpen ? 'Hide generator' : 'Generate one'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    openModal('iconEditor', {
-                      iconEditorCallback: (dataUrl: string) => setIcon(dataUrl),
-                    })
-                  }
-                  className="px-2.5 py-1 text-xs bg-indigo-700 hover:bg-indigo-600 text-white rounded-sm"
-                >
-                  Create New
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-sm"
-                >
-                  Upload
-                </button>
-                {icon && (
+              </div>
+
+              <div className="flex items-center gap-3">
+                {icon ? (
+                  <img
+                    src={icon}
+                    alt="Icon"
+                    className="h-16 w-16 rounded-lg border border-slate-700 bg-slate-900 object-contain"
+                  />
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-[10px] text-slate-500">
+                    No icon
+                  </div>
+                )}
+                <div className="flex flex-1 flex-wrap gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setIcon(null)}
-                    className="px-2.5 py-1 text-xs bg-red-900/40 hover:bg-red-900/60 border border-red-800/50 text-red-400 rounded-sm"
+                    onClick={() =>
+                      openModal('iconPicker', {
+                        iconPickerCallback: (dataUrl: string) => setIcon(dataUrl),
+                      })
+                    }
+                    className="rounded-sm bg-slate-700 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-600"
                   >
-                    Clear
+                    Pick from Library
                   </button>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (!file) return
-                  const reader = new FileReader()
-                  reader.onload = () => setIcon(reader.result as string)
-                  reader.readAsDataURL(file)
-                  e.target.value = ''
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            {/* Channel Number */}
-            <div>
-              <label htmlFor={ids.number} className="block text-xs text-slate-400 mb-1">
-                Channel Number
-              </label>
-              {/* Editable while editing: the number is the primary key, and the
-                  PUT route renumbers transactionally (cascading to every table
-                  that references it by value), so a direct renumber is allowed
-                  here as an alternative to dragging in the sidebar. */}
-              <input
-                id={ids.number}
-                type="number"
-                value={number}
-                onChange={(e) => {
-                  setNumber(e.target.value)
-                  setNumberTouched(true)
-                }}
-                required
-                min={1}
-                max={9999}
-                aria-describedby={numberChanged ? ids.numberHint : undefined}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-              {numberChanged && (
-                <p id={ids.numberHint} className="mt-1 text-xs text-amber-400">
-                  Renumbering {editingChannel!.number} → {number}. Assignments, blocks, collections
-                  and the Tunarr link follow it.
-                </p>
-              )}
-            </div>
-
-            {/* Color */}
-            <div>
-              <label htmlFor={ids.color} className="block text-xs text-slate-400 mb-1">
-                Color
-              </label>
-              <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openModal('iconEditor', {
+                        iconEditorCallback: (dataUrl: string) => setIcon(dataUrl),
+                      })
+                    }
+                    className="rounded-sm bg-indigo-700 px-2.5 py-1 text-xs text-white hover:bg-indigo-600"
+                  >
+                    Create New
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="rounded-sm bg-slate-700 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-600"
+                  >
+                    Upload
+                  </button>
+                  {icon && (
+                    <button
+                      type="button"
+                      onClick={() => setIcon(null)}
+                      className="rounded-sm border border-red-800/50 bg-red-900/40 px-2.5 py-1 text-xs text-red-400 hover:bg-red-900/60"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
                 <input
-                  id={ids.color}
-                  type="text"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                  placeholder="#hex"
-                  aria-invalid={!colorValid || undefined}
-                  className={`w-full bg-slate-900 border rounded-lg pl-3 pr-9 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                    colorValid ? 'border-slate-600 focus:border-indigo-500' : 'border-red-500'
-                  }`}
-                />
-                <span
-                  aria-hidden="true"
-                  title={colorValid ? color || 'No color' : 'Invalid color'}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm border border-slate-600"
-                  style={{
-                    backgroundColor: colorValid && color.trim() ? color.trim() : 'transparent',
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const reader = new FileReader()
+                    reader.onload = () => setIcon(reader.result as string)
+                    reader.readAsDataURL(file)
+                    e.target.value = ''
                   }}
                 />
               </div>
-              {!colorValid && (
-                <p className="mt-1 text-xs text-red-400">Enter a hex value or CSS color name</p>
+
+              {/* Mounted only while open, so a closed generator costs no font
+                loads or rasterizing on every keystroke in the Name field. */}
+              {generatorOpen && (
+                <div className="mt-3 border-t border-slate-700 pt-3">
+                  <IconGeneratorPanel
+                    channelName={name}
+                    onGenerated={(dataUrl) => {
+                      setIcon(dataUrl)
+                      setGeneratorOpen(false)
+                    }}
+                    onEditInDesigner={(composition) =>
+                      openModal('iconEditor', {
+                        iconEditorComposition: composition,
+                        iconEditorName: name,
+                        iconEditorCallback: (dataUrl: string) => setIcon(dataUrl),
+                      })
+                    }
+                  />
+                </div>
               )}
             </div>
-          </div>
 
-          {/* Name */}
-          <div>
-            <label htmlFor={ids.name} className="block text-xs text-slate-400 mb-1">
-              Name
-            </label>
-            <input
-              id={ids.name}
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
-            />
-          </div>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Channel Number */}
+              <div>
+                <label htmlFor={ids.number} className="block text-xs text-slate-400 mb-1">
+                  Channel Number
+                </label>
+                {/* Editable while editing: the number is the primary key, and the
+                  PUT route renumbers transactionally (cascading to every table
+                  that references it by value), so a direct renumber is allowed
+                  here as an alternative to dragging in the sidebar. */}
+                <input
+                  id={ids.number}
+                  type="number"
+                  value={number}
+                  onChange={(e) => {
+                    setNumber(e.target.value)
+                    setNumberTouched(true)
+                  }}
+                  required
+                  min={1}
+                  max={9999}
+                  aria-describedby={numberChanged ? ids.numberHint : undefined}
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                {numberChanged && (
+                  <p id={ids.numberHint} className="mt-1 text-xs text-amber-400">
+                    Renumbering {editingChannel!.number} → {number}. Assignments, blocks,
+                    collections and the Tunarr link follow it.
+                  </p>
+                )}
+              </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {/* Tier */}
-            <div>
-              <label htmlFor={ids.tier} className="block text-xs text-slate-400 mb-1">
-                Tier
-              </label>
-              <select
-                id={ids.tier}
-                value={tier}
-                onChange={(e) => setTier(e.target.value as Channel['tier'])}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
-              >
-                {TIERS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Mode */}
-            <div>
-              <label htmlFor={ids.mode} className="block text-xs text-slate-400 mb-1">
-                Mode
-              </label>
-              <select
-                id={ids.mode}
-                value={mode}
-                onChange={(e) => setMode(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
-              >
-                {MODES.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Vibe */}
-          <div>
-            <label htmlFor={ids.vibe} className="block text-xs text-slate-400 mb-1">
-              Vibe
-            </label>
-            <input
-              id={ids.vibe}
-              type="text"
-              value={vibe}
-              onChange={(e) => setVibe(e.target.value)}
-              placeholder="e.g. Cozy crime procedurals"
-              list="vibe-templates"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
-            />
-            <datalist id="vibe-templates">
-              {VIBE_TEMPLATES.map((v) => (
-                <option key={v} value={v} />
-              ))}
-            </datalist>
-          </div>
-
-          {/* Style */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label htmlFor={ids.style} className="text-xs text-slate-400">
-                Style
-              </label>
-              <details className="relative">
-                <summary className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer list-none">
-                  Quick templates ▾
-                </summary>
-                <div className="absolute right-0 top-5 z-10 w-72 bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-2 max-h-64 overflow-y-auto">
-                  <div className="flex flex-col gap-1">
-                    {STYLE_TEMPLATES.map((t) => (
-                      <button
-                        key={t.label}
-                        type="button"
-                        onClick={(e) => {
-                          setStyle(t.text)
-                          // close the <details> wrapper
-                          const det =
-                            (e.currentTarget.closest('details') as HTMLDetailsElement) ?? null
-                          if (det) det.open = false
-                        }}
-                        className="text-left px-2 py-1 text-xs hover:bg-slate-800 rounded-sm"
-                        title={t.text}
-                      >
-                        <span className="text-slate-200 font-medium">{t.label}</span>
-                        <p className="text-[11px] text-slate-500 truncate">{t.text}</p>
-                      </button>
-                    ))}
-                  </div>
+              {/* Color */}
+              <div>
+                <label htmlFor={ids.color} className="block text-xs text-slate-400 mb-1">
+                  Color
+                </label>
+                <div className="relative">
+                  <input
+                    id={ids.color}
+                    type="text"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    placeholder="#hex"
+                    aria-invalid={!colorValid || undefined}
+                    className={`w-full bg-slate-900 border rounded-lg pl-3 pr-9 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                      colorValid ? 'border-slate-600 focus:border-indigo-500' : 'border-red-500'
+                    }`}
+                  />
+                  <span
+                    aria-hidden="true"
+                    title={colorValid ? color || 'No color' : 'Invalid color'}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm border border-slate-600"
+                    style={{
+                      backgroundColor: colorValid && color.trim() ? color.trim() : 'transparent',
+                    }}
+                  />
                 </div>
-              </details>
+                {!colorValid && (
+                  <p className="mt-1 text-xs text-red-400">Enter a hex value or CSS color name</p>
+                )}
+              </div>
             </div>
-            <textarea
-              id={ids.style}
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              rows={3}
-              placeholder="Brief channel identity description"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 resize-none"
-            />
+
+            {/* Name */}
+            <div>
+              <label htmlFor={ids.name} className="block text-xs text-slate-400 mb-1">
+                Name
+              </label>
+              <input
+                id={ids.name}
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Tier */}
+              <div>
+                <label htmlFor={ids.tier} className="block text-xs text-slate-400 mb-1">
+                  Tier
+                </label>
+                <select
+                  id={ids.tier}
+                  value={tier}
+                  onChange={(e) => setTier(e.target.value as Channel['tier'])}
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+                >
+                  {TIERS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Mode */}
+              <div>
+                <label htmlFor={ids.mode} className="block text-xs text-slate-400 mb-1">
+                  Mode
+                </label>
+                <select
+                  id={ids.mode}
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+                >
+                  {MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Vibe */}
+            <div>
+              <label htmlFor={ids.vibe} className="block text-xs text-slate-400 mb-1">
+                Vibe
+              </label>
+              <input
+                id={ids.vibe}
+                type="text"
+                value={vibe}
+                onChange={(e) => setVibe(e.target.value)}
+                placeholder="e.g. Cozy crime procedurals"
+                list="vibe-templates"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500"
+              />
+              <datalist id="vibe-templates">
+                {VIBE_TEMPLATES.map((v) => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
+            </div>
+
+            {/* Style */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor={ids.style} className="text-xs text-slate-400">
+                  Style
+                </label>
+                <details className="relative">
+                  <summary className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer list-none">
+                    Quick templates ▾
+                  </summary>
+                  <div className="absolute right-0 top-5 z-10 w-72 bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-2 max-h-64 overflow-y-auto">
+                    <div className="flex flex-col gap-1">
+                      {STYLE_TEMPLATES.map((t) => (
+                        <button
+                          key={t.label}
+                          type="button"
+                          onClick={(e) => {
+                            setStyle(t.text)
+                            // close the <details> wrapper
+                            const det =
+                              (e.currentTarget.closest('details') as HTMLDetailsElement) ?? null
+                            if (det) det.open = false
+                          }}
+                          className="text-left px-2 py-1 text-xs hover:bg-slate-800 rounded-sm"
+                          title={t.text}
+                        >
+                          <span className="text-slate-200 font-medium">{t.label}</span>
+                          <p className="text-[11px] text-slate-500 truncate">{t.text}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              </div>
+              <textarea
+                id={ids.style}
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+                rows={3}
+                placeholder="Brief channel identity description"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus:border-indigo-500 resize-none"
+              />
+            </div>
           </div>
         </div>
 

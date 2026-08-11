@@ -221,6 +221,21 @@ export interface CollectionStatus {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+/**
+ * House style for auto-generated channel icons — a brand line over the channel
+ * line. Mirrors `_ICON_BRAND_DEFAULTS` in `main.py`.
+ */
+export interface IconBrandDefaults {
+  brand_line: string
+  brand_font: string
+  brand_weight: number
+  name_font: string
+  name_weight: number
+  color: string
+  width: number
+  height: number
+}
+
 export interface Settings {
   plex_url: string
   plex_token: string
@@ -238,6 +253,8 @@ export interface Settings {
    * that may be off the network entirely.
    */
   tunarr_public_url: string
+  /** House style for generated channel icons. See `features/icons/generate.ts`. */
+  icon_brand_defaults: IconBrandDefaults
   // Secret presence flags: GET /api/settings returns secrets as empty strings
   // when set, plus these booleans so the UI can show a "configured" placeholder
   // without ever exposing the value. POST preserves the secret if sent empty.
@@ -391,6 +408,7 @@ export type ModalName =
   | 'assignCollection'
   | 'smartCollectionBuilder'
   | 'iconEditor'
+  | 'iconGenerator'
   | 'iconPicker'
   | 'watermarkEditor'
   | 'addContent'

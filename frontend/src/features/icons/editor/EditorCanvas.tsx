@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Composition, Layer, ImageLayer, TextLayer } from './types'
-import { CANVAS_SIZE, autoFitLayers } from './types'
+import { autoFitLayers, measureTextUnitWidth } from './types'
 import { renderSVG } from './render'
 import { ensureFontLoaded } from './fonts'
 
@@ -74,13 +74,22 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
     return () => el.removeEventListener('keydown', handleKeyDown)
   }, [selectedId, composition, onChange])
 
-  // Convert browser pointer coords to SVG coords
+  // The canvas is no longer square, so the preview box is the composition's
+  // aspect ratio fitted inside a fixed 480px stage. Both the SVG viewBoxes and
+  // the pointer maths below key off these.
+  const STAGE = 480
+  const scale = Math.min(STAGE / composition.width, STAGE / composition.height)
+  const boxW = Math.round(composition.width * scale)
+  const boxH = Math.round(composition.height * scale)
+  const viewBox = `0 0 ${composition.width} ${composition.height}`
+
+  // Convert browser pointer coords to composition coords
   const getSvgPoint = (e: React.PointerEvent | PointerEvent): { x: number; y: number } => {
     const svg = svgRef.current
     if (!svg) return { x: 0, y: 0 }
     const rect = svg.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * CANVAS_SIZE
-    const y = ((e.clientY - rect.top) / rect.height) * CANVAS_SIZE
+    const x = ((e.clientX - rect.left) / rect.width) * composition.width
+    const y = ((e.clientY - rect.top) / rect.height) * composition.height
     return { x, y }
   }
 
@@ -144,9 +153,10 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
         rot: selected.rotation,
       }
     } else {
-      // approximate text bbox
+      // Measured text bbox — the same metric auto-fit uses, so the selection
+      // rectangle actually hugs the glyphs instead of the old rough estimate.
       const tl = selected as TextLayer
-      const w = Math.max(80, tl.size * Math.max(2, tl.text.length * 0.6))
+      const w = Math.max(tl.size * 0.5, measureTextUnitWidth(tl) * tl.size)
       const h = tl.size * 1.2 * (tl.text.split('\n').length || 1)
       bbox = { x: tl.x - w / 2, y: tl.y - h / 2, w, h, rot: tl.rotation }
     }
@@ -184,45 +194,46 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
       <div
         ref={wrapperRef}
         className="relative outline-hidden"
-        style={{ width: 480, height: 480 }}
+        style={{ width: boxW, height: boxH }}
         tabIndex={0}
       >
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}`}
-          width={480}
-          height={480}
+          viewBox={viewBox}
+          width={boxW}
+          height={boxH}
           xmlns="http://www.w3.org/2000/svg"
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onClick={(e) => e.stopPropagation()}
           dangerouslySetInnerHTML={{ __html: svgString.replace(/^<svg[^>]*>|<\/svg>$/g, '') }}
         />
-        {/* Edge guide — safe zone indicator */}
+        {/* Edge guide — safe zone indicator. Inset scales with the canvas so it
+            stays a constant visual margin at any size. */}
         <svg
-          viewBox={`0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}`}
-          width={480}
-          height={480}
+          viewBox={viewBox}
+          width={boxW}
+          height={boxH}
           className="absolute inset-0 pointer-events-none"
         >
           <rect
-            x={12}
-            y={12}
-            width={CANVAS_SIZE - 24}
-            height={CANVAS_SIZE - 24}
+            x={composition.width * 0.025}
+            y={composition.height * 0.025}
+            width={composition.width * 0.95}
+            height={composition.height * 0.95}
             fill="none"
             stroke="#334155"
-            strokeWidth={1}
-            strokeDasharray="8 6"
+            strokeWidth={1 / scale}
+            strokeDasharray={`${8 / scale} ${6 / scale}`}
             opacity={0.6}
           />
         </svg>
         {/* Selection overlay */}
         {bbox && selected && (
           <svg
-            viewBox={`0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}`}
-            width={480}
-            height={480}
+            viewBox={viewBox}
+            width={boxW}
+            height={boxH}
             className="absolute inset-0 pointer-events-none"
           >
             <g
@@ -235,17 +246,17 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
                 height={bbox.h}
                 fill="transparent"
                 stroke="#6366f1"
-                strokeWidth={2}
-                strokeDasharray="6 4"
+                strokeWidth={2 / scale}
+                strokeDasharray={`${6 / scale} ${4 / scale}`}
                 style={{ pointerEvents: 'all', cursor: 'move' }}
                 onPointerDown={(e) => handlePointerDownLayer(e, selected, 'move')}
               />
               {selected.kind === 'image' && (
                 <rect
-                  x={bbox.w - 8}
-                  y={bbox.h - 8}
-                  width={16}
-                  height={16}
+                  x={bbox.w - 8 / scale}
+                  y={bbox.h - 8 / scale}
+                  width={16 / scale}
+                  height={16 / scale}
                   fill="#6366f1"
                   style={{ pointerEvents: 'all', cursor: 'nwse-resize' }}
                   onPointerDown={(e) => handlePointerDownLayer(e, selected, 'resize')}
@@ -253,8 +264,8 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
               )}
               <circle
                 cx={bbox.w / 2}
-                cy={-30}
-                r={8}
+                cy={-30 / scale}
+                r={8 / scale}
                 fill="#a855f7"
                 style={{ pointerEvents: 'all', cursor: 'crosshair' }}
                 onPointerDown={(e) => handlePointerDownLayer(e, selected, 'rotate')}
@@ -263,9 +274,9 @@ export function EditorCanvas({ composition, selectedId, onSelect, onChange }: Pr
                 x1={bbox.w / 2}
                 y1={0}
                 x2={bbox.w / 2}
-                y2={-22}
+                y2={-22 / scale}
                 stroke="#a855f7"
-                strokeWidth={2}
+                strokeWidth={2 / scale}
               />
             </g>
           </svg>

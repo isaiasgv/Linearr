@@ -597,6 +597,10 @@ class SettingsIn(BaseModel):
     # Tunarr's own address is not reachable from the clients that read them.
     # Empty means "same as tunarr_url". See `_tunarr_asset_base`.
     tunarr_public_url: str | None = None
+    # House style for generated channel icons. Stored as one JSON blob rather
+    # than eight settings rows — it is read and written as a unit, and the
+    # renderer that consumes it lives entirely in the frontend.
+    icon_brand_defaults: dict | None = None
 
 class TunarrChannelLinkIn(BaseModel):
     channel_number: int
@@ -2291,6 +2295,44 @@ def purge_channel_assignments(channel_number: int, content_type: str = Query("bo
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 
+# House style for generated channel icons: a brand line over the channel line.
+# The values are the Galaxy Network defaults; every one is user-editable. Only
+# the frontend renders from these — the backend just stores and serves them, so
+# it deliberately knows nothing about fonts or canvases beyond these key names.
+_ICON_BRAND_DEFAULTS = {
+    "brand_line": "Galaxy",
+    "brand_font": "Baloo Thambi",
+    "brand_weight": 500,
+    "name_font": "Baloo Thambi 2",
+    "name_weight": 400,
+    "color": "#ffffff",
+    "width": 512,
+    "height": 512,
+}
+
+
+def _icon_brand_defaults(stored: str | None) -> dict:
+    """Stored icon defaults merged over the built-ins.
+
+    Merged rather than replaced so a blob written before a key existed still
+    produces a complete config, and unknown keys are dropped rather than
+    reaching the renderer.
+    """
+    out = dict(_ICON_BRAND_DEFAULTS)
+    if not stored:
+        return out
+    try:
+        parsed = json.loads(stored)
+    except (TypeError, ValueError):
+        return out
+    if not isinstance(parsed, dict):
+        return out
+    for k in _ICON_BRAND_DEFAULTS:
+        if k in parsed and parsed[k] not in (None, ""):
+            out[k] = parsed[k]
+    return out
+
+
 @app.get("/api/settings")
 def get_settings():
     with get_db() as conn:
@@ -2310,6 +2352,7 @@ def get_settings():
         "openai_model": rows.get("openai_model", "gpt-4o-mini"),
         "tunarr_url": rows.get("tunarr_url", "http://tunarr:8000"),
         "tunarr_public_url": rows.get("tunarr_public_url", ""),
+        "icon_brand_defaults": _icon_brand_defaults(rows.get("icon_brand_defaults")),
         "plex_webhook_path": f"/api/plex/webhook?token={webhook_secret}" if webhook_secret else "",
     }
 
@@ -2334,6 +2377,12 @@ def save_settings(body: SettingsIn):
             # reverts asset links to the internal Tunarr URL.
             conn.execute("INSERT OR REPLACE INTO settings VALUES ('tunarr_public_url', ?)",
                          (body.tunarr_public_url.strip().rstrip("/"),))
+        if body.icon_brand_defaults is not None:
+            # Merged through the same reader used on GET, so an unknown key
+            # cannot be persisted and a partial write keeps the other values.
+            merged = _icon_brand_defaults(json.dumps(body.icon_brand_defaults))
+            conn.execute("INSERT OR REPLACE INTO settings VALUES ('icon_brand_defaults', ?)",
+                         (json.dumps(merged),))
     _log_app("settings", "Settings saved")
     return {"ok": True}
 

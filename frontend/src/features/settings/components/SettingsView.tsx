@@ -24,9 +24,11 @@ import { useAiLogs, useClearAiLogs, useAppLogs, useClearAppLogs } from '@/featur
 import { usePlexServerInfo } from '@/features/plex/hooks'
 import { useToastStore } from '@/shared/store/toast.store'
 import { plexApi } from '@/features/plex/api'
-import type { AiLog, AppLog, Settings } from '@/shared/types'
+import type { AiLog, AppLog, IconBrandDefaults, Settings } from '@/shared/types'
+import { FALLBACK_BRAND_DEFAULTS } from '@/features/icons/generate'
+import { IconBrandPanel } from './IconBrandPanel'
 
-type SettingsTab = 'plex' | 'ai' | 'tunarr' | 'logs' | 'system'
+type SettingsTab = 'plex' | 'ai' | 'tunarr' | 'icons' | 'logs' | 'system'
 
 function formatDate(iso: string): string {
   try {
@@ -100,6 +102,7 @@ export function SettingsView() {
 
   const [tunarrUrl, setTunarrUrl] = useState('')
   const [tunarrPublicUrl, setTunarrPublicUrl] = useState('')
+  const [iconBrand, setIconBrand] = useState<IconBrandDefaults>(FALLBACK_BRAND_DEFAULTS)
 
   useEffect(() => {
     if (settings) {
@@ -110,6 +113,7 @@ export function SettingsView() {
       setAiModel(settings.openai_model ?? '')
       setTunarrUrl(settings.tunarr_url ?? '')
       setTunarrPublicUrl(settings.tunarr_public_url ?? '')
+      setIconBrand(settings.icon_brand_defaults ?? FALLBACK_BRAND_DEFAULTS)
     }
   }, [settings])
 
@@ -192,6 +196,7 @@ export function SettingsView() {
       openai_model: aiModel,
       tunarr_url: tunarrUrl,
       tunarr_public_url: tunarrPublicUrl,
+      icon_brand_defaults: iconBrand,
     }
     // Only send secrets when the user actually typed something. The backend
     // preserves the existing secret on an empty value, but omitting it keeps the
@@ -213,6 +218,7 @@ export function SettingsView() {
     { id: 'plex', label: 'Plex' },
     { id: 'ai', label: 'AI' },
     { id: 'tunarr', label: 'Tunarr' },
+    { id: 'icons', label: 'Icons' },
     { id: 'logs', label: 'Logs' },
     { id: 'system', label: 'System' },
   ]
@@ -768,6 +774,9 @@ export function SettingsView() {
                 </div>
               </div>
             )}
+
+            {/* ── Icons ── */}
+            {tab === 'icons' && <IconBrandPanel value={iconBrand} onChange={setIconBrand} />}
 
             {/* ── Logs ── */}
             {tab === 'logs' && <LogsPanelContainer />}

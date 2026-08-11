@@ -40,7 +40,7 @@ export function ExportPanel({ composition, onChange, baseName = 'icon' }: Props)
   const exportPng = async () => {
     const recolored = applyColorMode(composition, exportMode)
     const svg = renderSVG(recolored)
-    const blob = await rasterizeToPng(svg, composition.size)
+    const blob = await rasterizeToPng(svg, composition.width, composition.height)
     downloadBlob(blob, `${baseName}-${exportMode}.png`)
   }
 
