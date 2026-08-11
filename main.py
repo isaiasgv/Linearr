@@ -2302,7 +2302,7 @@ def purge_channel_assignments(channel_number: int, content_type: str = Query("bo
 _ICON_BRAND_DEFAULTS = {
     "brand_line": "Galaxy",
     "brand_font": "Baloo Thambi",
-    "brand_weight": 500,
+    "brand_weight": 400,   # Baloo Thambi ships ONE weight; 500 would be faked
     "name_font": "Baloo Thambi 2",
     "name_weight": 400,
     "color": "#ffffff",
@@ -8447,17 +8447,39 @@ def mcp_regenerate_token():
 
 DIST_DIR = Path("/app/dist")
 
+# Built-output subdirectories served as files rather than falling through to the
+# SPA shell. `fonts/` is here because the editor fonts are self-hosted (the CSP
+# blocks Google Fonts); without it a request for a .woff2 would be answered with
+# index.html and every face would fail to parse — a failure that looks exactly
+# like the CSP bug it was meant to fix.
+_STATIC_PREFIXES = ("assets/", "fonts/")
+
+
+def _dist_file(rel: str) -> Path | None:
+    """Resolve a path under DIST_DIR, or None if it escapes or does not exist.
+
+    The traversal check is on the RESOLVED path: `full_path` arrives from the
+    URL, and `DIST_DIR / "../.."` would otherwise walk out of the served tree.
+    """
+    try:
+        candidate = (DIST_DIR / rel).resolve()
+        candidate.relative_to(DIST_DIR.resolve())
+    except (ValueError, OSError):
+        return None
+    return candidate if candidate.is_file() else None
+
+
 @app.get("/{full_path:path}", include_in_schema=False)
 def spa_fallback(full_path: str = ""):
-    # Serve built static assets (JS, CSS, etc.) directly
-    if full_path.startswith("assets/"):
-        asset = DIST_DIR / full_path
-        if asset.exists():
+    # Serve built static assets (JS, CSS, fonts) directly
+    if full_path.startswith(_STATIC_PREFIXES):
+        asset = _dist_file(full_path)
+        if asset:
             return FileResponse(asset)
     # Serve root-level static files (favicon, manifest, icons, sw.js)
-    if full_path and not "/" in full_path:
-        root_file = DIST_DIR / full_path
-        if root_file.exists() and root_file.is_file():
+    if full_path and "/" not in full_path:
+        root_file = _dist_file(full_path)
+        if root_file:
             return FileResponse(root_file)
     # All other paths → SPA shell
     if INDEX_HTML.exists():

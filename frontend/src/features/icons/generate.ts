@@ -20,7 +20,7 @@ import {
   type Composition,
   type TextLayer,
 } from './editor/types'
-import { ensureFontLoaded } from './editor/fonts'
+import { ensureFontLoaded, nearestWeight } from './editor/fonts'
 
 export interface IconBrandDefaults {
   /** The line above the channel name — a network brand, e.g. "Galaxy". */
@@ -37,19 +37,23 @@ export interface IconBrandDefaults {
 /**
  * Used when the server has not answered yet. Mirrors `_ICON_BRAND_DEFAULTS` in
  * `main.py`; the server's copy is authoritative once loaded.
+ *
+ * `brand_weight` is 400, not 500, because **Baloo Thambi ships exactly one
+ * weight**. Asking for 500 does not fail — the browser synthesizes a faux bold,
+ * which is close enough to look intentional and wrong enough to never match the
+ * design. Baloo Thambi 2 is the variable sibling (400–800) if a heavier brand
+ * line is wanted.
  */
 export const FALLBACK_BRAND_DEFAULTS: IconBrandDefaults = {
   brand_line: 'Galaxy',
   brand_font: 'Baloo Thambi',
-  brand_weight: 500,
+  brand_weight: 400,
   name_font: 'Baloo Thambi 2',
   name_weight: 400,
   color: '#ffffff',
   width: CANVAS_SIZE,
   height: CANVAS_SIZE,
 }
-
-export const ICON_FONT_WEIGHTS = [300, 400, 500, 700, 900] as const
 
 function textLayer(
   text: string,
@@ -111,8 +115,13 @@ export async function generateIconComposition(
   const layers: TextLayer[] = []
   const brand = brandLine.trim()
   const name = channelLine.trim()
-  if (brand) layers.push(textLayer(brand, d.brand_font, d.brand_weight, d.color, height * 0.38))
-  if (name) layers.push(textLayer(name, d.name_font, d.name_weight, d.color, height * 0.62))
+  // Snap to a weight the family actually has. A config stored before the font
+  // registry knew about real weights can still carry an impossible one, and a
+  // synthesized weight is exactly the mismatch this is here to prevent.
+  const brandWeight = nearestWeight(d.brand_font, d.brand_weight)
+  const nameWeight = nearestWeight(d.name_font, d.name_weight)
+  if (brand) layers.push(textLayer(brand, d.brand_font, brandWeight, d.color, height * 0.38))
+  if (name) layers.push(textLayer(name, d.name_font, nameWeight, d.color, height * 0.62))
 
   const comp: Composition = {
     layers,
