@@ -1,3 +1,9 @@
+## [0.0.1-rc.13](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.12...v0.0.1-rc.13) (2026-08-11)
+
+### Bug Fixes
+
+* **fonts,mobile:** self-host the editor fonts, and make the channel view work on a phone ([006e8d3](https://github.com/isaiasgv/Linearr/commit/006e8d34c234d893bbdc06b30e5f52ccde13b189))
+
 ## [0.0.1-rc.12](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.11...v0.0.1-rc.12) (2026-08-11)
 
 ### Features
