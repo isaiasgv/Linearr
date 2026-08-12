@@ -272,8 +272,26 @@ Consequences:
 ## API Routes
 
 ### Auth
-- `POST /api/auth/login` — sets `session` cookie (30-day)
+- `POST /api/auth/login` — body `{username, password, remember=true}`; sets the `session`
+  cookie and returns `{ok, expires_in}`
 - `POST /api/auth/logout`
+
+**Sessions slide.** The token is `<issued>.<max_age>.<nonce>.<HMAC>` and the window runs
+from *last use*, not from login: `auth_middleware` re-issues the cookie on any
+authenticated request once the token is older than `SESSION_REFRESH_AFTER` (1h). A fixed
+window from login expires mid-session, which is what "I keep getting logged out" usually
+is. Two lifetimes — `SESSION_MAX_AGE` (7d) and `SESSION_REMEMBER_MAX_AGE` (90d, the
+default, chosen by the login checkbox).
+
+Three things must stay true, all guarded by `tests/test_session_sliding.py`:
+- **`max_age` is inside the signed message.** It travels in the token so verification
+  knows which window applies; unsigned, anyone could grant themselves an unbounded
+  session by editing one field. `_verify_session_token` also rejects any lifetime the
+  app doesn't itself issue.
+- **The refresh never runs on `/api/auth/logout`.** That response deletes the cookie;
+  re-issuing it there hands it straight back and logout silently does nothing.
+- **Login and the refresh both write through `_set_session_cookie`.** A refresh that
+  dropped `httponly`/`samesite` would weaken every session an hour after it was created.
 
 **The session secret IS the session store.** Cookies are stateless —
 `<issued>.<nonce>.<HMAC>` with nothing kept server-side — so changing the key
