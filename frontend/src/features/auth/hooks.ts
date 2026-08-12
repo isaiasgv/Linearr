@@ -6,8 +6,15 @@ export function useLogin() {
   const { setLoggedIn, setLoginError } = useAuthStore()
 
   return useMutation({
-    mutationFn: ({ username, password }: { username: string; password: string }) =>
-      authApi.login(username, password),
+    mutationFn: ({
+      username,
+      password,
+      remember,
+    }: {
+      username: string
+      password: string
+      remember?: boolean
+    }) => authApi.login(username, password, remember),
     onSuccess: () => setLoggedIn(true),
     onError: (err: Error) => setLoginError(err.message),
   })

@@ -96,35 +96,80 @@ if APP_PASSWORD == _DEFAULT_PASSWORD:
 # Session cookie should be HTTPS-only in production. Default off so first-run LAN/HTTP
 # deployments still work; set COOKIE_SECURE=true once behind a TLS reverse proxy.
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
-SESSION_MAX_AGE = 86400 * 30  # 30 days
+
+# Sessions SLIDE: the window runs from last use, not from login, so an app you
+# open regularly never logs you out. A fixed window from login does, on a
+# schedule that looks arbitrary from the outside — you are working normally and
+# are suddenly at the login screen.
+SESSION_MAX_AGE = 86400 * 7            # 7 days since last use
+SESSION_REMEMBER_MAX_AGE = 86400 * 90  # 90 days, when "keep me signed in" is ticked
+# Re-issue at most once an hour. The cookie only needs refreshing often enough to
+# stay ahead of its own expiry; doing it on every request would rewrite a
+# Set-Cookie header onto every single API response for no benefit.
+SESSION_REFRESH_AFTER = 3600
+_SESSION_MAX_AGES = (SESSION_MAX_AGE, SESSION_REMEMBER_MAX_AGE)
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 
-def _sign_session(issued: int, nonce: str) -> str:
-    msg = f"{APP_USERNAME}:{APP_PASSWORD}:{issued}:{nonce}".encode()
+def _sign_session(issued: int, nonce: str, max_age: int) -> str:
+    # `max_age` is inside the signed message on purpose: it is carried in the
+    # token so verification knows which window applies, and a client that could
+    # edit it could grant itself an unbounded session.
+    msg = f"{APP_USERNAME}:{APP_PASSWORD}:{issued}:{max_age}:{nonce}".encode()
     return hmac.new(_get_app_secret().encode(), msg, hashlib.sha256).hexdigest()
 
-def _make_session_token() -> str:
-    """Issue a fresh, single-use session value: <issued>.<nonce>.<sig>.
-    Bound to the current credentials (changing the password invalidates all sessions)
-    and carries an issued-at timestamp so it expires server-side."""
+def _make_session_token(max_age: int = SESSION_MAX_AGE) -> str:
+    """Issue a session value: `<issued>.<max_age>.<nonce>.<sig>`.
+
+    Bound to the current credentials (changing the password invalidates every
+    session) and carries both an issued-at timestamp and its own lifetime, so a
+    "keep me signed in" cookie outlives an ordinary one without the server
+    keeping any state about which is which.
+    """
     issued = int(time.time())
     nonce = secrets.token_hex(16)
-    return f"{issued}.{nonce}.{_sign_session(issued, nonce)}"
+    return f"{issued}.{max_age}.{nonce}.{_sign_session(issued, nonce, max_age)}"
 
-def _verify_session_token(token: str | None) -> bool:
+def _verify_session_token(token: str | None) -> tuple[int, int] | None:
+    """Return `(issued, max_age)` for a valid token, else None.
+
+    Returning the claims rather than a bool is what lets the middleware slide the
+    window — it needs to know how old the token is and which lifetime it was
+    issued with.
+    """
     if not token:
-        return False
+        return None
     parts = token.split(".")
-    if len(parts) != 3:
-        return False
-    issued_s, nonce, sig = parts
-    if not issued_s.isdigit():
-        return False
-    issued = int(issued_s)
-    if int(time.time()) - issued > SESSION_MAX_AGE:
-        return False
-    return hmac.compare_digest(sig, _sign_session(issued, nonce))
+    if len(parts) != 4:
+        return None
+    issued_s, max_age_s, nonce, sig = parts
+    if not issued_s.isdigit() or not max_age_s.isdigit():
+        return None
+    issued, max_age = int(issued_s), int(max_age_s)
+    # Only the lifetimes this app issues are acceptable. Without this a forged
+    # (or future) token could name any window it liked; the signature check below
+    # already prevents that, so this is belt-and-braces against a token minted
+    # under a different policy surviving a downgrade.
+    if max_age not in _SESSION_MAX_AGES:
+        return None
+    if int(time.time()) - issued > max_age:
+        return None
+    if not hmac.compare_digest(sig, _sign_session(issued, nonce, max_age)):
+        return None
+    return issued, max_age
+
+def _set_session_cookie(response, token: str, max_age: int) -> None:
+    """One place that knows the cookie's attributes.
+
+    Login and the sliding refresh both write it, and they must agree — a refresh
+    that dropped `httponly` or `samesite` would quietly weaken every session
+    an hour after it was created.
+    """
+    response.set_cookie(
+        "session", token, httponly=True, secure=COOKIE_SECURE,
+        samesite="lax", max_age=max_age, path="/",
+    )
+
 
 _PUBLIC_PATHS = {"/", "/api/auth/login", "/api/health", "/docs", "/openapi.json", "/api/plex/webhook"}
 
@@ -585,9 +630,20 @@ async def auth_middleware(request: Request, call_next):
     # where a future route like /api/export/config.json would silently become public.
     if path in _PUBLIC_PATHS or not path.startswith("/api/"):
         return await call_next(request)
-    if not _verify_session_token(request.cookies.get("session")):
+    claims = _verify_session_token(request.cookies.get("session"))
+    if claims is None:
         return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-    return await call_next(request)
+    response = await call_next(request)
+    # Slide the window. Re-issuing on use is what makes the lifetime "since you
+    # last used it" rather than "since you logged in" — without it an active
+    # session still dies on a fixed schedule mid-session.
+    #
+    # Never on logout: that response deletes the cookie, and re-issuing it here
+    # would hand it straight back and make logging out silently fail.
+    issued, max_age = claims
+    if path != "/api/auth/logout" and int(time.time()) - issued >= SESSION_REFRESH_AFTER:
+        _set_session_cookie(response, _make_session_token(max_age), max_age)
+    return response
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
@@ -671,6 +727,10 @@ class AITestIn(BaseModel):
 class LoginIn(BaseModel):
     username: str
     password: str
+    # Defaults true: this is a self-hosted app on your own network, and the
+    # failure people actually hit is being logged out, not a session outliving
+    # its welcome. Unticking it still gives a 7-day sliding window.
+    remember: bool = True
 
 class BlockIn(BaseModel):
     name: str
@@ -792,9 +852,9 @@ def login(body: LoginIn, request: Request):
         raise HTTPException(401, "Invalid credentials")
     log.info("Successful login from %s", ip)
     _log_app("auth", f"User logged in from {ip}")
-    response = JSONResponse({"ok": True})
-    response.set_cookie("session", _make_session_token(), httponly=True, secure=COOKIE_SECURE,
-                        samesite="lax", max_age=SESSION_MAX_AGE)
+    max_age = SESSION_REMEMBER_MAX_AGE if body.remember else SESSION_MAX_AGE
+    response = JSONResponse({"ok": True, "expires_in": max_age})
+    _set_session_cookie(response, _make_session_token(max_age), max_age)
     return response
 
 @app.post("/api/auth/logout")
