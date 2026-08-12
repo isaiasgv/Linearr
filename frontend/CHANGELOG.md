@@ -1,3 +1,9 @@
+## [0.0.1-rc.16](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.15...v0.0.1-rc.16) (2026-08-12)
+
+### Features
+
+* **auth:** sliding sessions, and a "keep me signed in" choice ([08caa5e](https://github.com/isaiasgv/Linearr/commit/08caa5e78524eb08d078fcd527491258be713d7a))
+
 ## [0.0.1-rc.15](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.14...v0.0.1-rc.15) (2026-08-11)
 
 ### Bug Fixes
