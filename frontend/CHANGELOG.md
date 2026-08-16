@@ -1,3 +1,9 @@
+## [0.0.1-rc.17](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.16...v0.0.1-rc.17) (2026-08-16)
+
+### Bug Fixes
+
+* **icons:** exported icons rendered in a substitute font ([5007dba](https://github.com/isaiasgv/Linearr/commit/5007dba6910bf01f7595e7ebedccdae420a8b780))
+
 ## [0.0.1-rc.16](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.15...v0.0.1-rc.16) (2026-08-12)
 
 ### Features
