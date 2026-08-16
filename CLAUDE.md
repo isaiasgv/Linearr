@@ -168,6 +168,19 @@ Three things that must stay true:
 required, not an optimisation: `rasterizeToPng` draws through an `<img>`, and an
 SVG loaded that way resolves no external references at all.
 
+**The inlined faces must carry `unicode-range`.** Each family ships as two
+disjoint subsets and **`latin-ext` contains no basic Latin** — verified with
+fontTools against the shipped files: no `A`, no `a`, no `G`. Two `@font-face`
+rules with the same family/style/weight and no range are a plain override, so
+latin-ext wins for *every* character and the export asks a face with no `G` to
+render "Galaxy". The browser substitutes silently — the preview looks perfect
+because `fonts.css` declares the ranges. Guarded by
+`tests/test_icon_font_export.py` (static assertions; there is no JS test runner).
+
+`renderTextLayer` uses **one** family string for preview and export. It used to
+emit the bare face name when embedding and the full CSS stack otherwise, which
+let the two resolve differently with only the export wrong.
+
 ### Path alias
 `@/` maps to `frontend/src/` (configured in `vite.config.ts`). Use `@/shared/...` and `@/features/...`.
 
