@@ -83,11 +83,15 @@ function renderBackground(comp: Composition): string {
   return ''
 }
 
-function renderTextLayer(layer: TextLayer, embedMode = false): string {
+function renderTextLayer(layer: TextLayer): string {
   if (layer.visible === false) return ''
-  // When embedding fonts in SVG for export, use the exact Google Font name
-  // (matches the @font-face declaration). For DOM rendering, use the full CSS family.
-  const family = embedMode ? `'${layer.font}'` : familyFor(layer.font)
+  // The SAME family string in both paths — preview and export. The export used
+  // to emit the bare face name while the preview used the full CSS stack, which
+  // meant the two could resolve differently and only the export would be wrong.
+  // The inlined @font-face declares exactly this family's first entry, so it is
+  // still preferred; what the fallbacks buy is that a missing glyph degrades
+  // identically on screen and on disk instead of only in the exported file.
+  const family = familyFor(layer.font)
   const lines = layer.text.split('\n')
   const lineHeight = layer.size * 1.1
   const totalHeight = lines.length * lineHeight
@@ -144,9 +148,8 @@ function renderImageLayer(layer: ImageLayer, idx: number): string {
 }
 
 export function renderSVG(comp: Composition, embeddedFontCSS?: string): string {
-  const embed = Boolean(embeddedFontCSS)
   const layers = comp.layers
-    .map((l, i) => (l.kind === 'text' ? renderTextLayer(l, embed) : renderImageLayer(l, i)))
+    .map((l, i) => (l.kind === 'text' ? renderTextLayer(l) : renderImageLayer(l, i)))
     .join('')
   const fontStyle = embeddedFontCSS ? `<defs><style>${embeddedFontCSS}</style></defs>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${comp.width}" height="${comp.height}" viewBox="0 0 ${comp.width} ${comp.height}">${fontStyle}${renderBackground(comp)}${layers}</svg>`

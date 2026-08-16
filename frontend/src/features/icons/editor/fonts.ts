@@ -107,11 +107,41 @@ export function familyFor(fontName: string): string {
  * succeeded and every font 404'd at runtime. Absolute paths cannot drift that
  * way. The same paths back the CSS in `src/fonts.css`; keep the two in step.
  */
-const FONT_FILES: Record<string, string[]> = {
-  Inter: ['/fonts/inter-latin.woff2', '/fonts/inter-latin-ext.woff2'],
-  'Bebas Neue': ['/fonts/bebas-neue-latin.woff2', '/fonts/bebas-neue-latin-ext.woff2'],
-  'Baloo Thambi': ['/fonts/baloo-thambi-latin.woff2', '/fonts/baloo-thambi-latin-ext.woff2'],
-  'Baloo Thambi 2': ['/fonts/baloo-thambi-2-latin.woff2', '/fonts/baloo-thambi-2-latin-ext.woff2'],
+/**
+ * The unicode-range for each subset, copied from `src/fonts.css`.
+ *
+ * These are NOT decoration and must never be dropped when inlining. The two
+ * subsets are disjoint: `latin-ext` contains no basic Latin at all — verified
+ * against the shipped files, it has no `A`, no `a`, no `G`. Two `@font-face`
+ * rules with the same family/style/weight and no `unicode-range` are a plain
+ * override, so the later one (latin-ext) would win for *every* character and
+ * the exported text would be rendered by a face with none of its glyphs.
+ */
+const LATIN_RANGE =
+  'U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,' +
+  'U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD'
+const LATIN_EXT_RANGE =
+  'U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,' +
+  'U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,' +
+  'U+2C60-2C7F,U+A720-A7FF'
+
+interface FontSubset {
+  url: string
+  unicodeRange: string
+}
+
+function subsets(slug: string): FontSubset[] {
+  return [
+    { url: `/fonts/${slug}-latin.woff2`, unicodeRange: LATIN_RANGE },
+    { url: `/fonts/${slug}-latin-ext.woff2`, unicodeRange: LATIN_EXT_RANGE },
+  ]
+}
+
+const FONT_FILES: Record<string, FontSubset[]> = {
+  Inter: subsets('inter'),
+  'Bebas Neue': subsets('bebas-neue'),
+  'Baloo Thambi': subsets('baloo-thambi'),
+  'Baloo Thambi 2': subsets('baloo-thambi-2'),
 }
 
 const fontDataCache = new Map<string, string | null>()
@@ -155,13 +185,17 @@ export async function getEmbeddableFontFace(fontName: string): Promise<string | 
 
   try {
     const blocks: string[] = []
-    for (const url of files) {
+    for (const { url, unicodeRange } of files) {
       const res = await fetch(url)
       if (!res.ok) continue
       const b64 = toBase64(await res.arrayBuffer())
+      // `unicode-range` is what keeps the two subsets from overriding each
+      // other — see the note on LATIN_RANGE. Dropping it is not a cosmetic
+      // regression: the export silently renders in a substitute font.
       blocks.push(
         `@font-face{font-family:'${fontName}';font-style:normal;` +
-          `font-weight:${range};src:url(data:font/woff2;base64,${b64}) format('woff2');}`,
+          `font-weight:${range};unicode-range:${unicodeRange};` +
+          `src:url(data:font/woff2;base64,${b64}) format('woff2');}`,
       )
     }
     const result = blocks.length > 0 ? blocks.join('\n') : null
