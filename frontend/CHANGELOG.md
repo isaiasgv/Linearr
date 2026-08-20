@@ -1,3 +1,9 @@
+## [0.0.1-rc.18](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.17...v0.0.1-rc.18) (2026-08-20)
+
+### Bug Fixes
+
+* **auth,collections:** an expired Plex token was logging you out of Linearr ([22e51d9](https://github.com/isaiasgv/Linearr/commit/22e51d9a91a28515b94b4ec2a53611f5b3577acb))
+
 ## [0.0.1-rc.17](https://github.com/isaiasgv/Linearr/compare/v0.0.1-rc.16...v0.0.1-rc.17) (2026-08-16)
 
 ### Bug Fixes
