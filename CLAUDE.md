@@ -405,7 +405,26 @@ Settings keys: `plex_device_privkey` (PEM), `plex_device_kid`, `plex_auth_mode`,
 
 ### Collections
 - `GET /api/collections/status/{channel_number}`
-- `POST /api/collections/generate/{channel_number}`
+- `POST /api/collections/generate/{channel_number}[?take_over_assigned=]`
+
+**The two types are independent, and an emptied type empties its collection.**
+Both were bugs. Generating used to force *both* slots to `owned`, so a channel
+referencing an existing collection for movies while Linearr generated its shows
+lost the assignment on the next build — `take_over_assigned=true` is now the
+explicit opt-in for that conversion. And a type with no assignments used to be
+skipped outright, which left removed items in the Plex collection (and therefore
+on the Tunarr channel) forever; it is now only skipped when there is also no
+managed collection to maintain, and never *creates* one just to empty it.
+Guarded by `tests/test_collection_sync.py`.
+
+**A 401 from Linearr must only ever mean "your session is invalid."** The
+frontend turns any 401 into a logout, so `_upstream_status` maps upstream
+(Plex/Tunarr) 401/403 to **502** — forwarding Plex's 401 verbatim logged people
+out of Linearr whenever the *Plex* token expired, on the ~7-day JWT cadence, and
+that survived two unrelated session fixes. Every other upstream status passes
+through unchanged. `/api/auth/session` is public, never 401s, and is the second
+opinion `client.ts` asks for before tearing down to the login screen. Guarded by
+`tests/test_upstream_auth_isolation.py`.
 - `GET /api/channel-collections/{channel_number}`
 - `POST /api/channel-collections/{channel_number}`
 - `DELETE /api/channel-collections/{channel_number}/{plex_type}`

@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { confirmDialog } from '@/shared/components/ui'
 import { useToastStore } from '@/shared/store/toast.store'
 import type {
   ChannelCollection,
@@ -32,14 +31,13 @@ export function useChannelCollections(channelNumber: number) {
 }
 
 /**
- * "Build/update this channel's own Plex collections", with the switch-back
- * confirmation attached.
+ * "Build/update this channel's own Plex collections."
  *
- * Generating resolves its target purely by the owned name ("{Channel} Movies" /
- * "{Channel} TV"), so a channel currently pointing at an assigned collection
- * silently switches back to Linearr's own. That has to be said out loud before
- * it happens — and it has to be said the same way from every entry point, which
- * is why the confirmation lives here rather than in one screen's handler.
+ * The two types are independent: a slot referencing an existing collection is
+ * left alone and reported as skipped, so a channel can keep an assigned movie
+ * collection while Linearr generates its shows. Building used to convert BOTH
+ * slots to owned, which made that mixed setup impossible to hold — one build
+ * discarded the assignment — so there is no longer a switch-back to warn about.
  *
  * `isPending` is exposed so callers can disable their control while it runs.
  */
@@ -48,22 +46,8 @@ export function useBuildChannelCollections() {
 
   async function build(
     channelNumber: number,
-    collections?: { movie?: ChannelCollection; show?: ChannelCollection },
+    _collections?: { movie?: ChannelCollection; show?: ChannelCollection },
   ): Promise<void> {
-    const switching = [collections?.movie, collections?.show].filter(
-      (c): c is ChannelCollection => c?.source === 'assigned',
-    )
-    if (switching.length > 0) {
-      const names = switching.map((c) => `“${c.collection_title}”`).join(' and ')
-      const confirmed = await confirmDialog({
-        title: 'Switch back to Linearr’s own collections?',
-        text: `This channel currently uses ${names} by reference. Building rebuilds “{Channel} Movies/TV” from the assigned items and makes that the active source again. ${
-          switching.length > 1 ? 'Those collections' : 'That collection'
-        } stays in Plex, untouched.`,
-        confirmText: 'Build collections',
-      })
-      if (!confirmed) return
-    }
     generate.mutate(channelNumber)
   }
 
@@ -78,9 +62,23 @@ export function useGenerateCollections() {
     mutationFn: (channelNumber: number) => collectionsApi.generateCollections(channelNumber),
     onSuccess: (data, channelNumber) => {
       invalidateCollections(queryClient, channelNumber)
+      // Removals are reported explicitly. "N added" alone gave no sign that a
+      // removal had happened — or, when the type was being skipped, that it
+      // had not — which is what made this look like it wasn't working.
       const parts: string[] = []
-      if (data.movie) parts.push(`Movies: ${data.movie.added} added, ${data.movie.total} total`)
-      if (data.show) parts.push(`Shows: ${data.show.added} added, ${data.show.total} total`)
+      for (const [label, entry] of [
+        ['Movies', data.movie],
+        ['Shows', data.show],
+      ] as const) {
+        if (!entry) continue
+        if (entry.skipped) {
+          parts.push(`${label}: skipped`)
+          continue
+        }
+        const bits = [`${entry.added} added`]
+        if (entry.removed) bits.push(`${entry.removed} removed`)
+        parts.push(`${label}: ${bits.join(', ')}, ${entry.total} total`)
+      }
       addToast(parts.length > 0 ? parts.join(' | ') : 'Collections generated')
     },
     onError: (error: Error) => {

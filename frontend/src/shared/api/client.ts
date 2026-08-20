@@ -11,6 +11,23 @@ function isAiPath(path: string): boolean {
   )
 }
 
+/**
+ * Ask the server whether the session is genuinely gone.
+ *
+ * `/api/auth/session` is public and never 401s, so this cannot recurse. On any
+ * network failure it answers "not gone" — a transient blip must not log
+ * somebody out.
+ */
+async function sessionIsGone(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/auth/session')
+    if (!res.ok) return false
+    return (await res.json()).authenticated === false
+  } catch {
+    return false
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController()
   const timeout = isAiPath(path) ? AI_TIMEOUT : REQUEST_TIMEOUT
@@ -24,6 +41,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     })
 
     if (res.status === 401) {
+      // Confirm before tearing the app down. A 401 used to mean "session gone"
+      // unconditionally, so a single unrelated 401 dropped you at the login
+      // screen with a perfectly valid session — which is precisely what an
+      // expired PLEX token did, because those routes forwarded Plex's 401
+      // verbatim. The server no longer does that (see `_upstream_status`), and
+      // asking `/api/auth/session` for a second opinion makes the UI robust to
+      // any future route that gets it wrong.
+      if (!(await sessionIsGone())) throw new Error('Request was not authorized')
       window.dispatchEvent(new CustomEvent('session-expired'))
       throw new Error('Session expired')
     }
