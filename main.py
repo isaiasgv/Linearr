@@ -158,6 +158,39 @@ def _verify_session_token(token: str | None) -> tuple[int, int] | None:
         return None
     return issued, max_age
 
+def _upstream_status(code: int) -> int:
+    """Map an upstream (Plex/Tunarr) status onto one safe to return to the browser.
+
+    **A 401 from Linearr means exactly one thing to the frontend: your session is
+    invalid.** `shared/api/client.ts` turns any 401 into a `session-expired`
+    event, which drops you at the login screen. So forwarding an upstream 401
+    verbatim logs you out of Linearr because *Plex's* token expired — a
+    completely different problem with a completely different fix.
+
+    Plex JWT tokens last about 7 days, so this fired on roughly that cadence and
+    looked exactly like a session bug. It is why "I keep getting logged out"
+    survived a persisted session secret AND sliding sessions: neither had
+    anything to do with it.
+
+    401/403 become 502 (the upstream refused us), which the UI surfaces as an
+    ordinary error. Every other status is meaningful and passes through — a 404
+    from Plex really does mean the item is gone.
+    """
+    if code in (401, 403):
+        # Logged loudly because the symptom is otherwise unattributable: calls
+        # start failing and nothing says the stored credential is the reason.
+        _log_app(
+            "auth",
+            "An upstream service rejected our credentials "
+            f"(HTTP {code}). The stored Plex or Tunarr token is most likely "
+            "expired — reconnect it in Settings. This does NOT affect your "
+            "Linearr sign-in.",
+            level="warn",
+        )
+        return 502
+    return code
+
+
 def _set_session_cookie(response, token: str, max_age: int) -> None:
     """One place that knows the cookie's attributes.
 
@@ -171,7 +204,8 @@ def _set_session_cookie(response, token: str, max_age: int) -> None:
     )
 
 
-_PUBLIC_PATHS = {"/", "/api/auth/login", "/api/health", "/docs", "/openapi.json", "/api/plex/webhook"}
+_PUBLIC_PATHS = {"/", "/api/auth/login", "/api/auth/session", "/api/health", "/docs",
+                 "/openapi.json", "/api/plex/webhook"}
 
 # ── Rate limiting (login) ────────────────────────────────────────────────────
 _login_attempts: dict[str, list[float]] = defaultdict(list)
@@ -856,6 +890,33 @@ def login(body: LoginIn, request: Request):
     response = JSONResponse({"ok": True, "expires_in": max_age})
     _set_session_cookie(response, _make_session_token(max_age), max_age)
     return response
+
+@app.get("/api/auth/session")
+def session_status(request: Request):
+    """Whether the caller's Linearr session is valid, and for how much longer.
+
+    **Public on purpose, and never returns 401.** It is the second opinion the
+    client asks for before tearing down to the login screen: a 401 from any
+    single endpoint used to be treated as "your session is gone", so one
+    unrelated failure logged you out of a perfectly good session. Something that
+    answers "is my session actually dead?" must not be able to 401 and become
+    part of the problem it diagnoses.
+    """
+    claims = _verify_session_token(request.cookies.get("session"))
+    if claims is None:
+        return {"authenticated": False}
+    issued, max_age = claims
+    now = int(time.time())
+    return {
+        "authenticated": True,
+        "issued_at": issued,
+        "expires_at": issued + max_age,
+        "seconds_remaining": max(0, issued + max_age - now),
+        "max_age": max_age,
+        "remember": max_age == SESSION_REMEMBER_MAX_AGE,
+        "server_time": now,
+    }
+
 
 @app.post("/api/auth/logout")
 def logout():
@@ -2759,7 +2820,7 @@ async def plex_libraries():
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{url}/library/sections", headers=plex_headers(token))
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     data = resp.json()
     dirs = data.get("MediaContainer", {}).get("Directory", [])
     return [{"id": d["key"], "title": d["title"], "type": d["type"]} for d in dirs
@@ -2786,7 +2847,7 @@ async def plex_library(section_id: str, type_filter: str = Query("all"),
             params=params,
         )
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", [])
     return _format_items(items, type_filter)
 
@@ -2865,7 +2926,7 @@ async def plex_item(rating_key: str):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{url}/library/metadata/{rating_key}", headers=hdrs)
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     meta = resp.json().get("MediaContainer", {}).get("Metadata", [])
     if not meta:
         raise HTTPException(404, "Item not found")
@@ -2964,7 +3025,7 @@ async def plex_show_seasons(rating_key: str):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{url}/library/metadata/{rating_key}/children", headers=hdrs)
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
     return [
         {"rating_key": s.get("ratingKey"), "title": s.get("title"),
@@ -2981,7 +3042,7 @@ async def plex_season_episodes(rating_key: str):
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.get(f"{url}/library/metadata/{rating_key}/children", headers=hdrs)
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
     return [
         {
@@ -3005,7 +3066,7 @@ async def plex_collection_items(rating_key: str):
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(f"{url}/library/collections/{rating_key}/children", headers=hdrs)
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
     return _format_items(items, "all")
 
@@ -3630,17 +3691,25 @@ def _collection_delta(desired: set[str], current: set[str], already_managed: boo
 
 
 @app.post("/api/collections/generate/{channel_number}")
-async def generate_collections(channel_number: int):
+async def generate_collections(channel_number: int, take_over_assigned: bool = Query(False)):
     """Create or update Plex collections for a channel's assigned movies and shows.
 
     Linearr manages ONLY its own '{Channel} Movies' / '{Channel} TV' collections,
     resolved by name — never a user-linked collection. First touch of any
     collection is additive-only, so a user's own collection can never be pruned.
 
-    If a type's slot currently holds an ASSIGNED collection (source='assigned'),
-    generating switches that slot back to 'owned'. That is a DB-slot change
-    only: the assigned collection is never read, added to, or pruned, because
-    the target is still resolved purely by owned name.
+    **The two types are independent.** A channel may legitimately reference an
+    existing collection for its movies while Linearr generates its shows, so a
+    slot holding an ASSIGNED collection is left alone here and reported as
+    skipped. Rebuilding used to force BOTH slots back to 'owned', which made
+    that mixed setup impossible to keep — one build silently discarded the
+    assignment. `take_over_assigned=true` is the explicit opt-in to convert.
+
+    **An emptied type empties its collection.** A type with no assignments is
+    only skipped when there is also no managed collection to maintain; if
+    Linearr owns one, removing the last movie from the channel removes the last
+    movie from the collection. Skipping outright is what left deleted items
+    sitting in Plex (and therefore in Tunarr) indefinitely.
     """
     url, token = get_plex_config()
     if not token:
@@ -3652,8 +3721,19 @@ async def generate_collections(channel_number: int):
             "SELECT plex_rating_key, plex_type FROM assignments WHERE channel_number=?",
             (channel_number,)
         ).fetchall()
+        slots = {
+            r["plex_type"]: dict(r)
+            for r in conn.execute(
+                "SELECT plex_type, source, managed, linearr_created "
+                "FROM channel_collections WHERE channel_number=?",
+                (channel_number,),
+            ).fetchall()
+        }
 
-    if not rows:
+    # No assignments AND nothing already managed means there is genuinely
+    # nothing to do. With a managed collection present, zero assignments is a
+    # real instruction — empty it.
+    if not rows and not any(s.get("managed") for s in slots.values()):
         raise HTTPException(404, "No assignments for this channel")
 
     # Find channel name
@@ -3691,7 +3771,26 @@ async def generate_collections(channel_number: int):
             ("movie", movie_keys, movie_section, 1),
             ("show",  show_keys,  show_section,  2),
         ]:
-            if not keys:
+            slot = slots.get(plex_type) or {}
+
+            # Leave a referenced collection alone. Building the OTHER type must
+            # not quietly convert this one — see the docstring.
+            if slot.get("source") == "assigned" and not take_over_assigned:
+                log.info("generate_collections ch %s: %s slot is assigned — leaving it",
+                         channel_number, plex_type)
+                result[plex_type] = {
+                    "name": None, "created": False, "added": 0, "removed": 0,
+                    "total": len(set(keys)),
+                    "skipped": "This type references an existing collection. Unassign it "
+                               "first (or pass take_over_assigned) to have Linearr "
+                               "generate it instead.",
+                }
+                continue
+
+            # Nothing assigned and nothing owned to maintain — don't create an
+            # empty collection out of nowhere. But if Linearr already manages
+            # one, fall through with an empty desired set so it gets emptied.
+            if not keys and not slot.get("managed"):
                 log.info("generate_collections ch %s: no %s assignments — skipping",
                          channel_number, plex_type)
                 continue
@@ -3721,6 +3820,15 @@ async def generate_collections(channel_number: int):
                 # Defensive: never manage a collection whose title isn't ours.
                 if not _is_owned_title(existing.get("title", ""), ch_name):
                     raise HTTPException(500, f"Refusing to manage non-owned collection: {existing.get('title')}")
+            elif not keys:
+                # Emptied down to nothing and Plex has already dropped the
+                # collection (it deletes them at zero items). Creating one here
+                # just to empty it would be absurd.
+                log.info("generate_collections ch %s: %s emptied and no collection "
+                         "remains in Plex — nothing to do", channel_number, plex_type)
+                result[plex_type] = {"name": coll_name, "created": False, "added": 0,
+                                     "removed": 0, "total": 0}
+                continue
             else:
                 create_resp = await client.post(
                     f"{url}/library/collections",
@@ -3964,7 +4072,7 @@ async def plex_thumb(path: str = Query(...), w: int = Query(240), h: int = Query
             # Some art paths don't transcode — fall back to the raw image.
             resp = await client.get(f"{url}{path}", headers=plex_headers(token))
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex thumb error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex thumb error")
     content_type = resp.headers.get("content-type", "image/jpeg")
     _thumb_cache_put(cache_key, content_type, resp.content)
     return Response(content=resp.content, media_type=content_type, headers=_THUMB_HEADERS)
@@ -4063,7 +4171,7 @@ async def plex_scan_library(section_id: str):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{url}/library/sections/{section_id}/refresh", headers=hdrs)
     if resp.status_code not in (200, 202):
-        raise HTTPException(resp.status_code, "Failed to trigger library scan")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to trigger library scan")
     _log_app("plex", f"Triggered Plex library scan for section {section_id}", metadata={"section_id": section_id})
     return {"ok": True, "message": f"Library scan triggered for section {section_id}"}
 
@@ -4085,7 +4193,7 @@ async def plex_rate_item(rating_key: str, body: PlexRateIn):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.put(f"{url}/:/rate", headers=hdrs, params=params)
     if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code, "Failed to set rating")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to set rating")
     _log_app("plex", f"Rated item {rating_key}: {body.rating}", metadata={"rating_key": rating_key, "rating": body.rating})
     return {"ok": True}
 
@@ -4253,7 +4361,7 @@ async def plex_create_collection(request: Request):
             params={"type": plex_type, "title": title, "smart": "0", "sectionId": section_id},
         )
     if resp.status_code not in (200, 201):
-        raise HTTPException(resp.status_code, f"Plex error: {resp.text[:200]}")
+        raise HTTPException(_upstream_status(resp.status_code), f"Plex error: {resp.text[:200]}")
     coll = (resp.json().get("MediaContainer", {}).get("Metadata", [{}]) or [{}])[0]
     _log_app("collection", f"Created Plex collection '{title}'",
              metadata={"rating_key": coll.get("ratingKey"), "title": title, "type": collection_type, "section_id": section_id})
@@ -4274,7 +4382,7 @@ async def plex_delete_collection(rating_key: str):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.delete(f"{url}/library/collections/{rating_key}", headers=hdrs)
     if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code, "Failed to delete collection")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to delete collection")
     # Clean up any channel_collections references
     with get_db() as conn:
         conn.execute("DELETE FROM channel_collections WHERE collection_rating_key=?", (rating_key,))
@@ -4326,7 +4434,7 @@ async def plex_remove_collection_item(rating_key: str, item_key: str):
             headers=hdrs,
         )
     if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code, "Failed to remove item")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to remove item")
     _log_app("collection", f"Removed item {item_key} from collection {rating_key}",
              metadata={"collection": rating_key, "item_key": item_key})
     return {"ok": True}
@@ -4349,7 +4457,7 @@ async def plex_update_collection(rating_key: str, request: Request):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.put(f"{url}/library/metadata/{rating_key}", headers=hdrs, params=params)
     if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code, "Failed to update collection")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to update collection")
     _log_app("collection", f"Updated Plex collection {rating_key}",
              metadata={"rating_key": rating_key, "fields": [k.split(".")[0] for k in params]})
     return {"ok": True}
@@ -4469,7 +4577,7 @@ async def plex_create_smart_collection(body: SmartCollectionIn):
                     "smart": "1", "sectionId": body.section_id, "uri": uri},
         )
     if resp.status_code not in (200, 201):
-        raise HTTPException(resp.status_code, f"Plex error: {resp.text[:200]}")
+        raise HTTPException(_upstream_status(resp.status_code), f"Plex error: {resp.text[:200]}")
     coll = (resp.json().get("MediaContainer", {}).get("Metadata", [{}]) or [{}])[0]
     _log_app("collection", f"Created smart collection '{body.title}'",
              metadata={"section_id": body.section_id, "type": body.type})
@@ -4583,13 +4691,13 @@ async def plex_update_smart_collection(rating_key: str, body: SmartCollectionUpd
             r = await client.put(f"{url}/library/collections/{rating_key}/items",
                                  headers=hdrs, params={"uri": uri})
             if r.status_code not in (200, 201, 204):
-                raise HTTPException(r.status_code, f"Failed to update filters: {r.text[:200]}")
+                raise HTTPException(_upstream_status(r.status_code), f"Failed to update filters: {r.text[:200]}")
             updated.append("filters")
         if body.title:
             r = await client.put(f"{url}/library/metadata/{rating_key}",
                                  headers=hdrs, params={"title.value": body.title})
             if r.status_code not in (200, 204):
-                raise HTTPException(r.status_code, "Failed to update title")
+                raise HTTPException(_upstream_status(r.status_code), "Failed to update title")
             updated.append("title")
     if not updated:
         raise HTTPException(400, "Nothing to update — provide filters and/or title")
@@ -6334,7 +6442,7 @@ async def tunarr_stream(tunarr_id: str):
         log.warning("Tunarr stream proxy failed for %s: %s", tunarr_id, e)
         raise HTTPException(502, f"Could not start the Tunarr stream: {e}")
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code,
+        raise HTTPException(_upstream_status(resp.status_code),
                             f"Tunarr stream error: {resp.text[:200]}")
     body = _rewrite_hls_playlist(resp.text, url.rstrip("/"))
     _log_app("tunarr", f"Started stream proxy for Tunarr channel {tunarr_id}",
@@ -6426,7 +6534,7 @@ async def tunarr_image(path: str = Query(...)):
         log.warning("Tunarr image proxy failed for %s: %s", path, e)
         raise HTTPException(502, "Tunarr image fetch failed")
     if resp.status_code != 200 or not resp.content:
-        raise HTTPException(resp.status_code if resp.status_code != 200 else 502,
+        raise HTTPException(_upstream_status(resp.status_code) if resp.status_code != 200 else 502,
                             "Tunarr image error")
     content_type = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type not in _TUNARR_IMAGE_TYPES:
@@ -6704,7 +6812,7 @@ async def tunarr_list_channels():
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.get(f"{url}/api/channels")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr error")
     return r.json()
 
 @app.post("/api/icons/import-from-tunarr")
@@ -6799,7 +6907,7 @@ async def tunarr_create_channel(body: dict):
         )
         r = await _tunarr_create_channel(client, url, channel_obj)
     if r.status_code not in (200, 201):
-        raise HTTPException(r.status_code, f"Tunarr error: {r.text[:300]}")
+        raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:300]}")
     return r.json()
 
 @app.get("/api/tunarr/channels/{tunarr_id}/detail")
@@ -6810,7 +6918,7 @@ async def tunarr_get_channel_detail(tunarr_id: str):
     if r.status_code == 404:
         return None
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr error")
     return r.json()
 
 def _extract_schedule_items(data) -> list[dict]:
@@ -7113,7 +7221,7 @@ async def tunarr_get_channel_shows(tunarr_id: str):
     if r.status_code == 404:
         return []
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr error")
     return r.json()
 
 @app.get("/api/tunarr/guide")
@@ -7219,7 +7327,7 @@ async def tunarr_import_preview(body: dict | None = None):
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.get(f"{url}/api/channels")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Could not fetch Tunarr channels")
+        raise HTTPException(_upstream_status(r.status_code), "Could not fetch Tunarr channels")
     tunarr_channels = r.json() if isinstance(r.json(), list) else []
 
     # Filter by IDs if provided
@@ -7407,7 +7515,7 @@ async def tunarr_xmltv():
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(f"{url}/api/xmltv.xml")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr XMLTV error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr XMLTV error")
     return StreamingResponse(
         iter([r.content]),
         media_type="application/xml",
@@ -7421,7 +7529,7 @@ async def tunarr_m3u():
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(f"{url}/api/channels.m3u")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr M3U error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr M3U error")
     return StreamingResponse(
         iter([r.content]),
         media_type="audio/x-mpegurl",
@@ -7454,7 +7562,7 @@ async def tunarr_update_xmltv_settings(request: Request):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.put(f"{url}/api/xmltv-settings", json=body)
     if r.status_code not in (200, 204):
-        raise HTTPException(r.status_code, "Failed to update XMLTV settings")
+        raise HTTPException(_upstream_status(r.status_code), "Failed to update XMLTV settings")
     return {"ok": True}
 
 # ── Tunarr Sessions ───────────────────────────────────────────────────────────
@@ -7496,7 +7604,7 @@ async def tunarr_filler_list_detail(filler_id: str):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.get(f"{url}/api/filler-lists/{filler_id}")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Filler list not found")
+        raise HTTPException(_upstream_status(r.status_code), "Filler list not found")
     return r.json()
 
 @app.post("/api/tunarr/filler-lists")
@@ -7507,7 +7615,7 @@ async def tunarr_create_filler_list(request: Request):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.post(f"{url}/api/filler-lists", json=body)
     if r.status_code not in (200, 201):
-        raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+        raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:200]}")
     return r.json()
 
 @app.put("/api/tunarr/filler-lists/{filler_id}")
@@ -7518,7 +7626,7 @@ async def tunarr_update_filler_list(filler_id: str, request: Request):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.put(f"{url}/api/filler-lists/{filler_id}", json=body)
     if r.status_code not in (200, 204):
-        raise HTTPException(r.status_code, "Failed to update filler list")
+        raise HTTPException(_upstream_status(r.status_code), "Failed to update filler list")
     return r.json() if r.status_code == 200 else {"ok": True}
 
 @app.delete("/api/tunarr/filler-lists/{filler_id}")
@@ -7528,7 +7636,7 @@ async def tunarr_delete_filler_list(filler_id: str):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.delete(f"{url}/api/filler-lists/{filler_id}")
     if r.status_code not in (200, 204):
-        raise HTTPException(r.status_code, "Failed to delete filler list")
+        raise HTTPException(_upstream_status(r.status_code), "Failed to delete filler list")
     return {"ok": True}
 
 @app.get("/api/tunarr/filler-lists/{filler_id}/programs")
@@ -7553,7 +7661,7 @@ async def tunarr_list_smart_collections():
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{url}{_TUNARR_SC_PATH}")
         if r.status_code != 200:
-            raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+            raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:200]}")
         return r.json()
     except HTTPException:
         raise
@@ -7576,7 +7684,7 @@ async def tunarr_list_custom_shows():
         if r.status_code == 404:
             return []  # Tunarr too old to have custom shows
         if r.status_code != 200:
-            raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+            raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:200]}")
         data = r.json()
         return data if isinstance(data, list) else data.get("data", [])
     except HTTPException:
@@ -7625,7 +7733,7 @@ async def tunarr_create_smart_collection(body: dict):
         r = await _tunarr_write_smart_collection(
             client, url, _TUNARR_SC_PATH, name=name, structured=structured)
     if r is None or r.status_code not in (200, 201):
-        raise HTTPException(r.status_code if r is not None else 502,
+        raise HTTPException(_upstream_status(r.status_code) if r is not None else 502,
                             r.text[:300] if r is not None else "No response from Tunarr")
     if not _sc_response_has_search(r):
         raise HTTPException(502, "Tunarr accepted the smart collection but dropped its rules — not created correctly")
@@ -7660,7 +7768,7 @@ async def tunarr_update_smart_collection(sc_id: str, body: dict):
     if r.status_code == 404:
         raise HTTPException(404, "Smart collection not found in Tunarr")
     if r.status_code not in (200, 201, 204):
-        raise HTTPException(r.status_code, r.text[:300])
+        raise HTTPException(_upstream_status(r.status_code), r.text[:300])
     _log_app("tunarr", f"Updated Tunarr smart collection {sc_id}",
              metadata={"uuid": sc_id, "rules_rewritten": structured is not None})
     return r.json() if r.status_code != 204 else {"ok": True}
@@ -7673,7 +7781,7 @@ async def tunarr_delete_smart_collection(sc_id: str):
     if r.status_code == 404:
         raise HTTPException(404, "Smart collection not found in Tunarr")
     if r.status_code not in (200, 204):
-        raise HTTPException(r.status_code, r.text[:300])
+        raise HTTPException(_upstream_status(r.status_code), r.text[:300])
     # Also remove any local collection links referencing this UUID
     with get_db() as conn:
         conn.execute("DELETE FROM tunarr_collection_links WHERE tunarr_collection_id=?", (sc_id,))
@@ -7699,7 +7807,7 @@ async def tunarr_purge_smart_collections():
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{url}{_TUNARR_SC_PATH}")
             if r.status_code != 200:
-                raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+                raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:200]}")
             data = r.json()
             items = data if isinstance(data, list) else data.get("data", []) or []
 
@@ -7758,7 +7866,7 @@ async def tunarr_run_task(task_name: str, body: dict | None = None):
     async with httpx.AsyncClient(timeout=15.0) as client:
         r = await _tunarr_run_task_request(client, url, task_name, body=body)
     if r.status_code not in (200, 202, 204):
-        raise HTTPException(r.status_code, f"Tunarr task failed: {r.text[:200]}")
+        raise HTTPException(_upstream_status(r.status_code), f"Tunarr task failed: {r.text[:200]}")
     _log_app("tunarr", f"Ran Tunarr task {task_name}", metadata={"task": task_name})
     return {"ok": True, "task": task_name}
 
@@ -7826,7 +7934,31 @@ def tunarr_delete_collection_link(channel_number: int, plex_type: str):
 # ── Tunarr smart collection sync ──────────────────────────────────────────────
 
 @app.post("/api/tunarr/channel-links/{channel_number}/sync-collections")
-async def tunarr_sync_collections(channel_number: int):
+async def tunarr_sync_collections(channel_number: int, rebuild: bool = Query(True)):
+    """Publish this channel's Plex collections to Tunarr as smart collections.
+
+    Rebuilds the OWNED Plex collections first (`rebuild=false` to skip). Tunarr's
+    smart collections are tag-based — they resolve to whatever Plex currently has
+    in the collection of that name — so pushing without rebuilding publishes
+    whatever the Plex collection last contained. Anything removed from the
+    channel since then stayed on the Tunarr channel, which is exactly the
+    "collections don't update when I remove things" symptom: the removal never
+    reached Plex, so it could never reach Tunarr.
+
+    Best-effort: a rebuild failure is reported and the push continues, because
+    publishing a slightly stale collection still beats publishing nothing.
+    """
+    rebuilt: dict | None = None
+    if rebuild:
+        try:
+            rebuilt = await generate_collections(channel_number)
+        except HTTPException as e:
+            # 404 just means there is nothing to rebuild (no assignments and
+            # nothing managed) — not a reason to refuse the push.
+            if e.status_code != 404:
+                rebuilt = {"error": e.detail}
+                log.warning("sync-collections ch %s: rebuild failed: %s", channel_number, e.detail)
+
     # Get Plex collections linked to this channel
     with get_db() as conn:
         plex_cols = conn.execute(
@@ -7892,7 +8024,7 @@ async def tunarr_sync_collections(channel_number: int):
 
     _log_app("tunarr", f"Tunarr collection sync for ch {channel_number}: {len(created)} created, {len(updated)} updated",
              metadata={"channel": channel_number, "created": created, "updated": updated})
-    return {"created": created, "updated": updated}
+    return {"created": created, "updated": updated, "rebuilt": rebuilt}
 
 # ── Tunarr time slot push ─────────────────────────────────────────────────────
 

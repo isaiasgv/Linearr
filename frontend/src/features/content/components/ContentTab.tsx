@@ -621,7 +621,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
               <button
                 onClick={() => void handleBuild()}
                 disabled={buildCollections.isPending}
-                title="Builds Linearr's own “{Channel} Movies/TV” collections from the assigned items and syncs them to Plex + Tunarr. Your own collections are never modified — but any assigned slot switches back to the owned collection."
+                title="Rebuilds Linearr's own “{Channel} Movies/TV” collections from this channel's assigned items — adding what's new and removing what you've taken off the channel. A slot that references one of your own collections is left alone; unassign it first if you want Linearr to generate that type instead."
                 className="flex items-center justify-center gap-1.5 rounded-lg border border-indigo-700 bg-indigo-900/40 px-2.5 py-2 text-xs text-indigo-300 transition-colors hover:bg-indigo-900/70 hover:text-indigo-200 disabled:opacity-50 md:ml-auto md:py-1"
               >
                 {buildCollections.isPending ? (
