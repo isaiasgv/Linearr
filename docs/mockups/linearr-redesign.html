@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-accent="violet">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linearr Redesign Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ───────────── Tokens ───────────── */
+:root{
+  --font: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r-sm:6px; --r-md:10px; --r-lg:14px;
+  --ease: cubic-bezier(.2,.7,.2,1);
+}
+:root[data-theme="dark"]{
+  --bg:#0C1220; --panel:#121A2B; --panel-2:#18213A; --raised:#1D2742;
+  --line:#222C44; --line-2:#2E3956;
+  --text:#E8ECF4; --muted:#8B95AE; --faint:#5F6984;
+  --air:#FF4B4B; --air-soft:rgba(255,75,75,.14);
+  --ok:#3DD68C; --warn:#F5B547; --warn-soft:rgba(245,181,71,.13);
+  --t-main:#4C8DFF; --t-classic:#B48CFF; --t-prem:#F2B544;
+  --movie:#E9A23B; --show:#2BB5A6; --both:#8E7CF8;
+  --cell:#172036; --cell-hover:#1F2A47; --past:.45;
+  --shadow: 0 18px 50px rgba(3,6,15,.55);
+  --hatch: repeating-linear-gradient(135deg, transparent 0 7px, rgba(139,149,174,.09) 7px 8px);
+}
+:root[data-theme="light"]{
+  --bg:#F3F5F9; --panel:#FFFFFF; --panel-2:#F2F4F8; --raised:#FFFFFF;
+  --line:#E2E6EE; --line-2:#D2D8E4;
+  --text:#121826; --muted:#5A6378; --faint:#8C95A8;
+  --air:#E0262D; --air-soft:rgba(224,38,45,.09);
+  --ok:#0E9F63; --warn:#B87700; --warn-soft:rgba(184,119,0,.10);
+  --t-main:#2F6FE4; --t-classic:#8A5CE6; --t-prem:#C98A0C;
+  --movie:#C77E12; --show:#11968A; --both:#6C58E8;
+  --cell:#F4F6FA; --cell-hover:#EAEEF6; --past:.5;
+  --shadow: 0 18px 50px rgba(20,30,60,.16);
+  --hatch: repeating-linear-gradient(135deg, transparent 0 7px, rgba(90,99,120,.10) 7px 8px);
+}
+:root[data-accent="violet"]{ --brand:#7C6CF6; --brand-2:#9B6CF6; }
+:root[data-accent="blue"]  { --brand:#3E7BFA; --brand-2:#5B8DFB; }
+:root[data-accent="teal"]  { --brand:#14A39A; --brand-2:#1FB8AE; }
+:root[data-theme="light"][data-accent="violet"]{ --brand:#5B4BE8; }
+:root[data-theme="light"][data-accent="blue"]{ --brand:#2563EB; }
+:root[data-theme="light"][data-accent="teal"]{ --brand:#0D8A82; }
+:root{ --brand-soft: color-mix(in srgb, var(--brand) 16%, transparent); --brand-line: color-mix(in srgb, var(--brand) 45%, transparent); }
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.45 var(--font);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
+.ic{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ic.sm{width:15px;height:15px}
+.muted{color:var(--muted)} .faint{color:var(--faint)}
+@media (prefers-reduced-motion: reduce){ *{animation:none!important;transition:none!important} }
+
+/* ───────────── Viewer chrome (not part of the app) ───────────── */
+.viewer{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px 16px;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.viewer h1{font-size:14px;font-weight:600;margin:0;display:flex;align-items:center;gap:8px}
+.viewer h1 small{font-weight:400;color:var(--muted)}
+.vtabs{display:flex;gap:2px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px}
+.vtabs button{padding:6px 11px;border-radius:7px;color:var(--muted);font-size:13px;font-weight:500}
+.vtabs button:hover{color:var(--text)}
+.vtabs button[aria-pressed="true"]{background:var(--raised);color:var(--text);box-shadow:0 0 0 1px var(--line-2)}
+.vctl{display:flex;gap:10px;align-items:center;margin-left:auto;font-size:12.5px;color:var(--muted)}
+.swatches{display:flex;gap:5px}
+.swatches button{width:20px;height:20px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.18)}
+.swatches button[aria-pressed="true"]{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--text)}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg button{padding:4px 9px;border-radius:6px;font-size:12.5px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--raised);color:var(--text);box-shadow:0 0 0 1px var(--line-2)}
+.stage{padding:18px 16px 40px}
+
+/* ───────────── App shell ───────────── */
+.app{display:grid;grid-template-columns:76px 1fr;height:calc(100vh - 92px);min-height:640px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--bg);box-shadow:var(--shadow)}
+.rail{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px}
+.rail .logo{margin-bottom:12px}
+.rail a{width:62px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0 7px;border-radius:10px;color:var(--muted);font-size:11px;font-weight:500;text-decoration:none;cursor:pointer;position:relative}
+.rail a:hover{color:var(--text);background:var(--panel-2)}
+.rail a.on{color:var(--text);background:var(--brand-soft)}
+.rail a.on .ic{color:var(--brand)}
+.rail a .pip{position:absolute;top:6px;right:13px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:var(--brand);color:#fff;font-size:10px;font-weight:600;display:grid;place-items:center}
+.rail .grow{flex:1}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.top{height:56px;flex:none;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+.crumbs{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;min-width:0;white-space:nowrap}
+.crumbs .sep{color:var(--faint);font-weight:400}
+.crumbs .lo{color:var(--muted);font-weight:500}
+.cmdk{margin-left:auto;display:flex;align-items:center;gap:8px;width:min(380px,40%);height:34px;padding:0 10px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--faint);font-size:13px}
+.cmdk kbd,.kbd{margin-left:auto;font:500 11px var(--font);color:var(--muted);border:1px solid var(--line-2);border-radius:5px;padding:1px 5px;background:var(--panel)}
+.health{display:flex;align-items:center;gap:10px;height:34px;padding:0 12px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;color:var(--muted)}
+.health span{display:flex;align-items:center;gap:5px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.dot.warn{background:var(--warn)} .dot.off{background:var(--faint)}
+.avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--brand),var(--brand-2));display:grid;place-items:center;color:#fff;font-weight:600;font-size:12.5px}
+.view{flex:1;min-height:0;overflow:auto;display:none}
+.view.on{display:block}
+.pad{padding:24px 28px 40px;max-width:1440px}
+
+/* ───────────── Shared bits ───────────── */
+.btn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel);font-size:13px;font-weight:500;white-space:nowrap}
+.btn:hover{background:var(--panel-2)}
+.btn.primary{background:var(--brand);border-color:transparent;color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{border-color:transparent;background:none;color:var(--muted)}
+.btn.ghost:hover{color:var(--text);background:var(--panel-2)}
+.btn.sm{height:27px;padding:0 9px;font-size:12.5px}
+.bug{--tier:var(--t-main);width:38px;height:28px;border-radius:7px;background:var(--panel-2);border:1px solid var(--line-2);display:grid;place-items:center;font-weight:700;font-size:13px;position:relative;flex:none;overflow:hidden}
+.bug::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--tier)}
+.bug.classic{--tier:var(--t-classic)} .bug.prem{--tier:var(--t-prem)}
+.bug.lg{width:64px;height:48px;font-size:22px;border-radius:11px}
+.bug.lg::before{width:4px}
+.tier{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--muted)}
+.tier i{width:8px;height:8px;border-radius:2px;background:var(--t-main)}
+.tier.classic i{background:var(--t-classic)} .tier.prem i{background:var(--t-prem)}
+.chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;border:1px solid var(--line-2);font-size:12px;color:var(--muted);white-space:nowrap}
+.chip.on{background:var(--brand-soft);border-color:var(--brand-line);color:var(--text)}
+.chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+.chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent);background:var(--warn-soft)}
+.onair{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--air)}
+.onair::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--air);box-shadow:0 0 0 3px var(--air-soft);animation:tally 2.4s ease-in-out infinite}
+@keyframes tally{50%{box-shadow:0 0 0 6px transparent}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg)}
+.panel-h{display:flex;align-items:center;gap:10px;padding:14px 16px 0}
+.panel-h h3{margin:0;font-size:14px;font-weight:600}
+.panel-h .btn{margin-left:auto}
+h2.page{font-size:24px;font-weight:600;letter-spacing:-.015em;margin:0}
+.sub{color:var(--muted);margin:4px 0 0}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.progress{height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.progress b{display:block;height:100%;background:var(--text);opacity:.75}
+.tabs{display:flex;gap:22px;border-bottom:1px solid var(--line);padding:0 28px}
+.tabs button{padding:12px 0 11px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;gap:7px;align-items:center}
+.tabs button.on{color:var(--text);border-color:var(--brand)}
+.tabs .n{font-size:11.5px;color:var(--faint)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;background:var(--raised);border:1px solid var(--line-2);padding:10px 14px;border-radius:10px;box-shadow:var(--shadow);font-size:13px;transition:.25s var(--ease);z-index:200;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ───────────── Home ───────────── */
+.home-head{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.home-head .btn:first-of-type{margin-left:auto}
+.airstrip{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px;margin-bottom:20px}
+.aircard{padding:14px;display:flex;flex-direction:column;gap:10px;cursor:pointer;transition:border-color .15s}
+.aircard:hover{border-color:var(--line-2)}
+.aircard .row{display:flex;align-items:center;gap:10px}
+.aircard .name{font-weight:600;font-size:13px}
+.aircard .now{font-size:15px;font-weight:600;line-height:1.25}
+.aircard .meta{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.aircard .next{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:9px}
+.aircard .next b{color:var(--text);font-weight:500}
+.home-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,1fr);gap:16px}
+.attn{list-style:none;margin:8px 0 0;padding:4px 8px 8px}
+.attn li{display:flex;gap:12px;align-items:flex-start;padding:11px 8px;border-radius:9px}
+.attn li+li{border-top:1px solid var(--line)}
+.attn .ic{margin-top:1px}
+.attn .t{font-weight:500}
+.attn .d{font-size:12.5px;color:var(--muted)}
+.attn .btn{margin-left:auto;flex:none}
+.heat{padding:12px 16px 16px;overflow-x:auto}
+.heat table{border-collapse:separate;border-spacing:3px;width:100%;font-size:12px}
+.heat th{font-weight:500;color:var(--muted);text-align:left;padding:0 4px 4px;white-space:nowrap}
+.heat td.c{height:18px;border-radius:4px;min-width:34px;background:var(--brand);cursor:pointer}
+.heat td.c.zero{background:var(--hatch),var(--panel-2);box-shadow:inset 0 0 0 1px var(--warn)}
+.heat td.l{white-space:nowrap;padding-right:8px;color:var(--muted)}
+.heat td.l b{color:var(--text);font-weight:600;margin-right:6px;display:inline-block;width:28px}
+.legend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:0 16px 14px}
+.legend .scale{display:flex;gap:2px}
+.legend .scale i{width:18px;height:10px;border-radius:2px;background:var(--brand)}
+.advisor{padding:6px 16px 16px;display:flex;flex-direction:column;gap:10px}
+.advice{border:1px solid var(--line);border-radius:11px;padding:12px;background:var(--panel-2)}
+.advice p{margin:0 0 10px;font-size:13px}
+.advice .acts{display:flex;gap:6px}
+
+/* ───────────── Guide ───────────── */
+.guide-wrap{display:flex;flex-direction:column;height:100%}
+.guide-bar{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.guide-bar .date{display:flex;align-items:center;gap:4px;font-weight:600}
+.guide-scroll{flex:1;overflow:auto;position:relative}
+.guide{position:relative;--chw:212px;--ppm:4px}
+.g-head{position:sticky;top:0;z-index:5;display:flex;background:var(--panel);border-bottom:1px solid var(--line);height:38px}
+.g-head .corner{position:sticky;left:0;z-index:2;width:var(--chw);flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;align-items:center;padding:0 14px;font-size:12px;color:var(--muted)}
+.g-times{position:relative;flex:none}
+.g-times span{position:absolute;top:0;height:38px;display:flex;align-items:center;padding-left:8px;font-size:12px;color:var(--muted);border-left:1px solid var(--line)}
+.g-row{display:flex;height:64px;border-bottom:1px solid var(--line)}
+.g-ch{position:sticky;left:0;z-index:3;width:var(--chw);flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 14px;cursor:pointer}
+.g-ch:hover .nm{color:var(--brand)}
+.g-ch .nm{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-ch .vb{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-track{position:relative;flex:none}
+.prog{position:absolute;top:5px;bottom:5px;border-radius:8px;background:var(--cell);border:1px solid var(--line);padding:7px 10px;overflow:hidden;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:2px;transition:background .12s}
+.prog:hover{background:var(--cell-hover)}
+.prog .pt{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prog .pm{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;gap:6px;align-items:center}
+.prog .k{width:6px;height:6px;border-radius:2px;flex:none;background:var(--show)}
+.prog.movie .k{background:var(--movie)}
+.prog.past{opacity:var(--past)}
+.prog.live{background:color-mix(in srgb,var(--air) 7%,var(--cell));border-color:color-mix(in srgb,var(--air) 35%,var(--line))}
+.prog.live .bar{position:absolute;left:0;bottom:0;height:2px;background:var(--air)}
+.prog.sel{box-shadow:0 0 0 2px var(--brand);border-color:transparent}
+.prog.gap{background:var(--hatch);border-style:dashed;border-color:var(--line-2);color:var(--muted);flex-direction:row;align-items:center;justify-content:flex-start;gap:8px}
+.prog.gap .pt{font-weight:500;color:var(--muted)}
+.prog.gap .fill{margin-left:auto;font-size:12px;color:var(--brand);font-weight:600;display:flex;gap:4px;align-items:center}
+.nowline{position:absolute;top:0;bottom:0;width:2px;background:var(--air);z-index:4;pointer-events:none}
+.nowline::before{content:attr(data-t);position:absolute;top:8px;left:50%;transform:translateX(-50%);background:var(--air);color:#fff;font-size:11px;font-weight:600;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:340px;background:var(--raised);border-left:1px solid var(--line-2);box-shadow:var(--shadow);z-index:8;transform:translateX(105%);transition:transform .25s var(--ease);display:flex;flex-direction:column}
+.drawer.open{transform:none}
+.drawer .art{height:150px;position:relative;display:flex;align-items:flex-end;padding:14px}
+.drawer .art h4{margin:0;font-size:20px;line-height:1.15;color:#fff;text-shadow:0 1px 12px rgba(0,0,0,.4)}
+.drawer .x{position:absolute;top:10px;right:10px;width:30px;height:30px;border-radius:8px;background:rgba(0,0,0,.35);color:#fff;display:grid;place-items:center}
+.drawer .body{padding:16px;display:flex;flex-direction:column;gap:14px;overflow:auto}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:8px 12px;font-size:13px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.drawer .acts{display:flex;flex-wrap:wrap;gap:8px}
+.guide-wrap{position:relative}
+
+/* ───────────── Channel ───────────── */
+.ch-head{padding:22px 28px 18px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.ch-head h2{margin:0;font-size:22px;font-weight:600;letter-spacing:-.01em}
+.ch-head .line2{display:flex;gap:14px;align-items:center;margin-top:5px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.ch-head .acts{margin-left:auto;display:flex;gap:8px}
+.ch-body{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:0}
+.week-wrap{padding:18px 20px 30px 28px;overflow:auto}
+.week-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.week-bar .legend{padding:0;margin-left:auto}
+.lg-k{display:inline-flex;align-items:center;gap:6px}
+.lg-k i{width:10px;height:10px;border-radius:3px}
+.week{display:grid;grid-template-columns:46px repeat(7,minmax(92px,1fr));--hpx:22px;min-width:720px}
+.week .dh{height:36px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line)}
+.week .dh.today{color:var(--text)}
+.week .dh.today b{background:var(--brand);color:#fff;border-radius:6px;padding:1px 6px}
+.week .dh b{font-weight:600}
+.hours{position:relative}
+.hours span{position:absolute;right:8px;font-size:11px;color:var(--faint);transform:translateY(-50%)}
+.daycol{position:relative;border-left:1px solid var(--line);background:repeating-linear-gradient(to bottom,transparent 0 calc(var(--hpx) * 3 - 1px),var(--line) calc(var(--hpx) * 3 - 1px) calc(var(--hpx) * 3))}
+.daycol.today{background-color:color-mix(in srgb,var(--brand) 4%,transparent)}
+.blk{position:absolute;left:4px;right:4px;border-radius:8px;padding:6px 8px;text-align:left;overflow:hidden;display:flex;flex-direction:column;gap:3px;--c:var(--both);background:color-mix(in srgb,var(--c) 17%,var(--panel));border:1px solid color-mix(in srgb,var(--c) 38%,transparent);border-left:3px solid var(--c)}
+.blk.movies{--c:var(--movie)} .blk.shows{--c:var(--show)}
+.blk:hover{background:color-mix(in srgb,var(--c) 25%,var(--panel))}
+.blk.sel{box-shadow:0 0 0 2px var(--brand)}
+.blk .bn{font-size:12px;font-weight:600;line-height:1.2}
+.blk .bt{font-size:11px;color:var(--muted)}
+.blk .bf{margin-top:auto;height:3px;border-radius:2px;background:color-mix(in srgb,var(--c) 22%,transparent);overflow:hidden}
+.blk .bf b{display:block;height:100%;background:var(--c)}
+.blk .wn{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--warn)}
+.week-now{position:absolute;left:0;right:0;height:2px;background:var(--air);z-index:2}
+.week-now::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--air)}
+.inspector{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:18px}
+.inspector h3{margin:0;font-size:16px;font-weight:600}
+.ins-sec{margin-top:18px}
+.ins-sec h4{margin:0 0 8px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.days{display:flex;gap:4px}
+.days span{width:30px;height:28px;border-radius:7px;display:grid;place-items:center;font-size:12px;font-weight:600;border:1px solid var(--line-2);color:var(--faint)}
+.days span.on{background:var(--brand-soft);border-color:var(--brand-line);color:var(--text)}
+.slots{display:flex;flex-direction:column;gap:6px}
+.slot{display:flex;gap:10px;align-items:center;padding:7px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2)}
+.slot .tm{width:58px;font-size:12px;color:var(--muted);flex:none}
+.slot .mini{width:28px;height:40px;border-radius:4px;flex:none}
+.slot .st{font-size:13px;font-weight:500;line-height:1.25}
+.slot .sd{font-size:11.5px;color:var(--muted)}
+.slot .grip{margin-left:auto;color:var(--faint)}
+.slot.over{border-color:color-mix(in srgb,var(--warn) 50%,transparent);background:var(--warn-soft)}
+.slot.empty{border-style:dashed;background:var(--hatch);color:var(--muted);justify-content:center;font-size:12.5px;padding:10px}
+.note{display:flex;gap:8px;font-size:12.5px;color:var(--warn);padding:9px 10px;border-radius:9px;background:var(--warn-soft);margin-top:10px}
+.ins-acts{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+
+/* ───────────── Library ───────────── */
+.lib{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100%}
+.lib-side{border-right:1px solid var(--line);padding:18px 14px;background:var(--panel)}
+.lib-side h4{margin:16px 6px 6px;font-size:12.5px;color:var(--muted);font-weight:600}
+.lib-side h4:first-child{margin-top:0}
+.lib-side a{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:8px;color:var(--muted);font-size:13px;cursor:pointer}
+.lib-side a.on{background:var(--brand-soft);color:var(--text)}
+.lib-side a span{margin-left:auto;font-size:12px;color:var(--faint)}
+.lib-side .chips{display:flex;flex-wrap:wrap;gap:5px;padding:0 4px}
+.switch{display:flex;align-items:center;gap:9px;padding:7px 8px;font-size:13px;color:var(--muted)}
+.switch i{width:30px;height:18px;border-radius:9px;background:var(--brand);position:relative;flex:none}
+.switch i::after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.lib-main{padding:18px 24px 100px;position:relative}
+.lib-bar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.search{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-radius:9px;border:1px solid var(--line-2);background:var(--panel);flex:1;min-width:220px;color:var(--faint)}
+.search input{border:0;background:none;outline:0;flex:1;color:var(--text)}
+.posters{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:18px 14px}
+.pcard{display:flex;flex-direction:column;gap:7px;text-align:left;cursor:pointer}
+.poster{aspect-ratio:2/3;border-radius:10px;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:10px;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+.poster .pt{font-weight:700;font-size:15px;line-height:1.08;letter-spacing:-.01em;text-wrap:balance}
+.poster .tag{position:absolute;top:8px;left:8px;display:flex;gap:4px}
+.poster .tag span{font-size:10.5px;font-weight:700;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.45);backdrop-filter:blur(4px)}
+.poster .chk{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;border:1.5px solid rgba(255,255,255,.7);display:grid;place-items:center;background:rgba(0,0,0,.25);opacity:0;transition:opacity .12s}
+.pcard:hover .chk{opacity:1}
+.pcard.sel .poster{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--brand)}
+.pcard.sel .chk{opacity:1;background:var(--brand);border-color:var(--brand)}
+.pcard .pm{font-size:12px;color:var(--muted);display:flex;justify-content:space-between}
+.pcard .pn{font-size:13px;font-weight:500;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tray{position:sticky;bottom:16px;margin:24px auto 0;width:fit-content;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 14px;border-radius:12px;background:var(--raised);border:1px solid var(--line-2);box-shadow:var(--shadow);transition:.2s var(--ease)}
+.tray.hide{opacity:0;transform:translateY(12px);pointer-events:none}
+.tray b{font-weight:600}
+
+/* ───────────── Publish ───────────── */
+.pub{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;margin-top:20px}
+table.list{width:100%;border-collapse:collapse;font-size:13px}
+table.list th{text-align:left;font-weight:500;color:var(--muted);padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.list td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.list tr:last-child td{border-bottom:0}
+table.list tbody tr{cursor:pointer}
+table.list tbody tr:hover td{background:var(--panel-2)}
+table.list tr.sel td{background:var(--brand-soft)}
+.cbx{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--line-2);display:inline-grid;place-items:center;vertical-align:middle}
+.cbx.on{background:var(--brand);border-color:var(--brand)}
+.cbx.on::after{content:"";width:8px;height:4px;border:2px solid #fff;border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+.chcell{display:flex;align-items:center;gap:10px;font-weight:500}
+.diff{padding:6px 16px 16px}
+.diff .dl{display:grid;grid-template-columns:18px 64px 1fr;gap:8px;padding:6px 8px;border-radius:7px;font-size:13px;align-items:center}
+.diff .dl .s{font-weight:700;text-align:center}
+.diff .add{background:color-mix(in srgb,var(--ok) 11%,transparent)} .diff .add .s{color:var(--ok)}
+.diff .del{background:var(--air-soft)} .diff .del .s{color:var(--air)} .diff .del .tt{text-decoration:line-through;color:var(--muted)}
+.diff .same{color:var(--muted)}
+.diff .grp{font-size:12px;font-weight:600;color:var(--muted);margin:12px 0 4px}
+.pub-foot{display:flex;gap:10px;align-items:center;padding:14px 16px;border-top:1px solid var(--line);flex-wrap:wrap}
+
+/* ───────────── Command palette ───────────── */
+.scrim{position:absolute;inset:0;background:rgba(5,9,20,.55);backdrop-filter:blur(2px);z-index:20;display:none;align-items:flex-start;justify-content:center;padding-top:9vh}
+:root[data-theme="light"] .scrim{background:rgba(30,40,70,.28)}
+.scrim.on{display:flex}
+.palette{width:min(640px,92%);background:var(--raised);border:1px solid var(--line-2);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;animation:pop .2s var(--ease)}
+@keyframes pop{from{transform:translateY(-6px) scale(.98);opacity:0}}
+.palette .in{display:flex;align-items:center;gap:10px;padding:0 16px;height:54px;border-bottom:1px solid var(--line);font-size:16px}
+.palette .in input{flex:1;border:0;background:none;outline:0;font-size:16px}
+.palette .res{padding:8px;max-height:420px;overflow:auto}
+.palette .grp{font-size:12px;color:var(--faint);font-weight:600;padding:10px 10px 4px}
+.palette .it{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:9px;font-size:13.5px}
+.palette .it.act{background:var(--brand-soft)}
+.palette .it .r{margin-left:auto;font-size:12px;color:var(--faint)}
+.palette .it .bug{width:32px;height:24px;font-size:11.5px}
+.palette .foot{display:flex;gap:16px;padding:9px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--faint)}
+
+/* ───────────── Canvas screens (mobile, decisions) ───────────── */
+.canvas{display:none}
+.canvas.on{display:block}
+.phones{display:flex;gap:36px;justify-content:center;flex-wrap:wrap;padding:10px 0 30px}
+.phone{width:372px;height:780px;border-radius:44px;padding:12px;background:#05070D;box-shadow:var(--shadow),inset 0 0 0 1px #2a2f3d}
+.screen{width:100%;height:100%;border-radius:34px;overflow:hidden;background:var(--bg);display:flex;flex-direction:column;position:relative}
+.sbar{height:44px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-size:13px;font-weight:600}
+.m-head{padding:4px 18px 12px;display:flex;align-items:center;gap:10px}
+.m-head h3{margin:0;font-size:24px;font-weight:600;letter-spacing:-.015em}
+.m-body{flex:1;overflow:auto;padding:0 14px 14px;display:flex;flex-direction:column;gap:8px}
+.m-row{display:flex;gap:12px;align-items:center;padding:11px;border-radius:13px;background:var(--panel);border:1px solid var(--line)}
+.m-row .t{font-weight:600;font-size:14px;line-height:1.25}
+.m-row .s{font-size:12px;color:var(--muted)}
+.m-row .progress{margin-top:6px}
+.m-tabs{height:74px;flex:none;border-top:1px solid var(--line);background:var(--panel);display:grid;grid-template-columns:repeat(5,1fr);padding:8px 6px 18px}
+.m-tabs span{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;color:var(--muted);font-weight:500}
+.m-tabs span.on{color:var(--brand)}
+.m-seg{display:flex;gap:6px;padding:0 14px 10px;overflow:hidden}
+.m-tl{display:grid;grid-template-columns:52px 1fr;gap:0 10px}
+.m-tl .tm{font-size:12px;color:var(--muted);padding-top:12px;text-align:right}
+.m-tl .card{padding:11px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);margin-bottom:8px}
+.m-tl .card.live{border-color:color-mix(in srgb,var(--air) 40%,var(--line));background:color-mix(in srgb,var(--air) 6%,var(--panel))}
+.m-tl .card .t{font-weight:600}
+.m-tl .card .s{font-size:12px;color:var(--muted)}
+.fab{position:absolute;right:18px;bottom:92px;height:48px;padding:0 18px;border-radius:24px;background:var(--brand);color:#fff;display:flex;align-items:center;gap:8px;font-weight:600;box-shadow:var(--shadow)}
+.dec{max-width:1180px;margin:0 auto}
+.dec-intro{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:24px;align-items:end;margin:8px 0 26px}
+.dec-intro h2{font-size:30px;line-height:1.12;letter-spacing:-.02em;margin:0;font-weight:600}
+.dec-intro p{margin:0;color:var(--muted);max-width:60ch}
+.changes{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-bottom:34px}
+.chg{padding:16px}
+.chg h4{margin:0 0 10px;font-size:14.5px}
+.chg .cmp{display:grid;grid-template-columns:62px 1fr;gap:6px 10px;font-size:13px}
+.chg .cmp dt{color:var(--faint)} .chg .cmp dd{margin:0}
+.chg .cmp dd.now{color:var(--muted)}
+.chg .src{margin-top:10px;font-size:12px;color:var(--faint)}
+.chg .src code{font-size:11.5px;color:var(--muted)}
+h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
+.calls{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.call{padding:14px 16px;display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:12px;align-items:center}
+.call .q b{display:block;font-weight:600}
+.call .q span{font-size:12.5px;color:var(--muted)}
+.opts{display:flex;gap:8px;flex-wrap:wrap}
+.opt{padding:8px 12px;border-radius:9px;border:1px solid var(--line-2);font-size:13px;text-align:left;max-width:280px}
+.opt small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.opt[aria-pressed="true"]{border-color:var(--brand);background:var(--brand-soft)}
+.opt .rec{font-size:11px;color:var(--brand);font-weight:600;margin-left:6px}
+.summary{margin-top:18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.summary pre{flex:1;min-width:280px;margin:0;padding:12px 14px;border-radius:10px;background:var(--panel);border:1px solid var(--line);font:12.5px/1.6 ui-monospace,Consolas,monospace;color:var(--muted);white-space:pre-wrap}
+
+/* ───────────── Responsive ───────────── */
+@media (max-width: 1100px){
+  .home-grid,.pub,.ch-body{grid-template-columns:minmax(0,1fr)}
+  .inspector{border-left:0;border-top:1px solid var(--line)}
+  .health{display:none}
+  .dec-intro{grid-template-columns:1fr}
+}
+@media (max-width: 760px){
+  .viewer{position:static}
+  .app{grid-template-columns:minmax(0,1fr);height:85vh;min-height:560px}
+  .health,.avatar{display:none}
+  .airstrip{grid-template-columns:1fr}
+  .cmdk kbd{display:none}
+  .cmdk{min-width:0;overflow:hidden;white-space:nowrap}
+  .home-head .btn:first-of-type{margin-left:0}
+  .top{padding:0 12px}
+  .crumbs{overflow:hidden;text-overflow:ellipsis}
+  .rail{display:none}
+  .cmdk{width:auto;flex:1}
+  .lib{grid-template-columns:minmax(0,1fr)}
+  .lib-side{display:none}
+  .pad,.week-wrap{padding:18px 16px 30px}
+  .tabs{padding:0 16px;overflow-x:auto}
+  .call{grid-template-columns:1fr}
+  .vctl{margin-left:0}
+  .guide{--chw:150px}
+  .drawer{width:100%}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366F1"/><stop offset="1" stop-color="#A855F7"/></linearGradient>
+  </defs>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-guide" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14.5h18M9 9v11M15 4v5M13 14.5V20"/></symbol>
+  <symbol id="i-tv" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="13" rx="2"/><path d="m8 2.5 4 3.5 4-3.5"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M17 8h4M3 16h4M17 16h4M3 12h18"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></symbol>
+  <symbol id="logo" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg)" stroke="none"/><path d="M9 8v16h14" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11h9M14 15.5h6M14 20h8" stroke="#fff" stroke-opacity=".75" stroke-width="2.2" stroke-linecap="round"/></symbol>
+</svg>
+
+<!-- ───────────── Viewer chrome ───────────── -->
+<div class="viewer">
+  <h1><svg width="22" height="22"><use href="#logo"/></svg>Linearr redesign <small>mockups</small></h1>
+  <div class="vtabs" role="group" aria-label="Screens">
+    <button data-go="home" aria-pressed="true">Home</button>
+    <button data-go="guide">Guide</button>
+    <button data-go="channel">Channel schedule</button>
+    <button data-go="library">Library</button>
+    <button data-go="publish">Publish</button>
+    <button data-go="palette">Command palette</button>
+    <button data-go="mobile">Mobile</button>
+    <button data-go="decisions">Decisions</button>
+  </div>
+  <div class="vctl">
+    Accent
+    <div class="swatches" role="group" aria-label="Accent">
+      <button data-accent="violet" style="background:#7C6CF6" aria-pressed="true" aria-label="Violet"></button>
+      <button data-accent="blue" style="background:#3E7BFA" aria-pressed="false" aria-label="Blue"></button>
+      <button data-accent="teal" style="background:#14A39A" aria-pressed="false" aria-label="Teal"></button>
+    </div>
+    <div class="seg" role="group" aria-label="Theme">
+      <button data-theme-set="dark" aria-pressed="true">Dark</button>
+      <button data-theme-set="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+</div>
+
+<div class="stage">
+
+<!-- ───────────── App ───────────── -->
+<div class="app" id="app">
+  <nav class="rail" aria-label="Primary">
+    <svg class="logo" width="34" height="34"><use href="#logo"/></svg>
+    <a data-nav="home" class="on"><svg class="ic"><use href="#i-home"/></svg>Home</a>
+    <a data-nav="guide"><svg class="ic"><use href="#i-guide"/></svg>Guide</a>
+    <a data-nav="channel"><svg class="ic"><use href="#i-tv"/></svg>Channels</a>
+    <a data-nav="library"><svg class="ic"><use href="#i-film"/></svg>Library</a>
+    <a data-nav="templates"><svg class="ic"><use href="#i-layers"/></svg>Templates</a>
+    <a data-nav="publish"><svg class="ic"><use href="#i-send"/></svg>Publish<span class="pip">3</span></a>
+    <div class="grow"></div>
+    <a data-nav="settings"><svg class="ic"><use href="#i-gear"/></svg>Settings</a>
+  </nav>
+
+  <div class="main" style="position:relative">
+    <header class="top">
+      <div class="crumbs" id="crumbs">Home</div>
+      <button class="cmdk" data-go="palette"><svg class="ic sm"><use href="#i-search"/></svg>Search titles, channels, actions<kbd>Ctrl K</kbd></button>
+      <div class="health" title="Connections">
+        <span><i class="dot"></i>Plex</span>
+        <span><i class="dot"></i>Tunarr 1.3.6</span>
+        <span><i class="dot warn"></i>AI</span>
+      </div>
+      <div class="avatar" aria-label="Signed in">IG</div>
+    </header>
+
+    <!-- HOME -->
+    <section class="view on" data-view="home">
+      <div class="pad">
+        <div class="home-head">
+          <div>
+            <h2 class="page">Galaxy Network</h2>
+            <p class="sub">Friday, October 2. 29 channels, 1,284 titles assigned, last pushed to Tunarr 2 days ago.</p>
+          </div>
+          <button class="btn" data-go="guide"><svg class="ic sm"><use href="#i-guide"/></svg>Open guide</button>
+          <button class="btn primary" data-go="publish"><svg class="ic sm"><use href="#i-send"/></svg>Review 3 changes</button>
+        </div>
+
+        <div class="panel-h" style="padding:0 0 10px"><h3>On air now</h3><span class="onair">8:42 PM</span></div>
+        <div class="airstrip" id="airstrip"></div>
+
+        <div class="home-grid">
+          <div class="panel">
+            <div class="panel-h"><h3>Schedule coverage</h3><span class="muted" style="font-size:12.5px">How full each daypart is, this week</span></div>
+            <div class="heat" id="heat"></div>
+            <div class="legend">Empty<span class="scale" id="scale"></span>Full<span style="margin-left:14px;display:inline-flex;gap:6px;align-items:center"><i style="width:18px;height:10px;border-radius:2px;background:var(--hatch),var(--panel-2);box-shadow:inset 0 0 0 1px var(--warn)"></i>Nothing scheduled</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="panel">
+              <div class="panel-h"><h3>Needs attention</h3><span class="chip warn">4</span></div>
+              <ul class="attn">
+                <li><svg class="ic" style="color:var(--warn)"><use href="#i-alert"/></svg><div><div class="t">3 channels have empty dayparts</div><div class="d">Galaxy Thrills late night, Cartoon Network after 9:41 PM, After Dark before 10 PM</div></div><button class="btn sm" data-go="guide">Show in guide</button></li>
+                <li><svg class="ic" style="color:var(--brand)"><use href="#i-send"/></svg><div><div class="t">3 channels changed since the last push</div><div class="d">Tunarr is still airing the old schedule for Action, Crime and Anime</div></div><button class="btn sm" data-go="publish">Review</button></li>
+                <li><svg class="ic" style="color:var(--warn)"><use href="#i-clock"/></svg><div><div class="t">Plex token expires in 2 days</div><div class="d">Refreshing keeps thumbnails and library browsing working</div></div><button class="btn sm" data-toast="Plex token refreshed. Valid for 7 days.">Refresh token</button></li>
+                <li><svg class="ic" style="color:var(--faint)"><use href="#i-spark"/></svg><div><div class="t">The advisor has no model selected</div><div class="d">Pick a model in Settings to get schedule suggestions</div></div><button class="btn sm" data-toast="Settings is not mocked yet.">Choose model</button></li>
+              </ul>
+            </div>
+            <div class="panel">
+              <div class="panel-h"><h3>Advisor suggestions</h3><svg class="ic sm muted"><use href="#i-spark"/></svg></div>
+              <div class="advisor">
+                <div class="advice"><p><b>Galaxy Thrills</b> has 1 h 47 m free after <i>Prisoners</i>. You have 6 unassigned thrillers that fit, starting with <i>Sicario</i> (2 h 1 m).</p><div class="acts"><button class="btn sm primary" data-toast="Added Sicario to Galaxy Thrills, 9:43 PM.">Fill with Sicario</button><button class="btn sm ghost" data-go="library">See all 6</button></div></div>
+                <div class="advice"><p><i>The Office</i> is assigned to 4 channels. Keeping it on Galaxy Comedy and Galaxy 2 frees 2 overnight slots for variety.</p><div class="acts"><button class="btn sm" data-toast="Removed The Office from 2 channels.">Apply</button><button class="btn sm ghost" data-toast="Suggestion dismissed.">Dismiss</button></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GUIDE -->
+    <section class="view" data-view="guide">
+      <div class="guide-wrap">
+        <div class="guide-bar">
+          <div class="date"><button class="btn ghost sm" aria-label="Previous day"><svg class="ic sm"><use href="#i-chev-l"/></svg></button>Today, Fri Oct 2<button class="btn ghost sm" aria-label="Next day"><svg class="ic sm"><use href="#i-chev-r"/></svg></button></div>
+          <button class="btn sm" id="jumpNow"><span class="onair" style="font-weight:500;color:inherit">Jump to now</span></button>
+          <div class="seg" role="group" aria-label="Tier">
+            <button aria-pressed="true" data-tier="all">All</button>
+            <button aria-pressed="false" data-tier="main">Galaxy Main</button>
+            <button aria-pressed="false" data-tier="classic">Classics</button>
+            <button aria-pressed="false" data-tier="prem">Premium</button>
+          </div>
+          <span class="lg-k muted" style="margin-left:auto;font-size:12.5px"><i style="background:var(--movie)"></i>Movie</span>
+          <span class="lg-k muted" style="font-size:12.5px"><i style="background:var(--show)"></i>Episode</span>
+          <span class="lg-k muted" style="font-size:12.5px"><i style="background:var(--hatch),var(--panel-2);border:1px dashed var(--line-2)"></i>Nothing scheduled</span>
+        </div>
+        <div class="guide-scroll" id="guideScroll"><div class="guide" id="guide"></div></div>
+        <aside class="drawer" id="drawer" aria-label="Programme details">
+          <div class="art" id="dArt"><h4 id="dTitle"></h4><button class="x" id="dClose" aria-label="Close"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+          <div class="body">
+            <dl class="kv" id="dKv"></dl>
+            <div class="acts">
+              <button class="btn sm primary" data-toast="Pick a replacement from the library."><svg class="ic sm"><use href="#i-swap"/></svg>Replace</button>
+              <button class="btn sm" data-go="channel"><svg class="ic sm"><use href="#i-edit"/></svg>Edit block</button>
+              <button class="btn sm ghost" data-toast="Opens the title in Plex.">Open in Plex</button>
+            </div>
+            <p class="muted" style="font-size:12.5px;margin:0">Changes here edit the block, then appear in Publish until you push them to Tunarr.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- CHANNEL -->
+    <section class="view" data-view="channel">
+      <div class="ch-head">
+        <span class="bug lg">103</span>
+        <div>
+          <h2>Galaxy Action</h2>
+          <div class="line2"><span class="tier"><i></i>Galaxy Main</span><span>Adrenaline and franchise</span><span>Shuffle</span><span class="chip ok"><svg class="ic sm"><use href="#i-link"/></svg>Tunarr #103</span><span class="chip warn">4 unpublished changes</span></div>
+        </div>
+        <div class="acts"><button class="btn"><svg class="ic sm"><use href="#i-edit"/></svg>Edit channel</button><button class="btn primary" data-go="publish"><svg class="ic sm"><use href="#i-send"/></svg>Publish</button></div>
+      </div>
+      <div class="tabs"><button class="on">Schedule</button><button>Titles <span class="n">348</span></button><button>Collections <span class="n">4</span></button><button>Branding</button></div>
+      <div class="ch-body">
+        <div class="week-wrap">
+          <div class="week-bar">
+            <div class="date" style="display:flex;align-items:center;gap:4px;font-weight:600"><button class="btn ghost sm" aria-label="Previous week"><svg class="ic sm"><use href="#i-chev-l"/></svg></button>Sep 28 to Oct 4<button class="btn ghost sm" aria-label="Next week"><svg class="ic sm"><use href="#i-chev-r"/></svg></button></div>
+            <button class="btn sm"><svg class="ic sm"><use href="#i-plus"/></svg>Add block</button>
+            <button class="btn sm" data-toast="Templates library is not mocked yet."><svg class="ic sm"><use href="#i-layers"/></svg>Apply template</button>
+            <div class="legend"><span class="lg-k"><i style="background:var(--movie)"></i>Movies</span><span class="lg-k"><i style="background:var(--show)"></i>Shows</span><span class="lg-k"><i style="background:var(--both)"></i>Both</span><span class="lg-k"><i style="background:var(--warn);border-radius:50%"></i>Has a problem</span></div>
+          </div>
+          <div class="week" id="week"></div>
+        </div>
+        <aside class="inspector" id="inspector"></aside>
+      </div>
+    </section>
+
+    <!-- LIBRARY -->
+    <section class="view" data-view="library">
+      <div class="lib">
+        <aside class="lib-side">
+          <h4>Plex libraries</h4>
+          <a class="on"><svg class="ic sm"><use href="#i-film"/></svg>Movies<span>1,412</span></a>
+          <a><svg class="ic sm"><use href="#i-tv"/></svg>TV Shows<span>318</span></a>
+          <a><svg class="ic sm"><use href="#i-tv"/></svg>Anime<span>96</span></a>
+          <a><svg class="ic sm"><use href="#i-layers"/></svg>Collections<span>41</span></a>
+          <h4>Genre</h4>
+          <div class="chips"><span class="chip on">Action</span><span class="chip">Thriller</span><span class="chip">Sci-fi</span><span class="chip">Crime</span><span class="chip">Comedy</span><span class="chip">Drama</span><span class="chip">Animation</span></div>
+          <h4>Decade</h4>
+          <div class="chips"><span class="chip">80s</span><span class="chip on">90s</span><span class="chip on">00s</span><span class="chip on">10s</span><span class="chip">20s</span></div>
+          <h4>Assignment</h4>
+          <div class="switch"><i></i>Show unassigned first</div>
+        </aside>
+        <div class="lib-main">
+          <div class="lib-bar">
+            <label class="search"><svg class="ic sm"><use href="#i-search"/></svg><input placeholder="Search 1,412 movies" aria-label="Search movies"></label>
+            <button class="btn">Sort: Recently added<svg class="ic sm"><use href="#i-chev-d"/></svg></button>
+            <span class="muted" style="font-size:12.5px">Showing 24 of 186 action titles</span>
+          </div>
+          <div class="posters" id="posters"></div>
+          <div class="tray hide" id="tray"><span><b id="selN">0</b> selected</span><button class="btn sm" data-toast="Pick a block to add these to.">Add to block</button><button class="btn sm primary" id="assignBtn">Assign to Galaxy Action<svg class="ic sm"><use href="#i-chev-d"/></svg></button><button class="btn sm ghost" id="clearSel" aria-label="Clear selection"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PUBLISH -->
+    <section class="view" data-view="publish">
+      <div class="pad">
+        <div class="home-head">
+          <div>
+            <h2 class="page">Publish to Tunarr</h2>
+            <p class="sub">Tunarr 1.3.6 at tunarr:8000. Tunarr keeps airing the last pushed schedule until you push again.</p>
+          </div>
+          <button class="btn" data-toast="Rebuilding the XMLTV guide in Tunarr."><svg class="ic sm"><use href="#i-refresh"/></svg>Rebuild guide data</button>
+        </div>
+        <div class="toolbar"><span class="chip on">Changed 3</span><span class="chip">In sync 22</span><span class="chip">Not linked 4</span></div>
+        <div class="pub">
+          <div class="panel" style="overflow:auto">
+            <table class="list" id="pubTable">
+              <thead><tr><th style="width:36px"></th><th>Channel</th><th>Tunarr</th><th>Changes</th><th>Collections</th><th>Last pushed</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="panel" style="display:flex;flex-direction:column">
+            <div class="panel-h"><h3 id="diffTitle">Galaxy Action</h3><span class="muted" style="font-size:12.5px;margin-left:auto">What Tunarr will change</span></div>
+            <div class="diff" id="diff"></div>
+            <div class="pub-foot" style="margin-top:auto">
+              <span class="muted" style="font-size:12.5px"><b id="pubN" style="color:var(--text)">3</b> channels selected</span>
+              <button class="btn ghost" style="margin-left:auto" data-toast="Preview opened in Tunarr.">Preview in Tunarr</button>
+              <button class="btn primary" id="pushBtn"><svg class="ic sm"><use href="#i-send"/></svg>Push 3 channels</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="scrim" id="scrim">
+      <div class="palette" role="dialog" aria-label="Command palette">
+        <div class="in"><svg class="ic muted"><use href="#i-search"/></svg><input id="palIn" value="action" aria-label="Search"><span class="kbd">Esc</span></div>
+        <div class="res">
+          <div class="grp">Channels</div>
+          <div class="it act"><span class="bug">103</span>Galaxy Action<span class="r">Open channel</span></div>
+          <div class="it"><span class="bug classic">123</span>Disney XD<span class="r">Action-adventure toons</span></div>
+          <div class="grp">Actions</div>
+          <div class="it"><svg class="ic sm muted"><use href="#i-plus"/></svg>Add a block to Galaxy Action</div>
+          <div class="it"><svg class="ic sm muted"><use href="#i-send"/></svg>Push Galaxy Action to Tunarr<span class="r">4 changes</span></div>
+          <div class="it"><svg class="ic sm muted"><use href="#i-spark"/></svg>Ask the advisor to fill Galaxy Action's gaps</div>
+          <div class="grp">Titles in Plex</div>
+          <div class="it"><span class="mini" style="width:22px;height:32px;border-radius:3px;background:linear-gradient(160deg,hsl(10 55% 38%),hsl(40 55% 14%))"></span>Last Action Hero<span class="r">1993, unassigned</span></div>
+          <div class="it"><span class="mini" style="width:22px;height:32px;border-radius:3px;background:linear-gradient(160deg,hsl(210 55% 38%),hsl(250 55% 14%))"></span>Action Jackson<span class="r">1988, Galaxy Vault</span></div>
+        </div>
+        <div class="foot"><span>↑↓ to move</span><span>Enter to open</span><span>Tab to filter by type</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────── Mobile ───────────── -->
+<section class="canvas" data-canvas="mobile">
+  <div class="phones">
+    <div class="phone"><div class="screen">
+      <div class="sbar"><span>8:42</span><span>●●● 5G</span></div>
+      <div class="m-head"><h3>On air</h3><span class="onair" style="margin-left:auto">Live</span></div>
+      <div class="m-seg"><span class="chip on">All</span><span class="chip">Main</span><span class="chip">Classics</span><span class="chip">Premium</span></div>
+      <div class="m-body" id="mAir"></div>
+      <div class="m-tabs"><span class="on"><svg class="ic"><use href="#i-home"/></svg>Home</span><span><svg class="ic"><use href="#i-guide"/></svg>Guide</span><span><svg class="ic"><use href="#i-tv"/></svg>Channels</span><span><svg class="ic"><use href="#i-film"/></svg>Library</span><span><svg class="ic"><use href="#i-send"/></svg>Publish</span></div>
+    </div></div>
+    <div class="phone"><div class="screen">
+      <div class="sbar"><span>8:42</span><span>●●● 5G</span></div>
+      <div class="m-head"><svg class="ic muted"><use href="#i-chev-l"/></svg><span class="bug">103</span><div><div style="font-weight:600">Galaxy Action</div><div class="muted" style="font-size:12px">Today, Fri Oct 2</div></div></div>
+      <div class="m-seg"><span class="chip">Thu</span><span class="chip on">Fri</span><span class="chip">Sat</span><span class="chip">Sun</span><span class="chip">Mon</span></div>
+      <div class="m-body"><div class="m-tl" id="mTl"></div></div>
+      <button class="fab"><svg class="ic sm"><use href="#i-plus"/></svg>Add title</button>
+      <div class="m-tabs"><span><svg class="ic"><use href="#i-home"/></svg>Home</span><span><svg class="ic"><use href="#i-guide"/></svg>Guide</span><span class="on"><svg class="ic"><use href="#i-tv"/></svg>Channels</span><span><svg class="ic"><use href="#i-film"/></svg>Library</span><span><svg class="ic"><use href="#i-send"/></svg>Publish</span></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ───────────── Decisions ───────────── -->
+<section class="canvas" data-canvas="decisions">
+  <div class="dec">
+    <div class="dec-intro">
+      <h2>What the refactor changes, and the calls only you can make</h2>
+      <p>Every change below starts from what the screen is for, not from how the current view works. Each card cites the code it replaces so you can check the reasoning. Pick your options at the bottom, then copy the summary back to me.</p>
+    </div>
+    <div class="changes" id="changes"></div>
+    <h3 class="sec">Your calls</h3>
+    <p class="muted" style="margin:0">Recommended options are marked. Accent and theme also drive the live preview at the top.</p>
+    <div class="calls" id="calls"></div>
+    <div class="summary"><pre id="sumOut"></pre><button class="btn primary" id="copySum">Copy my choices</button></div>
+  </div>
+</section>
+
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* ───────────── Helpers ───────────── */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const hue = s => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const art = s => { const h = hue(s); return `linear-gradient(165deg,hsl(${h} 48% 36%),hsl(${(h + 38) % 360} 52% 13%))`; };
+const mins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const fmt = m => { m = ((m % 1440) + 1440) % 1440; let h = Math.floor(m / 60), mm = m % 60; const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return `${h}:${String(mm).padStart(2, '0')} ${ap}`; };
+const fmtH = m => fmt(m).replace(':00', '');
+const dur = d => d >= 60 ? `${Math.floor(d / 60)} h${d % 60 ? ' ' + (d % 60) + ' m' : ''}` : `${d} m`;
+const tierCls = t => t === 'classic' ? 'classic' : t === 'prem' ? 'prem' : '';
+const NOW = mins('20:42');
+let toastT;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200); }
+
+/* ───────────── Data (real Galaxy Network lineup) ───────────── */
+const CH = [
+  { n: 100, name: 'Galaxy ONE', tier: 'main', vibe: 'Flagship, big tent', p: [['Parasite', '18:50', 132, 'Movie'], ['Oppenheimer', '21:02', 180, 'Movie']] },
+  { n: 101, name: 'Galaxy 2', tier: 'main', vibe: 'Everyday cable comfort', p: [['NCIS', '19:00', 44, 'S14 E3'], ['NCIS', '19:44', 44, 'S14 E4'], ['Blue Bloods', '20:28', 43, 'S3 E9'], ['Blue Bloods', '21:11', 43, 'S3 E10'], ['The Big Bang Theory', '21:54', 22, 'S5 E2'], ['The Big Bang Theory', '22:16', 22, 'S5 E3'], ['How I Met Your Mother', '22:38', 22, 'S2 E8'], ['How I Met Your Mother', '23:00', 22, 'S2 E9']] },
+  { n: 102, name: 'Galaxy Premium', tier: 'main', vibe: 'Elevated cable drama', p: [['Better Call Saul', '19:00', 47, 'S2 E1'], ['Better Call Saul', '19:47', 47, 'S2 E2'], ['Ozark', '20:34', 60, 'S1 E5'], ['Ozark', '21:34', 60, 'S1 E6'], ['Peaky Blinders', '22:34', 58, 'S4 E1']] },
+  { n: 103, name: 'Galaxy Action', tier: 'main', vibe: 'Adrenaline and franchise', p: [['Edge of Tomorrow', '17:00', 113, 'Movie'], ['Top Gun: Maverick', '18:53', 131, 'Movie'], ['John Wick', '21:04', 101, 'Movie'], ['Mission: Impossible Fallout', '22:45', 147, 'Movie']] },
+  { n: 104, name: 'Galaxy Thrills', tier: 'main', vibe: 'Tension, dark energy', p: [['Prisoners', '19:10', 153, 'Movie']] },
+  { n: 105, name: 'Galaxy Crime', tier: 'main', vibe: 'Investigation, obsession', p: [['Mindhunter', '19:00', 55, 'S1 E2'], ['Mindhunter', '19:55', 55, 'S1 E3'], ['True Detective', '20:50', 58, 'S1 E4'], ['Zodiac', '21:48', 157, 'Movie']] },
+  { n: 106, name: 'Galaxy Romance', tier: 'main', vibe: 'Cozy, emotional', p: [['Pride & Prejudice', '19:00', 129, 'Movie'], ['Notting Hill', '21:09', 124, 'Movie'], ['About Time', '23:13', 123, 'Movie']] },
+  { n: 108, name: 'Galaxy Comedy', tier: 'main', vibe: 'Light, rewatchable', p: [['Brooklyn Nine-Nine', '19:00', 22, 'S3 E1'], ['Brooklyn Nine-Nine', '19:22', 22, 'S3 E2'], ['Parks and Recreation', '19:44', 22, 'S4 E10'], ['The Office', '20:06', 22, 'S5 E14'], ['The Office', '20:28', 22, 'S5 E15'], ['Superbad', '20:50', 113, 'Movie'], ['Step Brothers', '22:43', 98, 'Movie']] },
+  { n: 112, name: 'Galaxy Kids', tier: 'main', vibe: 'Bright, parent-safe', p: [['Bluey', '19:00', 60, '8 episodes'], ['Paddington 2', '20:00', 104, 'Movie'], ['Bluey', '21:44', 106, 'Encore marathon']] },
+  { n: 116, name: 'Galaxy Anime', tier: 'main', vibe: 'Japanese animation', p: [['Cowboy Bebop', '19:00', 24, 'S1 E5'], ['Cowboy Bebop', '19:24', 24, 'S1 E6'], ['Cowboy Bebop', '19:48', 24, 'S1 E7'], ['Cowboy Bebop', '20:12', 24, 'S1 E8'], ['Spirited Away', '20:36', 125, 'Movie'], ['Attack on Titan', '22:41', 24, 'S1 E1'], ['Attack on Titan', '23:05', 24, 'S1 E2']] },
+  { n: 120, name: 'Cartoon Network', tier: 'classic', vibe: '90s and 00s cartoons', p: [["Dexter's Laboratory", '19:00', 23, 'S2 E4'], ['Johnny Bravo', '19:23', 23, 'S1 E9'], ['Courage the Cowardly Dog', '19:46', 23, 'S2 E1'], ['The Powerpuff Girls', '20:09', 23, 'S3 E2'], ['Ed, Edd n Eddy', '20:32', 23, 'S1 E3'], ['Samurai Jack', '20:55', 23, 'S1 E1'], ['Codename: Kids Next Door', '21:18', 23, 'S1 E6']] },
+  { n: 126, name: 'MTV', tier: 'classic', vibe: 'Youth culture, music', p: [['Daria', '19:00', 22, 'S1 E1'], ['Beavis and Butt-Head', '19:22', 22, 'S4 E2'], ['The Real World', '19:44', 44, 'S3 E7'], ['Jackass', '20:28', 22, 'S1 E4'], ['MTV Unplugged: Nirvana', '20:50', 60, 'Special'], ['Daria', '21:50', 22, 'S1 E2'], ['Daria', '22:12', 22, 'S1 E3'], ['Celebrity Deathmatch', '22:34', 22, 'S1 E1'], ['Celebrity Deathmatch', '22:56', 22, 'S1 E2']] },
+  { n: 140, name: 'Galaxy Premieres', tier: 'prem', vibe: 'Prestige, event TV', p: [['Shōgun', '19:00', 59, 'S1 E1'], ['Shōgun', '19:59', 59, 'S1 E2'], ['Dune: Part Two', '20:58', 166, 'Movie']] },
+  { n: 141, name: 'Galaxy Cinema', tier: 'prem', vibe: 'Pure movies', p: [['Heat', '18:45', 170, 'Movie'], ['Blade Runner 2049', '21:35', 164, 'Movie']] },
+  { n: 145, name: 'Galaxy After Dark', tier: 'prem', vibe: 'Mature, bold', p: [['Eyes Wide Shut', '22:00', 159, 'Movie']] },
+];
+const onNow = c => { for (let i = 0; i < c.p.length; i++) { const [t, s, d, k] = c.p[i]; const st = mins(s); if (st <= NOW && NOW < st + d) return { t, st, d, k, next: c.p[i + 1] }; } return null; };
+
+/* ───────────── Navigation ───────────── */
+const APP_VIEWS = ['home', 'guide', 'channel', 'library', 'publish'];
+const CRUMB = {
+  home: 'Home',
+  guide: 'Guide',
+  channel: '<span class="lo">Channels</span><span class="sep">/</span>103 Galaxy Action',
+  library: '<span class="lo">Library</span><span class="sep">/</span>Movies',
+  publish: 'Publish',
+};
+function go(id) {
+  if (id === 'templates' || id === 'settings') { toast(`${id[0].toUpperCase() + id.slice(1)} is not mocked yet.`); return; }
+  const palette = id === 'palette';
+  const view = palette ? 'guide' : id;
+  const inApp = APP_VIEWS.includes(view);
+  $('#app').style.display = inApp ? '' : 'none';
+  $$('.canvas').forEach(c => c.classList.toggle('on', c.dataset.canvas === id));
+  $$('.view').forEach(v => v.classList.toggle('on', v.dataset.view === view));
+  $$('.rail a').forEach(a => a.classList.toggle('on', a.dataset.nav === view));
+  $$('.vtabs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.go === id));
+  $('#scrim').classList.toggle('on', palette);
+  if (inApp) $('#crumbs').innerHTML = CRUMB[view];
+  if (view === 'guide') requestAnimationFrame(scrollToNow);
+  try { localStorage.setItem('linearr-mock-screen', id); } catch (e) {}
+}
+document.addEventListener('click', e => {
+  const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go); return; }
+  const n = e.target.closest('[data-nav]'); if (n) { go(n.dataset.nav); return; }
+  const t = e.target.closest('[data-toast]'); if (t) toast(t.dataset.toast);
+});
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); go('palette'); }
+  if (e.key === 'Escape') { if ($('#scrim').classList.contains('on')) go('guide'); $('#drawer').classList.remove('open'); }
+});
+$('#scrim').addEventListener('click', e => { if (e.target.id === 'scrim') go('guide'); });
+
+/* Theme + accent */
+function setTheme(t) { document.documentElement.dataset.theme = t; $$('[data-theme-set]').forEach(b => b.setAttribute('aria-pressed', b.dataset.themeSet === t)); syncCall('theme', t === 'dark' ? 'Dark' : 'Light'); }
+function setAccent(a) { document.documentElement.dataset.accent = a; $$('.swatches button').forEach(b => b.setAttribute('aria-pressed', b.dataset.accent === a)); syncCall('accent', a[0].toUpperCase() + a.slice(1)); }
+$$('[data-theme-set]').forEach(b => b.onclick = () => setTheme(b.dataset.themeSet));
+$$('.swatches button').forEach(b => b.onclick = () => setAccent(b.dataset.accent));
+
+/* ───────────── Home ───────────── */
+$('#airstrip').innerHTML = CH.filter(c => [100, 103, 105, 108, 116, 140].includes(c.n)).map(c => {
+  const o = onNow(c); const pct = Math.round((NOW - o.st) / o.d * 100); const left = o.st + o.d - NOW;
+  return `<div class="panel aircard" data-go="guide">
+    <div class="row"><span class="bug ${tierCls(c.tier)}">${c.n}</span><span class="name">${c.name}</span></div>
+    <div><div class="now">${o.t}</div><div class="muted" style="font-size:12px;margin-top:2px">${o.k === 'Movie' ? 'Movie, ' + dur(o.d) : o.k}</div></div>
+    <div><div class="progress"><b style="width:${pct}%"></b></div><div class="meta" style="margin-top:6px"><span>${fmt(o.st)}</span><span>${dur(left)} left</span></div></div>
+    <div class="next">Next at ${o.next ? fmt(mins(o.next[1])) : fmt(o.st + o.d)}: <b>${o.next ? o.next[0] : 'Nothing scheduled'}</b></div>
+  </div>`;
+}).join('');
+
+(function heat() {
+  const parts = ['6 AM', '9 AM', '12 PM', '5 PM', '10 PM', '2 AM'];
+  const all = [[100, 'Galaxy ONE'], [101, 'Galaxy 2'], [102, 'Galaxy Premium'], [103, 'Galaxy Action'], [104, 'Galaxy Thrills'], [105, 'Galaxy Crime'], [106, 'Galaxy Romance'], [107, 'Galaxy Now'], [108, 'Galaxy Comedy'], [109, 'Galaxy Puerto Rico'], [112, 'Galaxy Kids'], [116, 'Galaxy Anime'], [120, 'Cartoon Network'], [126, 'MTV'], [140, 'Galaxy Premieres'], [141, 'Galaxy Cinema'], [145, 'Galaxy After Dark']];
+  const zero = { '104-4': 1, '104-5': 1, '120-4': 1, '120-5': 1, '145-0': 1, '145-1': 1, '145-2': 1, '145-3': 1 };
+  let seed = 7; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  let html = '<table><thead><tr><th></th>' + parts.map(p => `<th>${p}</th>`).join('') + '</tr></thead><tbody>';
+  for (const [n, nm] of all) {
+    html += `<tr><td class="l"><b>${n}</b>${nm}</td>`;
+    parts.forEach((p, i) => {
+      if (zero[`${n}-${i}`]) { html += `<td class="c zero" title="${nm}, ${p}: nothing scheduled"></td>`; return; }
+      const v = Math.min(1, .35 + rnd() * .75); html += `<td class="c" style="opacity:${(.18 + v * .82).toFixed(2)}" title="${nm}, ${p}: ${Math.round(v * 100)}% filled"></td>`;
+    });
+    html += '</tr>';
+  }
+  $('#heat').innerHTML = html + '</tbody></table>';
+  $('#scale').innerHTML = [.2, .4, .6, .8, 1].map(o => `<i style="opacity:${o}"></i>`).join('');
+})();
+
+/* ───────────── Guide ───────────── */
+const G0 = mins('19:00'), G1 = mins('23:30'), PPM = 4;
+let guideTier = 'all';
+function renderGuide() {
+  const W = (G1 - G0) * PPM;
+  let h = `<div class="g-head"><div class="corner">Channel</div><div class="g-times" style="width:${W}px">`;
+  for (let t = G0; t < G1; t += 30) h += `<span style="left:${(t - G0) * PPM}px;width:${30 * PPM}px">${fmt(t)}</span>`;
+  h += '</div></div>';
+  for (const c of CH.filter(c => guideTier === 'all' || c.tier === guideTier)) {
+    h += `<div class="g-row"><div class="g-ch" data-go="channel"><span class="bug ${tierCls(c.tier)}">${c.n}</span><div style="min-width:0"><div class="nm">${c.name}</div><div class="vb">${c.vibe}</div></div></div><div class="g-track" style="width:${W}px">`;
+    let cursor = G0;
+    const cells = [];
+    for (const [t, s, d, k] of c.p) {
+      const st = mins(s), en = st + d;
+      if (en <= G0 || st >= G1) continue;
+      if (st > cursor + 9) cells.push({ gap: 1, st: cursor, en: st });
+      cells.push({ t, st, en, d, k });
+      cursor = Math.max(cursor, en);
+    }
+    if (cursor < G1 - 9) cells.push({ gap: 1, st: cursor, en: G1 });
+    for (const x of cells) {
+      const l = (Math.max(x.st, G0) - G0) * PPM + 2, w = (Math.min(x.en, G1) - Math.max(x.st, G0)) * PPM - 4;
+      if (x.gap) { h += `<button class="prog gap" style="left:${l}px;width:${w}px" data-toast="Opens the library filtered to titles that fit ${dur(x.en - x.st)}.">${w > 70 ? `<span class="pt">Nothing scheduled, ${dur(x.en - x.st)}</span>` : ''}${w > 220 ? '<span class="fill"><svg class="ic sm"><use href="#i-plus"/></svg>Fill</span>' : ''}</button>`; continue; }
+      const live = x.st <= NOW && NOW < x.en, past = x.en <= NOW;
+      const cls = ['prog', x.k === 'Movie' ? 'movie' : '', live ? 'live' : '', past ? 'past' : ''].join(' ');
+      const meta = x.k === 'Movie' ? `${fmt(x.st)}, ${dur(x.d)}` : `${x.k}, ${fmt(x.st)}`;
+      h += `<button class="${cls}" style="left:${l}px;width:${w}px" data-prog='${JSON.stringify({ c: c.n, name: c.name, t: x.t, st: x.st, d: x.d, k: x.k }).replace(/'/g, '&#39;')}'><span class="pt">${x.t}</span><span class="pm"><i class="k"></i>${meta}</span>${live ? `<span class="bar" style="width:${(NOW - x.st) / x.d * 100}%"></span>` : ''}</button>`;
+    }
+    h += '</div></div>';
+  }
+  h += `<div class="nowline" style="left:calc(var(--chw) + ${(NOW - G0) * PPM}px)" data-t="${fmt(NOW)}"></div>`;
+  $('#guide').innerHTML = h;
+  $('#guide').style.width = `calc(var(--chw) + ${W}px)`;
+}
+function scrollToNow() { const s = $('#guideScroll'); s.scrollLeft = Math.max(0, (NOW - G0) * PPM - 260); }
+renderGuide();
+$('#jumpNow').onclick = scrollToNow;
+$$('[data-tier]').forEach(b => b.onclick = () => { guideTier = b.dataset.tier; $$('[data-tier]').forEach(x => x.setAttribute('aria-pressed', x === b)); renderGuide(); });
+$('#guide').addEventListener('click', e => {
+  const p = e.target.closest('[data-prog]'); if (!p) return;
+  $$('.prog.sel').forEach(x => x.classList.remove('sel')); p.classList.add('sel');
+  const d = JSON.parse(p.dataset.prog);
+  $('#dArt').style.background = art(d.t); $('#dTitle').textContent = d.t;
+  const state = d.st <= NOW && NOW < d.st + d.d ? '<span class="onair">On air now</span>' : d.st + d.d <= NOW ? 'Aired' : 'Upcoming';
+  $('#dKv').innerHTML = `<dt>Channel</dt><dd>${d.c} ${d.name}</dd><dt>Airs</dt><dd>${fmt(d.st)} to ${fmt(d.st + d.d)}</dd><dt>Length</dt><dd>${dur(d.d)}</dd><dt>Type</dt><dd>${d.k === 'Movie' ? 'Movie' : 'Episode, ' + d.k}</dd><dt>Status</dt><dd>${state}</dd><dt>Block</dt><dd>${d.st >= mins('17:00') && d.st < mins('22:00') ? 'Prime time' : 'Late night'}</dd>`;
+  $('#drawer').classList.add('open');
+});
+$('#dClose').onclick = () => { $('#drawer').classList.remove('open'); $$('.prog.sel').forEach(x => x.classList.remove('sel')); };
+
+/* ───────────── Channel week ───────────── */
+const BLOCKS = {
+  sci: { name: 'Sci-fi morning', s: '06:00', e: '09:00', type: 'shows', fill: .9, slots: [['06:00', 'The Expanse', 'S2 E1, 45 m'], ['06:45', 'The Expanse', 'S2 E2, 45 m'], ['07:30', 'Battlestar Galactica', 'S1 E4, 44 m'], ['08:14', 'Battlestar Galactica', 'S1 E5, 44 m']] },
+  hero: { name: 'Superhero block', s: '09:00', e: '12:00', type: 'both', fill: .8, slots: [['09:00', 'Daredevil', 'S1 E3, 53 m'], ['09:53', 'Spider-Man: Into the Spider-Verse', 'Movie, 1 h 57 m']] },
+  sat: { name: 'Saturday franchise run', s: '09:00', e: '14:00', type: 'movies', fill: 1, slots: [['09:00', 'Iron Man', 'Movie, 2 h 6 m'], ['11:06', 'The Avengers', 'Movie, 2 h 23 m']] },
+  mara: { name: 'Action marathon', s: '12:00', e: '17:00', type: 'movies', fill: .95, slots: [['12:00', 'Die Hard', 'Movie, 2 h 12 m'], ['14:12', 'Speed', 'Movie, 1 h 56 m']] },
+  prime: { name: 'Blockbuster prime', s: '17:00', e: '22:00', type: 'movies', fill: 1, warn: 1, slots: [['17:00', 'Edge of Tomorrow', 'Movie, 1 h 53 m'], ['18:53', 'Top Gun: Maverick', 'Movie, 2 h 11 m'], ['21:04', 'John Wick', 'Movie, 1 h 41 m', 1]] },
+  late: { name: 'After hours', s: '22:00', e: '26:00', type: 'movies', fill: .7, slots: [['22:45', 'Mission: Impossible Fallout', 'Movie, 2 h 27 m']] },
+  over: { name: 'Overnight sci-fi', s: '26:00', e: '30:00', type: 'shows', fill: .55, warn: 1, slots: [['02:00', 'Firefly', 'S1 E1, 1 h 26 m']] },
+};
+const WEEK = [['Mon', 28], ['Tue', 29], ['Wed', 30], ['Thu', 1], ['Fri', 2], ['Sat', 3], ['Sun', 4]];
+const dayBlocks = d => d >= 5 ? ['sci', 'sat', 'mara', 'prime', 'late', 'over'] : ['sci', 'hero', 'mara', 'prime', 'late', 'over'];
+const H0 = 6 * 60;
+let selBlock = { key: 'prime', day: 4 };
+function renderWeek() {
+  const hpx = 22;
+  let h = '<div></div>' + WEEK.map(([d, n], i) => `<div class="dh ${i === 4 ? 'today' : ''}">${d} <b>${n}</b></div>`).join('');
+  h += `<div class="hours" style="height:${24 * hpx}px">` + Array.from({ length: 8 }, (_, i) => `<span style="top:${i * 3 * hpx}px">${fmt(H0 + i * 180).replace(':00', '')}</span>`).join('') + '</div>';
+  WEEK.forEach((_, di) => {
+    h += `<div class="daycol ${di === 4 ? 'today' : ''}" style="height:${24 * hpx}px">`;
+    for (const k of dayBlocks(di)) {
+      const b = BLOCKS[k]; let s = mins(b.s), e = mins(b.e);
+      const top = (s - H0) / 60 * hpx, ht = (e - s) / 60 * hpx;
+      const sel = selBlock.key === k && selBlock.day === di;
+      h += `<button class="blk ${b.type} ${sel ? 'sel' : ''}" style="top:${top + 1}px;height:${ht - 2}px" data-blk="${k}" data-day="${di}">${b.warn && di === 4 ? '<span class="wn" title="Has a problem"></span>' : ''}<span class="bn">${b.name}</span>${ht > 50 ? `<span class="bt">${fmtH(s)} to ${fmtH(e)}</span>` : ''}<span class="bf"><b style="width:${b.fill * 100}%"></b></span></button>`;
+    }
+    if (di === 4) h += `<div class="week-now" style="top:${(NOW - H0) / 60 * hpx}px"></div>`;
+    h += '</div>';
+  });
+  $('#week').innerHTML = h;
+}
+function renderInspector() {
+  const b = BLOCKS[selBlock.key], di = selBlock.day;
+  const days = WEEK.map(([d], i) => `<span class="${dayBlocks(i).includes(selBlock.key) ? 'on' : ''}">${d[0]}${d === 'Thu' || d === 'Tue' ? d[1] : d === 'Sat' || d === 'Sun' ? d[1] : ''}</span>`).join('');
+  const s = mins(b.s), e = mins(b.e);
+  const slots = b.slots.map(([t, n, m, over]) => `<div class="slot ${over ? 'over' : ''}"><span class="tm">${fmt(mins(t))}</span><span class="mini" style="background:${art(n)}"></span><div><div class="st">${n}</div><div class="sd">${m}</div></div><svg class="ic sm grip"><use href="#i-grip"/></svg></div>`).join('');
+  const empty = b.fill < 1 ? `<div class="slot empty">${dur(Math.round((e - s) * (1 - b.fill)))} unfilled. Drop a title here or fill automatically.</div>` : '';
+  const warn = selBlock.key === 'prime' ? '<div class="note"><svg class="ic sm"><use href="#i-alert"/></svg><span><b>John Wick</b> runs 45 minutes past the block end, which pushes After hours back to 10:45 PM.</span></div>' :
+    selBlock.key === 'over' ? '<div class="note"><svg class="ic sm"><use href="#i-alert"/></svg><span>Only 1 show in this block. Shuffle will repeat Firefly every night.</span></div>' : '';
+  $('#inspector').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px"><span class="lg-k"><i style="background:var(--${b.type === 'movies' ? 'movie' : b.type === 'shows' ? 'show' : 'both'})"></i></span><h3>${b.name}</h3><button class="btn ghost sm" style="margin-left:auto" aria-label="Edit block"><svg class="ic sm"><use href="#i-edit"/></svg></button></div>
+    <p class="muted" style="margin:4px 0 0;font-size:13px">${WEEK[di][0]}day, ${fmt(s)} to ${fmt(e)}, ${b.type === 'both' ? 'movies and shows' : b.type}</p>
+    <div class="ins-sec"><h4>Repeats on</h4><div class="days">${days}</div></div>
+    <div class="ins-sec"><h4>Line-up</h4><div class="slots">${slots}${empty}</div>${warn}</div>
+    <div class="ins-acts"><button class="btn primary sm" data-toast="The advisor filled the open time with 2 titles."><svg class="ic sm"><use href="#i-spark"/></svg>Fill with advisor</button><button class="btn sm" data-go="library"><svg class="ic sm"><use href="#i-plus"/></svg>Add from library</button><button class="btn sm ghost" data-toast="Saved as a reusable template.">Save as template</button></div>`;
+}
+renderWeek(); renderInspector();
+$('#week').addEventListener('click', e => { const b = e.target.closest('[data-blk]'); if (!b) return; selBlock = { key: b.dataset.blk, day: +b.dataset.day }; renderWeek(); renderInspector(); });
+
+/* ───────────── Library ───────────── */
+const LIB = [['John Wick', 2014, '103'], ['Mad Max: Fury Road', 2015, '103'], ['The Dark Knight', 2008, '100'], ['Heat', 1995, '141'], ['Sicario', 2015, ''], ['Gladiator', 2000, '100'], ['Speed', 1994, '103'], ['The Matrix', 1999, '103'], ['Die Hard', 1988, '103'], ['Inception', 2010, '100'], ['Casino Royale', 2006, ''], ['Edge of Tomorrow', 2014, '103'], ['Baby Driver', 2017, ''], ['The Raid', 2011, ''], ['Face/Off', 1997, '144'], ['Point Break', 1991, ''], ['Kill Bill: Vol. 1', 2003, '145'], ['Mission: Impossible Fallout', 2018, '103'], ['The Bourne Identity', 2002, ''], ['Top Gun: Maverick', 2022, '103'], ['Collateral', 2004, '104'], ['Dredd', 2012, ''], ['Atomic Blonde', 2017, ''], ['Crouching Tiger, Hidden Dragon', 2000, '141']];
+const sel = new Set(['Sicario', 'Baby Driver', 'The Raid']);
+function renderLib() {
+  $('#posters').innerHTML = LIB.map(([t, y, a]) => `<button class="pcard ${sel.has(t) ? 'sel' : ''}" data-t="${t}"><div class="poster" style="background:${art(t)}"><div class="tag">${a ? `<span>${a}</span>` : ''}</div><span class="chk">${sel.has(t) ? '<svg class="ic sm" style="color:#fff;stroke-width:2.5"><use href="#i-check"/></svg>' : ''}</span><span class="pt">${t}</span></div><div><div class="pn">${t}</div><div class="pm"><span>${y}</span><span>${a ? 'On ' + a : 'Unassigned'}</span></div></div></button>`).join('');
+  $('#selN').textContent = sel.size; $('#tray').classList.toggle('hide', sel.size === 0);
+}
+renderLib();
+$('#posters').addEventListener('click', e => { const c = e.target.closest('[data-t]'); if (!c) return; const t = c.dataset.t; sel.has(t) ? sel.delete(t) : sel.add(t); renderLib(); });
+$('#clearSel').onclick = () => { sel.clear(); renderLib(); };
+$('#assignBtn').onclick = () => { toast(`Assigned ${sel.size} titles to Galaxy Action.`); sel.clear(); renderLib(); };
+
+/* ───────────── Publish ───────────── */
+const PUB = [
+  [103, 'Galaxy Action', 'main', '#103', '4 slots changed, 1 block edited', 'In sync', '2 days ago', 1],
+  [105, 'Galaxy Crime', 'main', '#105', '2 slots added', 'In sync', '2 days ago', 1],
+  [116, 'Galaxy Anime', 'main', '#116', '1 block added', '1 collection to sync', '5 days ago', 1],
+  [100, 'Galaxy ONE', 'main', '#100', '', 'In sync', '2 days ago'],
+  [101, 'Galaxy 2', 'main', '#101', '', 'In sync', '2 days ago'],
+  [120, 'Cartoon Network', 'classic', '#120', '', 'In sync', '1 week ago'],
+  [140, 'Galaxy Premieres', 'prem', '#140', '', 'In sync', '2 days ago'],
+  [144, 'Galaxy Vault', 'prem', '', '', '', ''],
+  [145, 'Galaxy After Dark', 'prem', '', '', '', ''],
+];
+const pubSel = new Set([103, 105, 116]); let pubFocus = 103;
+const DIFFS = {
+  103: [['grp', 'Friday prime time'], ['same', '5:00 PM', 'Edge of Tomorrow'], ['del', '6:53 PM', 'Fast Five'], ['add', '6:53 PM', 'Top Gun: Maverick'], ['add', '9:04 PM', 'John Wick'], ['grp', 'Friday after hours'], ['del', '10:00 PM', 'Mission: Impossible Fallout'], ['add', '10:45 PM', 'Mission: Impossible Fallout']],
+  105: [['grp', 'Weeknight prime time'], ['same', '7:00 PM', 'Mindhunter S1 E2'], ['same', '7:55 PM', 'Mindhunter S1 E3'], ['add', '8:50 PM', 'True Detective S1 E4'], ['add', '9:48 PM', 'Zodiac']],
+  116: [['grp', 'New block: Weekend Ghibli'], ['add', '2:00 PM', 'My Neighbor Totoro'], ['add', '3:26 PM', "Kiki's Delivery Service"], ['add', '5:09 PM', 'Princess Mononoke'], ['grp', 'Collections'], ['add', '', 'Studio Ghibli (movie collection)']],
+};
+function renderPub() {
+  $('#pubTable tbody').innerHTML = PUB.map(([n, nm, t, tid, ch, col, last, changed]) => `<tr data-n="${n}" class="${pubFocus === n ? 'sel' : ''}">
+    <td><span class="cbx ${pubSel.has(n) ? 'on' : ''}" ${changed ? '' : 'style="opacity:.35"'}></span></td>
+    <td><div class="chcell"><span class="bug ${tierCls(t)}">${n}</span>${nm}</div></td>
+    <td>${tid ? `<span class="muted">${tid}</span>` : '<button class="btn sm" data-toast="Pick a Tunarr channel to link.">Link</button>'}</td>
+    <td>${ch ? `<span class="chip warn">${ch}</span>` : tid ? '<span class="chip ok"><svg class="ic sm"><use href="#i-check"/></svg>In sync</span>' : '<span class="faint">Not linked</span>'}</td>
+    <td class="muted">${col || '<span class="faint">None</span>'}</td><td class="muted">${last || ''}</td></tr>`).join('');
+  const d = DIFFS[pubFocus];
+  $('#diffTitle').textContent = PUB.find(p => p[0] === pubFocus)[1];
+  $('#diff').innerHTML = d ? d.map(([k, a, b]) => k === 'grp' ? `<div class="grp">${a}</div>` : `<div class="dl ${k}"><span class="s">${k === 'add' ? '+' : k === 'del' ? '−' : ''}</span><span class="muted">${a}</span><span class="tt">${b}</span></div>`).join('') : '<p class="muted" style="margin:10px 0">Nothing to push. Tunarr is airing the same schedule you see in the guide.</p>';
+  $('#pubN').textContent = pubSel.size; $('#pushBtn').lastChild.textContent = `Push ${pubSel.size} channel${pubSel.size === 1 ? '' : 's'}`;
+  $('#pushBtn').disabled = pubSel.size === 0; $('#pushBtn').style.opacity = pubSel.size ? 1 : .5;
+}
+renderPub();
+$('#pubTable').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-n]'); if (!tr || e.target.closest('[data-toast]')) return; const n = +tr.dataset.n;
+  if (e.target.closest('.cbx') && DIFFS[n]) { pubSel.has(n) ? pubSel.delete(n) : pubSel.add(n); }
+  pubFocus = n; renderPub();
+});
+$('#pushBtn').onclick = () => toast(`Pushed ${pubSel.size} channels. Tunarr will air the new schedule from the next slot.`);
+
+/* ───────────── Mobile ───────────── */
+$('#mAir').innerHTML = CH.filter(c => onNow(c)).slice(0, 8).map(c => { const o = onNow(c); return `<div class="m-row"><span class="bug ${tierCls(c.tier)}">${c.n}</span><div style="flex:1;min-width:0"><div class="s">${c.name}</div><div class="t">${o.t}</div><div class="progress"><b style="width:${(NOW - o.st) / o.d * 100}%"></b></div></div></div>`; }).join('');
+$('#mTl').innerHTML = CH.find(c => c.n === 103).p.map(([t, s, d, k]) => { const st = mins(s), live = st <= NOW && NOW < st + d; return `<div class="tm">${fmt(st).replace(' ', ' ')}</div><div class="card ${live ? 'live' : ''}">${live ? '<span class="onair">On air</span>' : ''}<div class="t">${t}</div><div class="s">${k}, ${dur(d)}${st + d > mins('22:00') && st < mins('22:00') ? ', runs past block end' : ''}</div></div>`; }).join('');
+
+/* ───────────── Decisions ───────────── */
+const CHANGES = [
+  ['A home that answers "is my network OK?"', 'Opens on an empty state until you pick a channel.', 'Home shows what is on air, which dayparts are empty, what has not been pushed, and expiring tokens.', 'channels/components/EmptyState.tsx'],
+  ['The guide becomes the centre of the app', 'You only ever see one channel at a time. Tunarr has its own separate guide view.', 'A network-wide grid with a live now line. Gaps are visible and clickable to fill.', 'tunarr/components/TunarrGuide.tsx, TunarrView.tsx (1,179 lines)'],
+  ['Schedule as a week, not a list of cards', 'Blocks are cards that expand into an hour grid one at a time.', 'A week calendar of blocks plus an inspector. Overruns and thin blocks are flagged where they happen.', 'blocks/BlocksTab.tsx, BlockCard.tsx, HourGrid.tsx'],
+  ['One navigation model with real URLs', 'A 288px sidebar mixes 5 colour-coded views, a tier filter and 29 channels. No URLs, and Back does nothing.', 'A slim rail with 7 destinations, TanStack Router for deep links, and channels reached from the guide, the list or Ctrl K.', 'shared/store/ui.store.ts (activeView), ChannelSidebar.tsx'],
+  ['Publish is a review step, not a button per channel', 'Push and sync buttons are scattered across the Tunarr tab, the Tunarr view and channel headers.', 'One Publish screen with a diff per channel and a single push. A badge on the rail shows pending changes.', 'tunarr/components/TunarrTab.tsx, TunarrView.tsx'],
+  ['A library built for assigning', 'The Plex browser and the assignment grid are separate. You assign one title at a time.', 'Multi-select posters, see where each title already airs, and assign to a channel or block in one step.', 'plex/PlexView.tsx (824 lines), assignments/AssignmentGrid.tsx'],
+  ['Ctrl K for everything', 'Keyboard shortcuts exist but nothing is searchable across channels, titles and actions.', 'A command palette that jumps to channels, finds titles in Plex and runs actions like push or fill.', 'shared/hooks/useKeyboardShortcuts.ts'],
+  ['One design system, one dialog system', 'Tailwind v3 with raw slate and amber classes, plus sweetalert2, native confirm() and a toast store all in use.', 'Tailwind v4 with shadcn/ui tokens, light and dark themes, and one dialog and toast primitive.', 'tailwind.config.js, index.css, ChannelDetail.tsx confirm()'],
+  ['Tiers become data', 'Tier names are TypeScript literals ("Galaxy Main" | "Classics" | ...) with hard-coded colours.', 'Tiers are rows you can rename, recolour and reorder, so the app works for networks other than Galaxy.', 'shared/store/ui.store.ts TierFilter, TierBadge.tsx'],
+];
+$('#changes').innerHTML = CHANGES.map(([h, now, nu, src]) => `<div class="panel chg"><h4>${h}</h4><dl class="cmp"><dt>Today</dt><dd class="now">${now}</dd><dt>Proposed</dt><dd>${nu}</dd></dl><div class="src">Replaces <code>${src}</code></div></div>`).join('');
+
+const CALLS = [
+  ['accent', 'Accent colour', 'Used for actions and selection only', [['Violet', 'Matches the current logo', 1], ['Blue', 'Calmer, more neutral'], ['Teal', 'Further from the logo']]],
+  ['theme', 'Default theme', 'Both ship either way', [['Dark', 'Fits a living-room, TV-at-night tool', 1], ['Light', ''], ['System', 'Follow the OS setting']]],
+  ['landing', 'What opens first', '', [['Home dashboard', 'Status, gaps and pending pushes', 1], ['Guide', 'Straight to the grid']]],
+  ['schedule', 'Schedule editing', '', [['Week calendar + inspector', 'As mocked', 1], ['Keep block cards', 'Restyle only']]],
+  ['scope', 'Rollout', 'How the refactor lands', [['Shell first, then screen by screen', 'Rail, router and tokens ship first, then each screen behind its own PR', 1], ['Big-bang rewrite', 'One long-lived branch']]],
+  ['styling', 'Styling stack', '', [['Tailwind v4 + shadcn/ui', 'Tokens, Radix primitives, accessible dialogs', 1], ['Stay on Tailwind v3', 'Fewer moving parts']]],
+];
+const choice = { accent: 'Violet', theme: 'Dark', landing: 'Home dashboard', schedule: 'Week calendar + inspector', scope: 'Shell first, then screen by screen', styling: 'Tailwind v4 + shadcn/ui' };
+function renderCalls() {
+  $('#calls').innerHTML = CALLS.map(([k, q, s, opts]) => `<div class="panel call"><div class="q"><b>${q}</b>${s ? `<span>${s}</span>` : ''}</div><div class="opts">${opts.map(([o, d, rec]) => `<button class="opt" data-k="${k}" data-o="${o}" aria-pressed="${choice[k] === o}">${o}${rec ? '<span class="rec">Recommended</span>' : ''}${d ? `<small>${d}</small>` : ''}</button>`).join('')}</div></div>`).join('');
+  $('#sumOut').textContent = 'Linearr redesign choices\n' + CALLS.map(([k, q]) => `- ${q}: ${choice[k]}`).join('\n');
+}
+function syncCall(k, v) { if (choice[k] !== undefined && CALLS.find(c => c[0] === k)[3].some(o => o[0] === v)) { choice[k] = v; renderCalls(); } }
+renderCalls();
+$('#calls').addEventListener('click', e => {
+  const b = e.target.closest('.opt'); if (!b) return; choice[b.dataset.k] = b.dataset.o;
+  if (b.dataset.k === 'accent') setAccent(b.dataset.o.toLowerCase());
+  if (b.dataset.k === 'theme' && b.dataset.o !== 'System') setTheme(b.dataset.o.toLowerCase());
+  renderCalls();
+});
+$('#copySum').onclick = async () => { try { await navigator.clipboard.writeText($('#sumOut').textContent); toast('Copied. Paste it back into the chat.'); } catch (e) { toast('Copy failed. Select the text and copy it manually.'); } };
+
+/* Restore last screen */
+(function restore() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('theme')) setTheme(q.get('theme'));
+  const hash = location.hash.slice(1);
+  let s = hash; try { s = s || localStorage.getItem('linearr-mock-screen'); } catch (e) {}
+  if (s) go(s);
+})();
+</script>
+</body>
+</html>
