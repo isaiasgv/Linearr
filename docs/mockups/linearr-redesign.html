@@ -553,9 +553,253 @@ h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
 .start.on{border-color:var(--brand);background:var(--brand-soft)}
 .vtabs .dv{width:1px;align-self:stretch;background:var(--line-2);margin:4px 3px}
 
+/* ───────────── Viewer groups ───────────── */
+.vnav{display:flex;flex-direction:column;gap:8px;min-width:0}
+.vgroups{flex-wrap:wrap;width:fit-content}
+.vtabs button[hidden]{display:none}
+/* ───────────── Modals ───────────── */
+.ovl{position:absolute;inset:0;z-index:20;display:none;align-items:flex-start;justify-content:center;padding:5vh 16px 16px;background:rgba(5,9,20,.55);backdrop-filter:blur(2px);overflow:auto}
+:root[data-theme="light"] .ovl{background:rgba(30,40,70,.28)}
+.ovl.on{display:flex}
+.modal{max-height:100%;width:min(640px,100%);background:var(--raised);border:1px solid var(--line-2);border-radius:16px;box-shadow:var(--shadow);animation:pop .2s var(--ease);display:flex;flex-direction:column}
+.modal.wide{width:min(980px,100%)}
+.m-h{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.m-h h3{margin:0;font-size:16px}
+.m-h .x{margin-left:auto}
+.m-b{padding:18px;overflow:auto;min-height:0;flex:1}
+.m-f{display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
+.be{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px}
+.be-form{display:flex;flex-direction:column;gap:16px}
+.be-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.be-side{border-left:1px solid var(--line);padding-left:20px}
+.be-side h4{margin:0 0 8px;font-size:12.5px;color:var(--muted)}
+.radios{display:flex;flex-direction:column;gap:6px}
+.radios label{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;color:var(--text)}
+.radios label i{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line-2);flex:none;margin-top:2px}
+.radios label.on{border-color:var(--brand-line);background:var(--brand-soft)}
+.radios label.on i{border:5px solid var(--brand)}
+.radios label.chk i{border-radius:4px}
+.radios label.chk.on i{border:0;background:var(--brand) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center/11px no-repeat}
+.radios b{display:block;font-weight:500;font-size:13.5px}
+.radios span{font-size:12.5px;color:var(--muted)}
+/* ───────────── Day view ───────────── */
+.day-wrap{padding:18px 28px 30px}
+.dayscroll{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+.dayline{position:relative;padding-bottom:10px}
+.dl-ruler{position:relative;height:30px;border-bottom:1px solid var(--line)}
+.dl-ruler span{position:absolute;top:0;height:30px;display:flex;align-items:center;padding-left:6px;font-size:11.5px;color:var(--muted);border-left:1px solid var(--line)}
+.dl-blocks{position:relative;height:44px;margin-top:8px}
+.dl-blk{position:absolute;top:0;height:40px;border-radius:8px;padding:3px 9px;text-align:left;display:flex;flex-direction:column;justify-content:center;--c:var(--both);background:color-mix(in srgb,var(--c) 17%,var(--panel));border:1px solid color-mix(in srgb,var(--c) 38%,transparent);border-top:3px solid var(--c);overflow:hidden}
+.dl-blk.movies{--c:var(--movie)} .dl-blk.shows{--c:var(--show)}
+.dl-blk:hover{background:color-mix(in srgb,var(--c) 25%,var(--panel))}
+.dl-blk b{font-size:12.5px;white-space:nowrap} .dl-blk span{font-size:11px;color:var(--muted);white-space:nowrap}
+.dl-slots{position:relative;height:78px;margin-top:4px}
+.dl-s{position:absolute;top:0;height:74px;border-radius:8px;background:var(--cell);border:1px solid var(--line);display:flex;gap:7px;padding:6px;text-align:left;overflow:hidden;align-items:flex-start}
+.dl-s:hover{background:var(--cell-hover)}
+.dl-s i{width:26px;height:38px;border-radius:4px;flex:none}
+.dl-s div{min-width:0}
+.dl-s b{font-size:12px;font-weight:600;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.dl-s span{font-size:11px;color:var(--muted);white-space:nowrap}
+.dl-s.tiny{padding:6px 4px;justify-content:center}.dl-s.tiny div{display:none}
+.dl-s.pin{box-shadow:inset 0 3px 0 var(--text)}
+.dl-s.live{border-color:color-mix(in srgb,var(--air) 50%,var(--line));background:color-mix(in srgb,var(--air) 7%,var(--cell))}
+.dl-s.over{border-color:var(--warn);background:var(--warn-soft)}
+.dl-s.gap{background:var(--hatch);border-style:dashed;border-color:var(--warn);flex-direction:column;justify-content:center;color:var(--muted);font-size:11.5px;gap:2px}
+.dl-s.gap b{color:var(--brand);font-size:12px}
+.dl-end{position:absolute;top:30px;bottom:0;border-left:2px dashed var(--warn);z-index:3;pointer-events:none}
+/* ───────────── Special dates ───────────── */
+.sp{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:100%}
+.month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.mh{font-size:12px;color:var(--muted);font-weight:600;padding:0 6px}
+.md{min-height:96px;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:7px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.md.out{opacity:.4}
+.md.today .dn{background:var(--brand);color:#fff;border-radius:6px;padding:0 6px}
+.md.sel{box-shadow:0 0 0 2px var(--brand)}
+.dn{font-size:12.5px;font-weight:600;width:fit-content}
+.ev{font-size:11px;font-weight:600;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,var(--t-main) 20%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev.classic{background:color-mix(in srgb,var(--t-classic) 22%,transparent)}
+.ev.air{background:var(--air-soft);color:var(--air)}
+/* ───────────── Network blocks ───────────── */
+.tn{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100%}
+.lib-side a .nl-ic{margin-left:0;width:22px;height:22px;flex:none}.nl-ic svg{width:100%;height:100%;display:block}
+.nb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(290px,100%),1fr));gap:12px;margin-top:16px}
+.nb{padding:14px;display:flex;flex-direction:column;gap:10px}
+.nb-h h4{margin:0;font-size:14.5px} .nb-h span{font-size:12.5px}
+.nb-shows{display:flex;gap:5px;flex-wrap:wrap}
+.nb-shows .mini{width:34px;height:50px;border-radius:5px}
+.nb-match{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}
+.nb-match .progress{width:80px;flex:none}
+.nb-match b{color:var(--text);font-weight:600}
+.nb-acts{display:flex;gap:6px;margin-top:auto;padding-top:4px;flex-wrap:wrap}
+/* ───────────── Template editor ───────────── */
+.te-cols{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;margin-top:16px}
+.pattern{display:flex;gap:4px;height:64px}
+.pt-seg{border-radius:9px;padding:8px 10px;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:2px;--c:var(--show);background:color-mix(in srgb,var(--c) 17%,var(--panel));border:1px solid color-mix(in srgb,var(--c) 38%,transparent);border-top:3px solid var(--c);overflow:hidden;min-width:0}
+.pt-seg.movie{--c:var(--movie)}
+.pt-seg b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .pt-seg span{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.pt-seg.sel{box-shadow:0 0 0 2px var(--brand)}
+.rules{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.rule{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px;align-items:center;font-size:12.5px;color:var(--muted)}
+.rule .inp{min-height:34px;border:1px solid var(--line-2);border-radius:8px;background:var(--panel-2);display:flex;align-items:center;padding:6px 10px;color:var(--text);font-size:13px;gap:8px}
+.inp-mini{margin-left:auto;display:flex;align-items:center;gap:7px;height:30px;padding:0 8px;border:1px solid var(--line-2);border-radius:8px;font-size:12.5px}
+/* ───────────── Apply / mini timelines ───────────── */
+.ap-list{display:flex;flex-direction:column;gap:12px;margin-top:16px}
+.ap{padding:14px 16px}
+.ap-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ap-rows{display:grid;grid-template-columns:46px minmax(0,1fr);gap:6px 10px;align-items:center;margin-top:12px;font-size:12px}
+.mt{position:relative;height:22px;border-radius:6px;background:var(--panel-2);margin-top:8px}
+.mt.tall{height:30px;margin-top:0}
+.mt em{position:absolute;top:2px;bottom:2px;border-radius:5px;font-style:normal;font-size:11px;font-weight:600;padding:0 7px;display:flex;align-items:center;white-space:nowrap;overflow:hidden;color:var(--text);--c:var(--both);background:color-mix(in srgb,var(--c) 26%,var(--panel));border-left:3px solid var(--c)}
+.mt em.m,.mt em.l{--c:var(--movie)} .mt em.s{--c:var(--show)}
+.mt em.n{--c:var(--brand);background:var(--brand-soft);box-shadow:inset 0 0 0 1px var(--brand-line)}
+.mt em.g{--c:var(--line-2);background:var(--hatch);color:var(--faint)}
+.mt em.o{--c:var(--warn);background:var(--warn-soft)}
+.mt em.c{background-image:repeating-linear-gradient(135deg,transparent 0 5px,var(--air-soft) 5px 7px)}
+.mt u{position:absolute;top:-3px;bottom:-3px;border-left:2px dashed var(--warn)}
+.mt.skip{opacity:.4}
+.ov-opts{display:flex;flex-direction:column;gap:8px}
+.ov-opt{display:flex;gap:12px;padding:12px;border:1px solid var(--line);border-radius:11px;cursor:pointer}
+.ov-opt.on{border-color:var(--brand-line);background:var(--brand-soft)}
+.ov-opt .rd{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line-2);flex:none;margin-top:2px}
+.ov-opt.on .rd{border:5px solid var(--brand)}
+.ov-opt b{display:block;font-weight:600} .ov-opt>div>span{font-size:12.5px;color:var(--muted)}
+/* ───────────── Fill a gap ───────────── */
+.fitscale{display:none}
+.fits{display:flex;flex-direction:column;gap:6px}
+.fit{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;text-align:left}
+.fit:hover{border-color:var(--line-2)}
+.fit.sel{border-color:var(--brand-line);background:var(--brand-soft)}
+.fit.bad{opacity:.55}
+.fi{flex:1;min-width:0}
+.ft{display:flex;gap:8px;align-items:baseline;font-size:13px;flex-wrap:wrap} .ft span{font-size:12px}
+.fbar{position:relative;height:9px;margin-top:6px}
+.fbar i{position:absolute;left:0;top:0;bottom:0;border:1.5px dashed var(--line-2);border-radius:4px}
+.fbar b{position:absolute;left:0;top:2px;bottom:2px;border-radius:3px;background:var(--ok)}
+.fbar b.long{background:var(--warn)}
+.fl{font-size:12px;font-weight:600;white-space:nowrap} .fl.g{color:var(--ok)} .fl.w{color:var(--warn)}
+/* ───────────── Day templates ───────────── */
+.dt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(420px,100%),1fr));gap:12px;margin-top:20px}
+.dt{padding:16px} .dt h4{margin:0;font-size:15px} .dt p{margin:4px 0 12px;font-size:13px;color:var(--muted)}
+/* ───────────── Icon library + batch ───────────── */
+.ic-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:16px}
+.ic-card{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--panel);text-align:left}
+.ic-card:hover{border-color:var(--line-2)}
+.ic-art{aspect-ratio:1;border-radius:12px;background:conic-gradient(var(--panel-2) 25%,var(--panel) 0 50%,var(--panel-2) 0 75%,var(--panel) 0) 0 0/16px 16px;display:grid;place-items:center;padding:16%}
+.ic-art svg{width:100%;height:100%;display:block}
+.ic-miss{width:100%;aspect-ratio:1;border:1.5px dashed var(--warn);border-radius:18%;display:grid;place-items:center;color:var(--warn)}
+.ic-meta{display:flex;align-items:center;gap:8px;min-width:0}
+.ic-n{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ic-st{font-size:11.5px;color:var(--faint)}
+.ic-card.miss .ic-st{color:var(--warn)}
+.gstops{position:relative;height:30px;margin:4px 7px 14px}
+.gbar{position:absolute;left:0;right:0;top:6px;height:14px;border-radius:7px;background:linear-gradient(90deg,#FF8A3C,#FF3C3C 55%,#8E0F2E);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+.stop{position:absolute;top:2px;width:14px;height:22px;border-radius:5px;transform:translateX(-50%);box-shadow:0 0 0 2px var(--panel),0 0 0 3px var(--line-2)}
+.stop.on{box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--text)}
+.dial-row{display:flex;gap:8px;align-items:center}
+.dial{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line-2);position:relative;flex:none}
+.dial i{position:absolute;left:50%;top:50%;width:2px;height:12px;background:var(--text);transform-origin:top center;margin-left:-1px}
+.slider{position:relative;height:6px;border-radius:3px;background:var(--line-2)}
+.slider b{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--brand)}
+.slider i{position:absolute;top:50%;width:16px;height:16px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.bt-cols{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px}
+.styles{display:flex;flex-direction:column;gap:8px}
+.stl{display:flex;gap:12px;align-items:center;padding:10px;text-align:left;cursor:pointer}
+.stl:hover{border-color:var(--line-2)}
+.stl.sel{box-shadow:0 0 0 2px var(--brand);border-color:transparent}
+.stl-art{width:52px;height:52px;flex:none} .stl-art svg,.bt-art svg,.sz svg{width:100%;height:100%;display:block}
+.stl b{display:block} .stl span{font-size:12.5px;color:var(--muted)}
+.bt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:16px;padding:16px}
+.bt-item{display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center}
+.bt-art{width:100%;max-width:120px;aspect-ratio:1}
+.bt-n{font-size:12.5px;color:var(--muted)} .bt-n b{color:var(--text)}
+.sizes{display:flex;gap:22px;align-items:flex-end;flex-wrap:wrap;padding:18px;border-radius:12px;background:conic-gradient(var(--panel-2) 25%,var(--panel) 0 50%,var(--panel-2) 0 75%,var(--panel) 0) 0 0/16px 16px}
+.sz{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px}
+.sz>span:first-child{display:block}
+/* ───────────── Login ───────────── */
+.statebar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;font-size:12.5px}
+.login{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(360px,1fr);height:calc(100vh - var(--vbar,60px) - 92px);min-height:600px}
+.lg-left{position:relative;overflow:hidden;background:radial-gradient(90% 70% at 15% 0%,color-mix(in srgb,var(--brand) 32%,transparent),transparent 60%),#0A0F1C;color:#E8ECF4;padding:32px;display:flex;flex-direction:column;justify-content:space-between}
+.lg-brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:17px;position:relative;z-index:2}
+.mini-guide{position:absolute;top:20%;bottom:30%;left:32px;right:-8%;display:flex;flex-direction:column;justify-content:center;gap:10px;-webkit-mask-image:linear-gradient(90deg,#000 60%,transparent);mask-image:linear-gradient(90deg,#000 60%,transparent)}
+.mg-row{display:flex;gap:10px;align-items:center;height:32px}
+.mg-row .bug{background:#18213A;border-color:#2E3956;color:#E8ECF4}
+.mg-track{flex:1;overflow:hidden;height:100%}
+.mg-belt{display:flex;gap:5px;width:200%;height:100%;animation:belt 90s linear infinite}
+.mg-row:nth-child(2n) .mg-belt{animation-duration:110s}
+.mg-row:nth-child(3n) .mg-belt{animation-duration:75s}
+.mg-belt i{height:100%;border-radius:7px;background:#172036;border:1px solid #232D45}
+.mg-row:nth-child(odd) .mg-belt i:nth-child(5n){background:color-mix(in srgb,#E9A23B 22%,#172036)}
+.mg-row:nth-child(even) .mg-belt i:nth-child(4n){background:color-mix(in srgb,#2BB5A6 22%,#172036)}
+@keyframes belt{to{transform:translateX(-50%)}}
+.mg-now{position:absolute;top:-14px;bottom:-14px;left:58%;width:2px;background:#FF4B4B;box-shadow:0 0 18px #FF4B4B}
+.lg-copy{position:relative;z-index:2;max-width:440px}
+.lg-copy h2{font-size:36px;letter-spacing:-.025em;margin:0;line-height:1.05}
+.lg-copy p{color:#8B95AE;margin:10px 0 0;font-size:15px}
+.lg-right{display:grid;place-items:center;padding:32px;background:var(--bg)}
+.lg-form{width:min(360px,100%);display:flex;flex-direction:column;gap:16px}
+.lg-form h3{margin:0;font-size:26px;letter-spacing:-.015em}
+.lg-form .field .inp{height:44px}
+.lg-go{height:44px;justify-content:center;font-size:14px}
+.lg-spin{display:none;width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.lg-err{display:none;color:var(--air);font-size:12.5px}
+.lg-expired{display:none!important;margin:0!important}
+.lg-foot{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+.lg-foot code{font-size:12px;background:var(--panel-2);padding:1px 5px;border-radius:4px;color:var(--text)}
+.login[data-state="error"] .lg-pw{border-color:var(--air);box-shadow:0 0 0 3px var(--air-soft)}
+.login[data-state="error"] .lg-err{display:block}
+.login[data-state="error"] .lg-form{animation:shake .35s}
+@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.login[data-state="busy"] .lg-spin{display:block}
+.login[data-state="busy"] .lg-lbl{font-size:0}
+.login[data-state="busy"] .lg-lbl::before{content:"Signing in";font-size:14px}
+.login[data-state="busy"] .lg-form .field{opacity:.6}
+.login[data-state="expired"] .lg-expired{display:flex!important}
+/* ───────────── Splash ───────────── */
+.sp-row{display:flex;gap:24px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.splash{flex:1;min-width:0;max-width:1000px;height:calc(100vh - var(--vbar,60px) - 92px);min-height:580px;display:grid;place-items:center;background:radial-gradient(60% 55% at 50% 40%,var(--brand-soft),transparent 70%),var(--bg)}
+.sp-state{display:none;flex-direction:column;align-items:center;gap:14px;text-align:center;max-width:470px;padding:24px}
+.splash[data-state="boot"] .sp-boot,.splash[data-state="plex"] .sp-plex,.splash[data-state="updated"] .sp-updated,.splash[data-state="restore"] .sp-restore,.splash[data-state="offline"] .sp-offline{display:flex}
+.sp-name{font-size:22px;font-weight:600;letter-spacing:-.01em}
+.sp-logo{filter:drop-shadow(0 12px 32px color-mix(in srgb,var(--brand) 50%,transparent))}
+.sp-logo.go .b1,.sp-logo.go .b2,.sp-logo.go .b3{stroke-dasharray:10;stroke-dashoffset:10;animation:draw .45s var(--ease) forwards}
+.sp-logo.go .b1{animation-delay:.15s} .sp-logo.go .b2{animation-delay:.3s} .sp-logo.go .b3{animation-delay:.45s}
+@keyframes draw{to{stroke-dashoffset:0}}
+.sp-steps{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--faint);min-width:270px;text-align:left}
+.sp-steps li{display:flex;gap:9px;align-items:center}
+.sp-steps li .ic,.sp-steps li .spin{display:none}
+.sp-steps li:not(.run):not(.ok)::before{content:"";width:10px;height:10px;margin:0 2px;border-radius:50%;border:2px solid var(--line-2);flex:none}
+.sp-steps li.run{color:var(--text)} .sp-steps li.run .spin{display:block}
+.sp-steps li.ok{color:var(--muted)} .sp-steps li.ok .ic{display:block;color:var(--ok)}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--line-2);border-top-color:var(--brand);animation:spin .8s linear infinite;flex:none}
+.sp-ico{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand)}
+.sp-ico .ic{width:26px;height:26px}
+.sp-ico.warn{background:var(--warn-soft);color:var(--warn)}
+.sp-state h2{margin:0;font-size:24px;letter-spacing:-.015em}
+.sp-state p{margin:0;color:var(--muted)}
+.sp-checks{list-style:none;margin:4px 0;padding:12px 14px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel);text-align:left;font-size:13px;min-width:min(320px,100%)}
+.sp-checks li{display:flex;gap:9px;align-items:center}
+.sp-checks li.ok .ic{color:var(--ok)} .sp-checks li.bad{color:var(--air)} .sp-checks li.wait{color:var(--faint)}
+.sp-acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.sp-new{list-style:none;margin:4px 0;padding:0;display:flex;flex-direction:column;gap:8px;text-align:left;width:100%}
+.sp-new li{padding:11px 13px;border:1px solid var(--line);border-radius:11px;background:var(--panel)}
+.sp-new b{display:block;font-size:13.5px} .sp-new span{font-size:12.5px;color:var(--muted)}
+.sp-prog{width:100%;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.sp-prog b{display:block;height:100%;background:var(--brand)}
+.sm-phone{width:300px;height:620px;border-radius:40px}
+.pwa-splash{background:radial-gradient(80% 50% at 50% 45%,rgba(124,108,246,.35),transparent 70%),#0C1220;align-items:center;justify-content:center;gap:14px}
+.pwa-dots{display:flex;gap:6px;margin-top:30px}
+.pwa-dots i{width:6px;height:6px;border-radius:50%;background:#fff;opacity:.3;animation:dots 1.2s infinite}
+.pwa-dots i:nth-child(2){animation-delay:.2s} .pwa-dots i:nth-child(3){animation-delay:.4s}
+@keyframes dots{50%{opacity:1}}
+
 /* ───────────── Responsive ───────────── */
 @media (max-width: 1100px){
-  .home-grid,.pub,.ch-body,.tpl,.t-body,.adv,.bld,.studio{grid-template-columns:minmax(0,1fr)}
+  .home-grid,.pub,.ch-body,.tpl,.t-body,.adv,.bld,.studio,.be,.te-cols,.sp,.bt-cols,.tn,.login{grid-template-columns:minmax(0,1fr)}
+  .be-side{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:16px}
+  .login{height:auto}
+  .lg-left{min-height:340px}
+  .tn .lib-side{display:none}
   .st-side,.st-side.r{border:0;border-bottom:1px solid var(--line)}
   .setup{grid-template-columns:1fr}
   .starts{grid-template-columns:1fr}
@@ -578,6 +822,11 @@ h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
   .lib{grid-template-columns:minmax(0,1fr)}
   .lib-side{display:none}
   .set{grid-template-columns:minmax(0,1fr)}
+  .day-wrap{padding:16px}
+  .month{gap:3px}
+  .md{min-height:64px;padding:4px}
+  .ev{font-size:9.5px;padding:1px 3px}
+  .sm-phone{display:none}
   .set-nav{display:flex;gap:4px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}
   .set-nav h4{display:none}
   .set-nav a{white-space:nowrap}
@@ -631,31 +880,48 @@ h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
   <symbol id="i-loop" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
   <symbol id="logo" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg)" stroke="none"/><path d="M9 8v16h14" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11h9M14 15.5h6M14 20h8" stroke="#fff" stroke-opacity=".75" stroke-width="2.2" stroke-linecap="round"/></symbol>
 </svg>
 
 <!-- ───────────── Viewer chrome ───────────── -->
 <div class="viewer">
   <h1><svg width="22" height="22"><use href="#logo"/></svg>Linearr redesign <small>mockups</small></h1>
-  <div class="vtabs" role="group" aria-label="Screens">
-    <button data-go="home" aria-pressed="true">Home</button>
-    <button data-go="guide">Guide</button>
-    <button data-go="channels">Channels</button>
-    <button data-go="channel">Channel schedule</button>
-    <button data-go="library">Library</button>
-    <button data-go="title">Title</button>
-    <button data-go="templates">Templates</button>
-    <button data-go="publish">Publish</button>
-    <span class="dv"></span>
-    <button data-go="advisor">Advisor</button>
-    <button data-go="branding">Branding</button>
-    <button data-go="builder">24/7 builder</button>
-    <button data-go="settings">Settings</button>
-    <button data-go="palette">Command palette</button>
-    <span class="dv"></span>
-    <button data-go="setup">Sign in &amp; setup</button>
-    <button data-go="mobile">Mobile</button>
-    <button data-go="decisions">Decisions</button>
+  <div class="vnav">
+    <div class="seg vgroups" role="group" aria-label="Screen groups"><button data-grp-set="core" aria-pressed="true">App</button><button data-grp-set="schedule" aria-pressed="false">Scheduling</button><button data-grp-set="templates" aria-pressed="false">Templates</button><button data-grp-set="icons" aria-pressed="false">Icon designer</button><button data-grp-set="entry" aria-pressed="false">Sign in &amp; splash</button><button data-grp-set="more" aria-pressed="false">Mobile &amp; decisions</button></div>
+    <div class="vtabs" role="group" aria-label="Screens">
+      <button data-go="home" data-grp="core" aria-pressed="true">Home</button>
+      <button data-go="guide" data-grp="core" aria-pressed="false">Guide</button>
+      <button data-go="channels" data-grp="core" aria-pressed="false">Channels</button>
+      <button data-go="library" data-grp="core" aria-pressed="false">Library</button>
+      <button data-go="title" data-grp="core" aria-pressed="false">Title</button>
+      <button data-go="publish" data-grp="core" aria-pressed="false">Publish</button>
+      <button data-go="advisor" data-grp="core" aria-pressed="false">Advisor</button>
+      <button data-go="builder" data-grp="core" aria-pressed="false">24/7 builder</button>
+      <button data-go="settings" data-grp="core" aria-pressed="false">Settings</button>
+      <button data-go="palette" data-grp="core" aria-pressed="false">Command palette</button>
+      <button data-go="channel" data-grp="schedule" hidden aria-pressed="false">Week</button>
+      <button data-go="day" data-grp="schedule" hidden aria-pressed="false">Day</button>
+      <button data-go="blockedit" data-grp="schedule" hidden aria-pressed="false">Block editor</button>
+      <button data-go="fill" data-grp="schedule" hidden aria-pressed="false">Fill a gap</button>
+      <button data-go="overrun" data-grp="schedule" hidden aria-pressed="false">Fix an overrun</button>
+      <button data-go="special" data-grp="schedule" hidden aria-pressed="false">Special dates</button>
+      <button data-go="templates" data-grp="templates" hidden aria-pressed="false">Library</button>
+      <button data-go="tplnet" data-grp="templates" hidden aria-pressed="false">Classic network blocks</button>
+      <button data-go="tpledit" data-grp="templates" hidden aria-pressed="false">Template editor</button>
+      <button data-go="tplapply" data-grp="templates" hidden aria-pressed="false">Apply a template</button>
+      <button data-go="tplday" data-grp="templates" hidden aria-pressed="false">Day templates</button>
+      <button data-go="iclib" data-grp="icons" hidden aria-pressed="false">Icon library</button>
+      <button data-go="branding" data-grp="icons" hidden aria-pressed="false">Studio: text</button>
+      <button data-go="icgrad" data-grp="icons" hidden aria-pressed="false">Studio: background</button>
+      <button data-go="icbatch" data-grp="icons" hidden aria-pressed="false">Style a tier</button>
+      <button data-go="icexport" data-grp="icons" hidden aria-pressed="false">Export</button>
+      <button data-go="login" data-grp="entry" hidden aria-pressed="false">Sign in</button>
+      <button data-go="splash" data-grp="entry" hidden aria-pressed="false">Splash</button>
+      <button data-go="setup" data-grp="entry" hidden aria-pressed="false">First-run setup</button>
+      <button data-go="mobile" data-grp="more" hidden aria-pressed="false">Mobile</button>
+      <button data-go="decisions" data-grp="more" hidden aria-pressed="false">Decisions</button>
+    </div>
   </div>
   <div class="vctl">
     Accent
@@ -790,7 +1056,7 @@ h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
         <div class="week-wrap">
           <div class="week-bar">
             <div class="date" style="display:flex;align-items:center;gap:4px;font-weight:600"><button class="btn ghost sm" aria-label="Previous week"><svg class="ic sm"><use href="#i-chev-l"/></svg></button>Sep 28 to Oct 4<button class="btn ghost sm" aria-label="Next week"><svg class="ic sm"><use href="#i-chev-r"/></svg></button></div>
-            <button class="btn sm"><svg class="ic sm"><use href="#i-plus"/></svg>Add block</button>
+            <div class="seg"><button aria-pressed="true">Week</button><button data-go="day" aria-pressed="false">Day</button></div><button class="btn sm" data-go="blockedit"><svg class="ic sm"><use href="#i-plus"/></svg>Add block</button>
             <button class="btn sm" data-go="templates"><svg class="ic sm"><use href="#i-layers"/></svg>Apply template</button>
             <div class="legend"><span class="lg-k"><i style="background:var(--movie)"></i>Movies</span><span class="lg-k"><i style="background:var(--show)"></i>Shows</span><span class="lg-k"><i style="background:var(--both)"></i>Both</span><span class="lg-k"><i style="background:var(--warn);border-radius:50%"></i>Has a problem</span></div>
           </div>
@@ -924,7 +1190,7 @@ h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
         <div class="pad" style="max-width:none">
           <div class="home-head">
             <div><h2 class="page">Templates</h2><p class="sub">Reusable blocks you can drop onto any channel. Editing a template doesn't change channels already using it.</p></div>
-            <button class="btn primary" style="margin-left:auto" data-toast="The template editor opens here."><svg class="ic sm"><use href="#i-plus"/></svg>New template</button>
+            <button class="btn" style="margin-left:auto" data-go="tplnet">Classic network blocks</button><button class="btn" data-go="tplday">Day templates</button><button class="btn primary" data-go="tpledit"><svg class="ic sm"><use href="#i-plus"/></svg>New template</button>
           </div>
           <div class="toolbar"><span class="chip on">All 8</span><span class="chip">Movies</span><span class="chip">Shows</span><span class="chip">Weekends</span><span class="chip">Unused 1</span></div>
           <div class="tpl-grid" id="tplGrid"></div>
@@ -974,7 +1240,7 @@ h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
           <div class="layer on"><span class="lt">T</span>ACTION</div>
           <div class="layer"><span class="lt">T</span>GALAXY</div>
           <div class="layer"><span class="lt">◢</span>Speed stripe</div>
-          <div class="layer"><span class="lt">▦</span>Background</div>
+          <div class="layer" data-go="icgrad" style="cursor:pointer"><span class="lt">▦</span>Background</div>
           <button class="btn sm ghost" style="margin-top:8px"><svg class="ic sm"><use href="#i-plus"/></svg>Add layer</button>
           <h4 style="margin-top:22px">Start from</h4>
           <div class="layer"><span class="lt">◆</span>Classic networks<span class="faint" style="margin-left:auto;font-size:12px">24</span></div>
@@ -1009,7 +1275,7 @@ h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
           <div class="prop">Spacing<div class="inp">1 px</div></div>
           <h4 style="margin:18px 0 8px">Use it</h4>
           <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="btn primary" data-toast="Galaxy Action now uses this icon.">Use as channel icon</button>
+            <button class="btn primary" data-go="icexport">Use as channel icon</button>
             <button class="btn" data-toast="Icon sent to Tunarr channel #103.">Send icon to Tunarr</button>
             <button class="btn ghost" data-toast="Downloaded PNG (512 px) and SVG."><svg class="ic sm"><use href="#i-download"/></svg>Download PNG and SVG</button>
           </div>
@@ -1122,6 +1388,288 @@ h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
       </div>
     </section>
 
+    <!-- DAY VIEW -->
+    <section class="view" data-view="day">
+      <div class="ch-head">
+        <span class="bug lg">103</span>
+        <div>
+          <h2>Galaxy Action</h2>
+          <div class="line2"><span>Friday, October 2</span><span class="chip warn">3 gaps, 1 h 50 m</span><span class="chip warn">1 overrun</span><span class="chip">11 titles</span></div>
+        </div>
+        <div class="acts"><div class="seg"><button data-go="channel" aria-pressed="false">Week</button><button aria-pressed="true">Day</button></div><button class="btn primary" data-toast="Filled 3 gaps with 5 titles from Galaxy Action."><svg class="ic sm"><use href="#i-spark"/></svg>Fill all gaps</button></div>
+      </div>
+      <div class="tabs"><button class="on">Schedule</button><button data-go="library">Titles <span class="n">348</span></button><button data-toast="Collections is not mocked yet.">Collections <span class="n">4</span></button><button data-go="branding">Branding</button></div>
+      <div class="day-wrap">
+        <div class="week-bar">
+          <div class="date" style="display:flex;align-items:center;gap:4px;font-weight:600"><button class="btn ghost sm" aria-label="Previous day"><svg class="ic sm"><use href="#i-chev-l"/></svg></button>Fri, Oct 2<button class="btn ghost sm" aria-label="Next day"><svg class="ic sm"><use href="#i-chev-r"/></svg></button></div>
+          <button class="btn sm" data-go="special">Special dates</button>
+          <div class="legend"><span class="lg-k"><i style="background:var(--text)"></i>Pinned by you</span><span class="lg-k"><i style="background:var(--faint)"></i>Picked by shuffle</span><span class="lg-k"><i style="background:var(--hatch),var(--panel-2);border:1px dashed var(--line-2)"></i>Gap</span><span class="lg-k"><i style="background:var(--warn)"></i>Overrun</span></div>
+        </div>
+        <div class="dayscroll" id="dayScroll"><div class="dayline" id="dayline"></div></div>
+        <div class="panel" style="margin-top:16px;overflow:auto">
+          <div class="panel-h"><h3>Run sheet</h3><span class="muted" style="font-size:12.5px">Exactly what Tunarr will air, in order</span><button class="btn sm ghost" data-toast="Run sheet exported as CSV."><svg class="ic sm"><use href="#i-download"/></svg>Export</button></div>
+          <table class="list" style="margin-top:8px"><thead><tr><th>Airs</th><th>Title</th><th>Length</th><th>Block</th><th>How it got here</th><th></th></tr></thead><tbody id="runsheet"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- SPECIAL DATES -->
+    <section class="view" data-view="special">
+      <div class="sp">
+        <div class="pad" style="max-width:none">
+          <div class="home-head">
+            <div><h2 class="page">Special dates</h2><p class="sub">One-off programming that replaces the normal schedule for a date, then switches back on its own.</p></div>
+            <button class="btn primary" style="margin-left:auto" data-toast="Pick a date to add special programming."><svg class="ic sm"><use href="#i-plus"/></svg>Add special date</button>
+          </div>
+          <div class="toolbar" style="margin-bottom:14px"><div class="date" style="display:flex;align-items:center;gap:4px;font-weight:600"><button class="btn ghost sm" aria-label="Previous month"><svg class="ic sm"><use href="#i-chev-l"/></svg></button>October 2026<button class="btn ghost sm" aria-label="Next month"><svg class="ic sm"><use href="#i-chev-r"/></svg></button></div><span class="chip on">All channels</span><span class="chip">Galaxy Main</span><span class="chip">Classics</span><span class="chip">Premium</span></div>
+          <div class="month" id="month"></div>
+        </div>
+        <aside class="inspector">
+          <div style="display:flex;align-items:center;gap:8px"><span class="lg-k"><i style="background:var(--air)"></i></span><h3>Halloween night</h3></div>
+          <p class="muted" style="margin:4px 0 0;font-size:13px">Saturday, October 31, 6:00 PM to 2:00 AM</p>
+          <div class="ins-sec"><h4>Channels taking part</h4><div class="used"><span class="bug">104</span><span class="bug prem">143</span><span class="bug prem">145</span><span class="bug classic">120</span></div></div>
+          <div class="ins-sec"><h4>What airs</h4><dl class="kv"><dt>Picks from</dt><dd>Horror collection, 64 titles</dd><dt>Order</dt><dd>Slashers early, the scariest after 11 PM</dd><dt>On 120</dt><dd>Halloween cartoon specials until 9 PM</dd></dl></div>
+          <div class="ins-sec"><h4>Replaces</h4>
+            <div class="slots">
+              <div class="slot"><span class="bug" style="width:32px;height:22px;font-size:11px">104</span><div><div class="st">Weekend thrillers</div><div class="sd">6 PM to 10 PM</div></div></div>
+              <div class="slot"><span class="bug prem" style="width:32px;height:22px;font-size:11px">145</span><div><div class="st">After Dark</div><div class="sd">10 PM to 2 AM</div></div></div>
+            </div>
+            <div class="note" style="color:var(--muted);background:var(--panel-2)"><svg class="ic sm"><use href="#i-clock"/></svg><span>Normal schedules come back on Nov 1 at 2:00 AM. Nothing to undo.</span></div>
+          </div>
+          <div class="ins-acts"><button class="btn primary sm" data-toast="Halloween night saved. It shows in Publish.">Save</button><button class="btn sm" data-go="guide">Preview in guide</button><button class="btn sm ghost" data-toast="Copied to Oct 31, 2027.">Repeat every year</button></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- CLASSIC NETWORK BLOCKS -->
+    <section class="view" data-view="tplnet">
+      <div class="tn">
+        <aside class="lib-side" id="netList"></aside>
+        <div class="pad" style="max-width:none">
+          <div class="home-head">
+            <div><h2 class="page">Classic network blocks</h2><p class="sub">Recreate famous programming blocks. Linearr checks which of their shows you have in Plex before you add one.</p></div>
+          </div>
+          <div class="toolbar"><span class="chip on">Cartoon Network</span><span class="muted" style="font-size:12.5px">7 blocks. Best match: Galaxy Toons and 120 Cartoon Network</span></div>
+          <div class="nb-grid" id="nbGrid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TEMPLATE EDITOR -->
+    <section class="view" data-view="tpledit">
+      <div class="te">
+        <div class="pad" style="max-width:none">
+          <div class="home-head">
+            <div><h2 class="page">CN Saturday Morning</h2><p class="sub">Saturday, 7:00 AM to 12:00 PM. Shows only. From the Cartoon Network collection of templates.</p></div>
+            <button class="btn" style="margin-left:auto" data-go="tplapply">Apply to channels</button>
+            <button class="btn primary" data-toast="Template saved. Channels using it keep their current copy.">Save template</button>
+          </div>
+          <div class="panel" style="padding:16px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><b>Pattern</b><span class="muted" style="font-size:12.5px">Each part has its own rule. Drag the edges to resize.</span><button class="btn sm ghost" style="margin-left:auto"><svg class="ic sm"><use href="#i-plus"/></svg>Add part</button></div>
+            <div class="pattern" id="pattern"></div>
+            <div class="daybar-l" style="margin-top:6px"><span>7 AM</span><span>8 AM</span><span>9 AM</span><span>10 AM</span><span>11 AM</span><span>12 PM</span></div>
+          </div>
+          <div class="te-cols">
+            <div class="panel" style="padding:16px" id="ruleBox"></div>
+            <div class="panel" style="display:flex;flex-direction:column">
+              <div class="panel-h"><h3>Preview</h3><div class="inp-mini"><span class="bug classic" style="width:30px;height:22px;font-size:11px">120</span>Cartoon Network<svg class="ic sm"><use href="#i-chev-d"/></svg></div></div>
+              <div class="gen" id="tplPreview" style="padding-top:10px"></div>
+              <p class="muted" style="font-size:12.5px;margin:4px 16px 14px">Picks change every week. This is what this Saturday would air.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- APPLY TEMPLATE -->
+    <section class="view" data-view="tplapply">
+      <div class="pad">
+        <div class="home-head">
+          <div><h2 class="page">Apply Prime-time premiere</h2><p class="sub">Every day, 8:00 PM to 11:00 PM. Check each channel before anything changes.</p></div>
+        </div>
+        <ol class="steps"><li class="done"><b>✓</b>Pick channels</li><li class="cur"><b>2</b>Check each channel</li><li><b>3</b>Apply</li></ol>
+        <div class="ap-list" id="apList"></div>
+        <div class="pub-foot panel" style="margin-top:16px"><span class="muted" style="font-size:13px">2 channels change, 1 skipped. Changes go to Publish before they air.</span><button class="btn ghost" style="margin-left:auto" data-go="templates">Back</button><button class="btn primary" data-toast="Applied to 2 channels. Review them in Publish.">Apply to 2 channels</button></div>
+      </div>
+    </section>
+
+    <!-- DAY TEMPLATES -->
+    <section class="view" data-view="tplday">
+      <div class="pad">
+        <div class="home-head">
+          <div><h2 class="page">Day templates</h2><p class="sub">A whole day of blocks in one go. Start a new channel from one, or lay it over some days of an existing channel.</p></div>
+          <button class="btn primary" style="margin-left:auto" data-toast="Saved Galaxy Action's Friday as a day template."><svg class="ic sm"><use href="#i-plus"/></svg>Save a day as template</button>
+        </div>
+        <div class="dt-grid" id="dtGrid"></div>
+      </div>
+    </section>
+
+    <!-- ICON LIBRARY -->
+    <section class="view" data-view="iclib">
+      <div class="pad" style="max-width:none">
+        <div class="home-head">
+          <div><h2 class="page">Channel icons</h2><p class="sub">Every channel's icon in one place. Icons show in the guide here and on your TV apps through Tunarr.</p></div>
+          <button class="btn" style="margin-left:auto" data-toast="Importing 31 icons from Tunarr.">Import from Tunarr</button>
+          <button class="btn" data-go="icbatch">Style a whole tier</button>
+          <button class="btn primary" data-go="branding"><svg class="ic sm"><use href="#i-plus"/></svg>New icon</button>
+        </div>
+        <div class="toolbar"><span class="chip on">All 29</span><span class="chip">Custom 18</span><span class="chip">Classics pack 6</span><span class="chip warn">Missing 5</span><span class="seg" style="margin-left:auto"><button aria-pressed="true">On dark</button><button aria-pressed="false">On light</button></span></div>
+        <div class="ic-grid" id="icGrid"></div>
+      </div>
+    </section>
+
+    <!-- ICON STUDIO: BACKGROUND -->
+    <section class="view" data-view="icgrad">
+      <div class="studio">
+        <aside class="st-side">
+          <h4>Layers</h4>
+          <div class="layer"><span class="lt">T</span>ACTION</div>
+          <div class="layer"><span class="lt">T</span>GALAXY</div>
+          <div class="layer"><span class="lt">◢</span>Speed stripe</div>
+          <div class="layer on"><span class="lt">▦</span>Background</div>
+          <h4 style="margin-top:22px">Guides</h4>
+          <div class="tg on" style="margin:0 4px 6px"><i></i>Circle crop</div>
+          <div class="tg on" style="margin:0 4px 6px"><i></i>Safe area</div>
+          <div class="tg" style="margin:0 4px"><i></i>Pixel grid</div>
+          <p class="faint" style="font-size:12px;margin:10px 6px 0">Some TV apps crop icons to a circle. Keep text inside the dashed ring.</p>
+        </aside>
+        <div class="st-center">
+          <div class="artboard">
+            <svg viewBox="0 0 200 200" width="78%" aria-label="Galaxy Action icon">
+              <defs><linearGradient id="gb" x1="0" y1="0" x2=".8" y2="1"><stop offset="0" stop-color="#FF8A3C"/><stop offset=".55" stop-color="#FF3C3C"/><stop offset="1" stop-color="#8E0F2E"/></linearGradient></defs>
+              <rect x="6" y="6" width="188" height="188" rx="38" fill="url(#gb)"/>
+              <path d="M6 140 194 96v26L6 166z" fill="#fff" opacity=".14"/>
+              <text x="100" y="80" text-anchor="middle" font-family="Instrument Sans, sans-serif" font-weight="600" font-size="20" letter-spacing="6" fill="#fff" opacity=".85">GALAXY</text>
+              <text x="100" y="124" text-anchor="middle" font-family="Instrument Sans, sans-serif" font-weight="700" font-size="44" letter-spacing="1" fill="#fff">ACTION</text>
+              <circle cx="100" cy="100" r="94" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="5 5" opacity=".9"/>
+              <rect x="26" y="26" width="148" height="148" rx="20" fill="none" stroke="#7CF0FF" stroke-width="1" stroke-dasharray="3 4" opacity=".85"/>
+            </svg>
+          </div>
+          <p class="muted" style="font-size:12.5px;margin:0">"ACTION" reaches 4 px outside the safe area. <button class="btn sm ghost" style="display:inline-flex" data-toast="Text scaled to 41 px to fit the safe area.">Fit text</button></p>
+        </div>
+        <aside class="st-side r">
+          <h4 style="margin-left:0">Background</h4>
+          <div class="prop">Fill<div class="seg"><button aria-pressed="false">Solid</button><button aria-pressed="true">Gradient</button><button aria-pressed="false">Image</button></div></div>
+          <div class="gstops"><div class="gbar"></div><span class="stop" style="left:0%;background:#FF8A3C"></span><span class="stop on" style="left:55%;background:#FF3C3C"></span><span class="stop" style="left:100%;background:#8E0F2E"></span></div>
+          <div class="prop">Stop<div class="inp"><i style="width:14px;height:14px;border-radius:4px;background:#FF3C3C"></i>#FF3C3C<span class="faint" style="margin-left:auto">55%</span></div></div>
+          <div class="prop">Angle<div class="dial-row"><span class="dial"><i style="transform:rotate(140deg)"></i></span><div class="inp" style="flex:1">140°</div></div></div>
+          <div class="prop">Corners<div class="slider"><b style="width:40%"></b><i style="left:40%"></i></div></div>
+          <div class="prop">Shape<div class="seg"><button aria-pressed="true">Rounded</button><button aria-pressed="false">Circle</button><button aria-pressed="false">Square</button></div></div>
+          <h4 style="margin:18px 0 8px">Network palette</h4>
+          <div class="swrow" style="flex-wrap:wrap"><i style="background:linear-gradient(135deg,#FF8A3C,#8E0F2E)" class="on"></i><i style="background:linear-gradient(135deg,#4C8DFF,#162E7A)"></i><i style="background:linear-gradient(135deg,#B48CFF,#3A2A9A)"></i><i style="background:linear-gradient(135deg,#F2B544,#8A4A00)"></i><i style="background:linear-gradient(135deg,#2BB5A6,#0B4F4A)"></i><i style="background:#0E0E10"></i></div>
+          <p class="faint" style="font-size:12px;margin-top:10px">Colours from your tiers and existing icons, so the lineup looks related.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ICON TIER BATCH -->
+    <section class="view" data-view="icbatch">
+      <div class="pad" style="max-width:none">
+        <div class="home-head">
+          <div><h2 class="page">Style a whole tier</h2><p class="sub">Pick a style once and Linearr draws an icon for every channel in the tier, using each channel's name and number.</p></div>
+        </div>
+        <div class="toolbar" style="margin-bottom:16px"><span class="muted">Tier</span><div class="seg"><button aria-pressed="false">Galaxy Main</button><button aria-pressed="true">Classics</button><button aria-pressed="false">Galaxy Premium</button></div></div>
+        <div class="bt-cols">
+          <div>
+            <h3 class="sec" style="font-size:15px;margin-bottom:10px">Style</h3>
+            <div class="styles" id="styles"></div>
+          </div>
+          <div class="panel" style="display:flex;flex-direction:column">
+            <div class="panel-h"><h3>Preview, 7 channels</h3><span class="muted" style="font-size:12.5px">Click one to adjust it on its own</span></div>
+            <div class="bt-grid" id="btGrid"></div>
+            <div class="pub-foot" style="margin-top:auto"><div class="tg on"><i></i>Keep icons I made by hand</div><button class="btn" style="margin-left:auto" data-toast="7 icons sent to Tunarr.">Apply and send to Tunarr</button><button class="btn primary" data-toast="Applied to 7 Classics channels.">Apply to 7 channels</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- OVERLAY: BLOCK EDITOR -->
+    <div class="ovl" id="ovBlock">
+      <div class="modal wide" role="dialog" aria-label="Edit block">
+        <div class="m-h"><h3>Edit block</h3><span class="muted">Galaxy Action</span><button class="btn ghost sm x" data-close aria-label="Close"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+        <div class="m-b be">
+          <div class="be-form">
+            <div class="field">Name<div class="inp">Blockbuster prime</div></div>
+            <div class="field">Days<div class="days"><span class="on">M</span><span class="on">Tu</span><span class="on">W</span><span class="on">Th</span><span class="on">F</span><span class="on">Sa</span><span class="on">Su</span></div></div>
+            <div class="be-2"><div class="field">Starts<div class="inp">5:00 PM</div></div><div class="field">Ends<div class="inp">10:00 PM</div></div><div class="field">Content<div class="seg"><button aria-pressed="true">Movies</button><button aria-pressed="false">Shows</button><button aria-pressed="false">Both</button></div></div></div>
+            <div class="field">Fill from
+              <div class="radios">
+                <label class="on"><i></i><div><b>Galaxy Action titles</b><span>348 titles assigned to this channel</span></div></label>
+                <label><i></i><div><b>A collection</b><span>Action Movies, 186 titles</span></div></label>
+                <label><i></i><div><b>Genres</b><span>Action, Adventure, Sci-fi</span></div></label>
+              </div>
+            </div>
+            <div class="be-2"><div class="field">Order<div class="seg"><button aria-pressed="true">Shuffle</button><button aria-pressed="false">In order</button><button aria-pressed="false">Newest first</button></div></div><div class="field">Don't repeat a title within<div class="inp">14 days</div></div></div>
+            <div class="field">When a title would run past 10:00 PM
+              <div class="radios">
+                <label class="on"><i></i><div><b>Only pick titles that fit</b><span>Recommended. The last slot gets the longest title that still ends on time.</span></div></label>
+                <label><i></i><div><b>Let it finish</b><span>The next block starts late by however long it runs.</span></div></label>
+                <label><i></i><div><b>Cut away on time</b><span>The title is cut off at 10:00 PM, like live TV.</span></div></label>
+              </div>
+            </div>
+          </div>
+          <div class="be-side">
+            <h4>What this block gets</h4>
+            <div class="daybar" style="height:14px"><b style="left:45.8%;width:20.8%;--c:var(--movie)"></b></div>
+            <div class="daybar-l"><span>6 AM</span><span>6 PM</span><span>6 AM</span></div>
+            <dl class="kv" style="margin-top:14px;grid-template-columns:100px 1fr"><dt>Each night</dt><dd>2 or 3 movies</dd><dt>Eligible</dt><dd>186 titles, 95 to 147 m</dd><dt>Lasts</dt><dd>9 weeks before a movie repeats</dd></dl>
+            <h4 style="margin-top:18px">This Friday</h4>
+            <div class="slots">
+              <div class="slot"><span class="tm">5:00 PM</span><div><div class="st">Edge of Tomorrow</div><div class="sd">1 h 53 m</div></div></div>
+              <div class="slot"><span class="tm">6:53 PM</span><div><div class="st">Top Gun: Maverick</div><div class="sd">2 h 11 m</div></div></div>
+              <div class="slot"><span class="tm">9:04 PM</span><div><div class="st">Nobody</div><div class="sd">1 h 32 m, ends 9:36 PM</div></div></div>
+              <div class="slot empty">24 m left over goes to trailers and bumpers</div>
+            </div>
+          </div>
+        </div>
+        <div class="m-f"><button class="btn ghost" style="color:var(--air)" data-toast="Block deleted.">Delete block</button><button class="btn ghost" style="margin-left:auto" data-close>Cancel</button><button class="btn primary" data-toast="Block saved. 4 changes are waiting in Publish." data-close>Save block</button></div>
+      </div>
+    </div>
+
+    <!-- OVERLAY: FILL A GAP -->
+    <div class="ovl" id="ovFill">
+      <div class="modal" role="dialog" aria-label="Fill a gap">
+        <div class="m-h"><span class="bug">104</span><div><h3>Fill 1 h 47 m on Galaxy Thrills</h3><div class="muted" style="font-size:12.5px">Fri, Oct 2, 9:43 PM to 11:30 PM</div></div><button class="btn ghost sm x" data-close aria-label="Close"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+        <div class="m-b">
+          <div class="toolbar" style="margin-bottom:12px"><div class="seg"><button aria-pressed="true">Fits</button><button aria-pressed="false">Combinations</button><button aria-pressed="false">Everything</button></div><label class="search" style="min-width:160px"><svg class="ic sm"><use href="#i-search"/></svg><input placeholder="Search thrillers" aria-label="Search"></label></div>
+          <div class="fitscale"><span>9:43 PM</span><span>11:30 PM</span></div>
+          <div class="fits" id="fits"></div>
+        </div>
+        <div class="m-f"><span class="muted" style="font-size:12.5px">Showing Galaxy Thrills titles not aired in the last 14 days</span><button class="btn ghost" style="margin-left:auto" data-close>Cancel</button><button class="btn primary" data-toast="Added Searching and 1 episode of Black Mirror. Gap filled." data-close>Fill with selection</button></div>
+      </div>
+    </div>
+
+    <!-- OVERLAY: OVERRUN -->
+    <div class="ovl" id="ovOverrun">
+      <div class="modal" role="dialog" aria-label="Fix an overrun">
+        <div class="m-h"><svg class="ic" style="color:var(--warn)"><use href="#i-alert"/></svg><div><h3>John Wick runs 45 minutes past Blockbuster prime</h3><div class="muted" style="font-size:12.5px">Galaxy Action, Friday. Block ends at 10:00 PM, the movie ends at 10:45 PM.</div></div><button class="btn ghost sm x" data-close aria-label="Close"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+        <div class="m-b">
+          <div class="ov-opts" id="ovOpts"></div>
+          <div class="field" style="margin-top:14px">Do this for<div class="seg" style="width:fit-content"><button aria-pressed="true">This Friday only</button><button aria-pressed="false">Every time it happens in this block</button></div></div>
+        </div>
+        <div class="m-f"><button class="btn ghost" style="margin-left:auto" data-close>Leave it for now</button><button class="btn primary" data-toast="Swapped John Wick for Nobody. Prime time ends at 9:36 PM." data-close>Apply</button></div>
+      </div>
+    </div>
+
+    <!-- OVERLAY: ICON EXPORT -->
+    <div class="ovl" id="ovExport">
+      <div class="modal" role="dialog" aria-label="Export icon">
+        <div class="m-h"><h3>Use the Galaxy Action icon</h3><button class="btn ghost sm x" data-close aria-label="Close"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+        <div class="m-b">
+          <div class="sizes" id="sizes"></div>
+          <div class="be-2" style="margin-top:16px"><div class="field">Format<div class="seg"><button aria-pressed="true">PNG</button><button aria-pressed="false">SVG</button><button aria-pressed="false">WebP</button></div></div><div class="field">Background<div class="seg"><button aria-pressed="true">As designed</button><button aria-pressed="false">Transparent</button></div></div></div>
+          <div class="field" style="margin-top:16px">Send it to
+            <div class="radios">
+              <label class="on chk"><i></i><div><b>Galaxy Action in Linearr</b><span>Shows in the guide, lineup and command palette</span></div></label>
+              <label class="on chk"><i></i><div><b>Tunarr channel #103</b><span>Your TV apps pick it up after the next guide rebuild</span></div></label>
+              <label class="chk"><i></i><div><b>Download files</b><span>PNG at 4 sizes plus an SVG, zipped</span></div></label>
+            </div>
+          </div>
+        </div>
+        <div class="m-f"><button class="btn ghost" style="margin-left:auto" data-close>Cancel</button><button class="btn primary" data-toast="Icon saved and sent to Tunarr #103." data-close>Save and send</button></div>
+      </div>
+    </div>
+
     <div class="scrim" id="scrim">
       <div class="palette" role="dialog" aria-label="Command palette">
         <div class="in"><svg class="ic muted"><use href="#i-search"/></svg><input id="palIn" value="action" aria-label="Search"><span class="kbd">Esc</span></div>
@@ -1179,19 +1727,86 @@ h3.sec{font-size:18px;margin:0 0 4px;font-weight:600}
   </div>
 </section>
 
-<!-- ───────────── Sign in & setup ───────────── -->
-<section class="canvas" data-canvas="setup">
-  <div class="onb">
-    <div class="frame signin">
-      <div class="card">
-        <svg width="44" height="44"><use href="#logo"/></svg>
-        <div><h3>Sign in to Linearr</h3><p class="muted" style="margin:4px 0 0;font-size:13px">Galaxy Network on this server</p></div>
-        <div class="field">Username<div class="inp">admin</div></div>
-        <div class="field">Password<div class="inp">••••••••••</div></div>
-        <button class="btn primary">Sign in</button>
-        <p class="faint" style="font-size:12px;margin:0;text-align:center">You stay signed in on this device for 30 days.</p>
+<!-- ───────────── Login ───────────── -->
+<section class="canvas" data-canvas="login">
+  <div class="statebar"><span class="muted">State</span><div class="seg" id="loginStates"><button data-ls="default" aria-pressed="true">Default</button><button data-ls="error" aria-pressed="false">Wrong password</button><button data-ls="busy" aria-pressed="false">Signing in</button><button data-ls="expired" aria-pressed="false">Session expired</button></div></div>
+  <div class="frame login" id="login" data-state="default">
+    <div class="lg-left">
+      <div class="lg-brand"><svg width="34" height="34"><use href="#logo"/></svg><span>Linearr</span></div>
+      <div class="mini-guide" aria-hidden="true" id="miniGuide"></div>
+      <div class="lg-copy">
+        <h2>Galaxy Network</h2>
+        <p>29 channels on the air. Sign in to change what plays next.</p>
       </div>
     </div>
+    <div class="lg-right">
+      <form class="lg-form" onsubmit="return false">
+        <div class="lg-expired note" style="color:var(--text);background:var(--brand-soft)"><svg class="ic sm"><use href="#i-clock"/></svg><span>You were signed out after 30 days. Sign in again to pick up where you left off.</span></div>
+        <div><h3>Sign in</h3><p class="muted" style="margin:4px 0 0">to Linearr on this server</p></div>
+        <div class="field">Username<div class="inp"><svg class="ic sm faint"><use href="#i-user"/></svg>admin</div></div>
+        <div class="field">Password<div class="inp lg-pw"><svg class="ic sm faint"><use href="#i-lock"/></svg><span class="pwv">••••••••••</span><button class="btn ghost sm" style="margin-left:auto;height:24px" type="button">Show</button></div><span class="lg-err">Wrong username or password. Check for caps lock and try again.</span></div>
+        <button class="btn primary lg-go"><span class="lg-spin"></span><span class="lg-lbl">Sign in</span></button>
+        <div class="lg-foot">
+          <span>Forgot it? The password is <code>APP_PASSWORD</code> in your server's .env file.</span>
+          <span class="faint">Linearr 1.0.5. Signed in for 30 days on this device.</span>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── Splash ───────────── -->
+<section class="canvas" data-canvas="splash">
+  <div class="statebar"><span class="muted">State</span><div class="seg" id="splashStates"><button data-ss="boot" aria-pressed="true">Starting up</button><button data-ss="plex" aria-pressed="false">Can't reach Plex</button><button data-ss="updated" aria-pressed="false">Just updated</button><button data-ss="restore" aria-pressed="false">Restoring backup</button><button data-ss="offline" aria-pressed="false">Offline</button></div><button class="btn sm ghost" id="replay">Replay</button></div>
+  <div class="sp-row">
+    <div class="frame splash" id="splash" data-state="boot">
+      <div class="sp-boot sp-state">
+        <svg class="sp-logo" viewBox="0 0 32 32" width="88" height="88" aria-hidden="true"><rect width="32" height="32" rx="8" fill="url(#lg)"/><path d="M9 8v16h14" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path class="b1" d="M14 11h9" stroke="#fff" stroke-opacity=".75" stroke-width="2.2" stroke-linecap="round"/><path class="b2" d="M14 15.5h6" stroke="#fff" stroke-opacity=".75" stroke-width="2.2" stroke-linecap="round"/><path class="b3" d="M14 20h8" stroke="#fff" stroke-opacity=".75" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <div class="sp-name">Linearr</div>
+        <ul class="sp-steps" id="bootSteps"></ul>
+      </div>
+      <div class="sp-plex sp-state">
+        <span class="sp-ico warn"><svg class="ic"><use href="#i-plug"/></svg></span>
+        <h2>Can't reach Plex</h2>
+        <p>Linearr tried <b>http://plex:32400</b> for 10 seconds. Plex may be restarting or updating, or its address changed.</p>
+        <ul class="sp-checks"><li class="ok"><svg class="ic sm"><use href="#i-check"/></svg>Database opened</li><li class="ok"><svg class="ic sm"><use href="#i-check"/></svg>Tunarr 1.3.6 answered in 18 ms</li><li class="bad"><svg class="ic sm"><use href="#i-x"/></svg>Plex refused the connection</li></ul>
+        <div class="sp-acts"><button class="btn primary" data-toast="Trying Plex again.">Try again</button><button class="btn" data-go="settings">Change Plex address</button></div>
+        <button class="btn ghost sm" data-go="home">Continue without Plex</button>
+        <p class="faint" style="font-size:12px;margin:0">Without Plex you can still edit and publish schedules. Posters and the library won't load.</p>
+      </div>
+      <div class="sp-updated sp-state">
+        <span class="sp-ico"><svg class="ic"><use href="#i-spark"/></svg></span>
+        <h2>Linearr 1.0.5 is installed</h2>
+        <p>Updated from 1.0.4 while you were away. Your channels and schedules are untouched.</p>
+        <ul class="sp-new">
+          <li><b>Plex sign-in with a device key</b><span>Tokens now renew themselves every 7 days.</span></li>
+          <li><b>Tunarr 1.3.6 support</b><span>Smart collections and new channel settings work with the latest Tunarr.</span></li>
+          <li><b>Faster guide</b><span>The guide loads only the hours you are looking at.</span></li>
+        </ul>
+        <div class="sp-acts"><button class="btn primary" data-go="home">Continue</button><button class="btn ghost" data-toast="Opens the full changelog.">Full changelog</button></div>
+      </div>
+      <div class="sp-restore sp-state">
+        <span class="sp-ico"><svg class="ic"><use href="#i-db"/></svg></span>
+        <h2>Restoring your backup</h2>
+        <p>linearr-2026-09-14.db, 4.1 MB. Keep this tab open. Linearr reloads when it's done.</p>
+        <div class="sp-prog"><b style="width:64%"></b></div>
+        <ul class="sp-checks"><li class="ok"><svg class="ic sm"><use href="#i-check"/></svg>Saved a copy of the current database</li><li class="ok"><svg class="ic sm"><use href="#i-check"/></svg>Checked the backup file</li><li class="run"><span class="spin"></span>Restoring 29 channels and 412 blocks</li><li class="wait"><span class="dot off"></span>Reconnecting to Plex and Tunarr</li></ul>
+      </div>
+      <div class="sp-offline sp-state">
+        <span class="sp-ico"><svg class="ic"><use href="#i-guide"/></svg></span>
+        <h2>You're offline</h2>
+        <p>Linearr can't reach your server. The guide below is the last one loaded, at 8:41 PM.</p>
+        <div class="sp-acts"><button class="btn primary" data-go="guide">Open saved guide</button><button class="btn" data-toast="Still offline. Trying again in 30 s.">Try again</button></div>
+        <p class="faint" style="font-size:12px;margin:0">Changes are turned off until you're back online.</p>
+      </div>
+    </div>
+    <div class="phone sm-phone"><div class="screen pwa-splash"><svg width="96" height="96"><use href="#logo"/></svg><div class="sp-name" style="color:#fff">Linearr</div><span class="pwa-dots"><i></i><i></i><i></i></span></div></div>
+  </div>
+</section>
+
+<!-- ───────────── First-run setup ───────────── -->
+<section class="canvas" data-canvas="setup">
+  <div class="onb">
     <div class="frame setup">
       <div class="sl">
         <div style="display:flex;align-items:center;gap:8px;font-weight:600"><svg width="26" height="26"><use href="#logo"/></svg>Set up Linearr</div>
@@ -1258,8 +1873,8 @@ const CH = [
 const onNow = c => { for (let i = 0; i < c.p.length; i++) { const [t, s, d, k] = c.p[i]; const st = mins(s); if (st <= NOW && NOW < st + d) return { t, st, d, k, next: c.p[i + 1] }; } return null; };
 
 /* ───────────── Navigation ───────────── */
-const APP_VIEWS = ['home', 'guide', 'channels', 'channel', 'library', 'title', 'templates', 'publish', 'advisor', 'branding', 'builder', 'settings'];
-const RAIL = { channel: 'channels', branding: 'channels', builder: 'channels', title: 'library' };
+const APP_VIEWS = ['home', 'guide', 'channels', 'channel', 'library', 'title', 'templates', 'publish', 'advisor', 'branding', 'builder', 'settings', 'day', 'special', 'tplnet', 'tpledit', 'tplapply', 'tplday', 'iclib', 'icgrad', 'icbatch'];
+const RAIL = { channel: 'channels', branding: 'channels', builder: 'channels', title: 'library', day: 'channels', special: 'channels', iclib: 'channels', icgrad: 'channels', icbatch: 'channels', tplnet: 'templates', tpledit: 'templates', tplapply: 'templates', tplday: 'templates' };
 const CRUMB = {
   home: 'Home',
   guide: 'Guide',
@@ -1273,31 +1888,50 @@ const CRUMB = {
   branding: '<span class="lo">Channels</span><span class="sep">/</span><span class="lo">103 Galaxy Action</span><span class="sep">/</span>Branding',
   builder: '<span class="lo">Channels</span><span class="sep">/</span>New 24/7 channel',
   settings: 'Settings',
+  day: '<span class="lo">Channels</span><span class="sep">/</span><span class="lo">103 Galaxy Action</span><span class="sep">/</span>Friday',
+  special: '<span class="lo">Channels</span><span class="sep">/</span>Special dates',
+  tplnet: '<span class="lo">Templates</span><span class="sep">/</span>Classic network blocks',
+  tpledit: '<span class="lo">Templates</span><span class="sep">/</span>CN Saturday Morning',
+  tplapply: '<span class="lo">Templates</span><span class="sep">/</span>Apply Prime-time premiere',
+  tplday: '<span class="lo">Templates</span><span class="sep">/</span>Day templates',
+  iclib: '<span class="lo">Channels</span><span class="sep">/</span>Icons',
+  icgrad: '<span class="lo">Channels</span><span class="sep">/</span><span class="lo">103 Galaxy Action</span><span class="sep">/</span>Branding',
+  icbatch: '<span class="lo">Channels</span><span class="sep">/</span><span class="lo">Icons</span><span class="sep">/</span>Style a tier',
 };
+const OVERLAYS = { palette: ['guide', '#scrim'], blockedit: ['channel', '#ovBlock'], fill: ['guide', '#ovFill'], overrun: ['channel', '#ovOverrun'], icexport: ['branding', '#ovExport'] };
+let curOv = null;
+function closeOv() { if (curOv) go(OVERLAYS[curOv][0]); }
+function setGroup(g) { $$('.vtabs button').forEach(b => b.hidden = b.dataset.grp !== g); $$('[data-grp-set]').forEach(b => b.setAttribute('aria-pressed', b.dataset.grpSet === g)); }
 function go(id) {
-  const palette = id === 'palette';
-  const view = palette ? 'guide' : id;
-  const inApp = APP_VIEWS.includes(view);
+  const ov = OVERLAYS[id], view = ov ? ov[0] : id, inApp = APP_VIEWS.includes(view);
+  curOv = ov ? id : null;
   $('#app').style.display = inApp ? '' : 'none';
   $$('.canvas').forEach(c => c.classList.toggle('on', c.dataset.canvas === id));
   $$('.view').forEach(v => v.classList.toggle('on', v.dataset.view === view));
   $$('.rail a').forEach(a => a.classList.toggle('on', a.dataset.nav === (RAIL[view] || view)));
-  $$('.vtabs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.go === id));
-  $('#scrim').classList.toggle('on', palette);
+  const tab = $(`.vtabs button[data-go="${id}"]`) || $(`.vtabs button[data-go="${view}"]`);
+  $$('.vtabs button').forEach(b => b.setAttribute('aria-pressed', b === tab));
+  if (tab) setGroup(tab.dataset.grp);
+  $$('.ovl, #scrim').forEach(o => o.classList.remove('on'));
+  if (ov) $(ov[1]).classList.add('on');
   if (inApp) $('#crumbs').innerHTML = CRUMB[view];
   if (view === 'guide') requestAnimationFrame(scrollToNow);
+  if (view === 'day') requestAnimationFrame(() => { $('#dayScroll').scrollLeft = (NOW - 360) * 1.15 - 320; });
+  if (id === 'splash') setSplash($('#splash').dataset.state);
   try { localStorage.setItem('linearr-mock-screen', id); } catch (e) {}
 }
 document.addEventListener('click', e => {
+  const gs = e.target.closest('[data-grp-set]'); if (gs) { go($(`.vtabs button[data-grp="${gs.dataset.grpSet}"]`).dataset.go); return; }
+  const cl = e.target.closest('[data-close]'); if (cl) { if (cl.dataset.toast) toast(cl.dataset.toast); closeOv(); return; }
   const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go); if (g.dataset.pane) setPane(g.dataset.pane); return; }
   const n = e.target.closest('[data-nav]'); if (n) { go(n.dataset.nav); return; }
   const t = e.target.closest('[data-toast]'); if (t) toast(t.dataset.toast);
 });
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); go('palette'); }
-  if (e.key === 'Escape') { if ($('#scrim').classList.contains('on')) go('guide'); $('#drawer').classList.remove('open'); }
+  if (e.key === 'Escape') { closeOv(); $('#drawer').classList.remove('open'); }
 });
-$('#scrim').addEventListener('click', e => { if (e.target.id === 'scrim') go('guide'); });
+$$('.ovl, #scrim').forEach(o => o.addEventListener('click', e => { if (e.target === o) closeOv(); }));
 
 /* Theme + accent */
 function setTheme(t) { document.documentElement.dataset.theme = t; $$('[data-theme-set]').forEach(b => b.setAttribute('aria-pressed', b.dataset.themeSet === t)); syncCall('theme', t === 'dark' ? 'Dark' : 'Light'); }
@@ -1356,7 +1990,7 @@ function renderGuide() {
     if (cursor < G1 - 9) cells.push({ gap: 1, st: cursor, en: G1 });
     for (const x of cells) {
       const l = (Math.max(x.st, G0) - G0) * PPM + 2, w = (Math.min(x.en, G1) - Math.max(x.st, G0)) * PPM - 4;
-      if (x.gap) { h += `<button class="prog gap" style="left:${l}px;width:${w}px" data-toast="Opens the library filtered to titles that fit ${dur(x.en - x.st)}.">${w > 70 ? `<span class="pt">Nothing scheduled, ${dur(x.en - x.st)}</span>` : ''}${w > 220 ? '<span class="fill"><svg class="ic sm"><use href="#i-plus"/></svg>Fill</span>' : ''}</button>`; continue; }
+      if (x.gap) { h += `<button class="prog gap" style="left:${l}px;width:${w}px" data-go="fill">${w > 70 ? `<span class="pt">Nothing scheduled, ${dur(x.en - x.st)}</span>` : ''}${w > 220 ? '<span class="fill"><svg class="ic sm"><use href="#i-plus"/></svg>Fill</span>' : ''}</button>`; continue; }
       const live = x.st <= NOW && NOW < x.en, past = x.en <= NOW;
       const cls = ['prog', x.k === 'Movie' ? 'movie' : '', live ? 'live' : '', past ? 'past' : ''].join(' ');
       const meta = x.k === 'Movie' ? `${fmt(x.st)}, ${dur(x.d)}` : `${x.k}, ${fmt(x.st)}`;
@@ -1420,10 +2054,10 @@ function renderInspector() {
   const s = mins(b.s), e = mins(b.e);
   const slots = b.slots.map(([t, n, m, over]) => `<div class="slot ${over ? 'over' : ''}"><span class="tm">${fmt(mins(t))}</span><span class="mini" style="background:${art(n)}"></span><div><div class="st">${n}</div><div class="sd">${m}</div></div><svg class="ic sm grip"><use href="#i-grip"/></svg></div>`).join('');
   const empty = b.fill < 1 ? `<div class="slot empty">${dur(Math.round((e - s) * (1 - b.fill)))} unfilled. Drop a title here or fill automatically.</div>` : '';
-  const warn = selBlock.key === 'prime' ? '<div class="note"><svg class="ic sm"><use href="#i-alert"/></svg><span><b>John Wick</b> runs 45 minutes past the block end, which pushes After hours back to 10:45 PM.</span></div>' :
+  const warn = selBlock.key === 'prime' ? '<div class="note"><svg class="ic sm"><use href="#i-alert"/></svg><span><b>John Wick</b> runs 45 minutes past the block end, which pushes After hours back to 10:45 PM.</span><button class="btn sm" data-go="overrun" style="margin-left:auto;flex:none">Fix</button></div>' :
     selBlock.key === 'over' ? '<div class="note"><svg class="ic sm"><use href="#i-alert"/></svg><span>Only 1 show in this block. Shuffle will repeat Firefly every night.</span></div>' : '';
   $('#inspector').innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px"><span class="lg-k"><i style="background:var(--${b.type === 'movies' ? 'movie' : b.type === 'shows' ? 'show' : 'both'})"></i></span><h3>${b.name}</h3><button class="btn ghost sm" style="margin-left:auto" aria-label="Edit block"><svg class="ic sm"><use href="#i-edit"/></svg></button></div>
+    <div style="display:flex;align-items:center;gap:8px"><span class="lg-k"><i style="background:var(--${b.type === 'movies' ? 'movie' : b.type === 'shows' ? 'show' : 'both'})"></i></span><h3>${b.name}</h3><button class="btn ghost sm" style="margin-left:auto" aria-label="Edit block" data-go="blockedit"><svg class="ic sm"><use href="#i-edit"/></svg></button></div>
     <p class="muted" style="margin:4px 0 0;font-size:13px">${WEEK[di][0]}day, ${fmt(s)} to ${fmt(e)}, ${b.type === 'both' ? 'movies and shows' : b.type}</p>
     <div class="ins-sec"><h4>Repeats on</h4><div class="days">${days}</div></div>
     <div class="ins-sec"><h4>Line-up</h4><div class="slots">${slots}${empty}</div>${warn}</div>
@@ -1510,9 +2144,11 @@ const CALLS = [
   ['schedule', 'Schedule editing', '', [['Week calendar + inspector', 'As mocked', 1], ['Keep block cards', 'Restyle only']]],
   ['scope', 'Rollout', 'How the refactor lands', [['Shell first, then screen by screen', 'Rail, router and tokens ship first, then each screen behind its own PR', 1], ['Big-bang rewrite', 'One long-lived branch']]],
   ['icons', 'Channel icon studio', 'The current editor has layers, fonts and export', [['Keep the full studio', 'Layers and properties, as mocked', 1], ['Upload plus presets only', 'Much less code to maintain']]],
+  ['login', 'Sign-in page', '', [['Split with live guide', 'As mocked', 1], ['Centred card', 'Simpler, no motion']]],
+  ['splash', 'Start-up splash', 'Shown while Linearr connects', [['Show connection checks', 'Explains a slow start', 1], ['Logo only', 'Feels faster when things are fine']]],
   ['styling', 'Styling stack', '', [['Tailwind v4 + shadcn/ui', 'Tokens, Radix primitives, accessible dialogs', 1], ['Stay on Tailwind v3', 'Fewer moving parts']]],
 ];
-const choice = { accent: 'Violet', theme: 'Dark', landing: 'Home dashboard', schedule: 'Week calendar + inspector', scope: 'Shell first, then screen by screen', styling: 'Tailwind v4 + shadcn/ui', icons: 'Keep the full studio' };
+const choice = { accent: 'Violet', theme: 'Dark', landing: 'Home dashboard', schedule: 'Week calendar + inspector', scope: 'Shell first, then screen by screen', styling: 'Tailwind v4 + shadcn/ui', icons: 'Keep the full studio', login: 'Split with live guide', splash: 'Show connection checks' };
 function renderCalls() {
   $('#calls').innerHTML = CALLS.map(([k, q, s, opts]) => `<div class="panel call"><div class="q"><b>${q}</b>${s ? `<span>${s}</span>` : ''}</div><div class="opts">${opts.map(([o, d, rec]) => `<button class="opt" data-k="${k}" data-o="${o}" aria-pressed="${choice[k] === o}">${o}${rec ? '<span class="rec">Recommended</span>' : ''}${d ? `<small>${d}</small>` : ''}</button>`).join('')}</div></div>`).join('');
   $('#sumOut').textContent = 'Linearr redesign choices\n' + CALLS.map(([k, q]) => `- ${q}: ${choice[k]}`).join('\n');
@@ -1577,7 +2213,7 @@ function renderTpl() {
     <div class="ins-sec"><h4>When</h4><dl class="kv"><dt>Time</dt><dd>${fmt(mins(s))} to ${fmt(mins(e))}</dd><dt>Days</dt><dd>${d}</dd><dt>Content</dt><dd>${t === 'both' ? 'Movies and shows' : t[0].toUpperCase() + t.slice(1)}</dd><dt>Picks from</dt><dd>Each channel's own titles</dd></dl></div>
     <div class="ins-sec"><h4>Apply to channels</h4><div class="pickch">${opts.map(([cn, nm, r, on, dis]) => `<label class="${on ? 'on' : ''}" ${dis ? 'style="opacity:.55"' : ''}><span class="cbx ${on || dis ? 'on' : ''}"></span><span class="bug">${cn}</span>${nm}<span class="r">${r}</span></label>`).join('')}</div>
     <div class="note"><svg class="ic sm"><use href="#i-alert"/></svg><span>On Galaxy Action this replaces the Sci-fi morning and Superhero blocks on weekends.</span></div></div>
-    <div class="ins-acts"><button class="btn primary sm" data-toast="Applied to 2 channels. Review it in Publish.">Apply to 2 channels</button><button class="btn sm"><svg class="ic sm"><use href="#i-edit"/></svg>Edit template</button></div>`;
+    <div class="ins-acts"><button class="btn primary sm" data-go="tplapply">Apply to 2 channels</button><button class="btn sm" data-go="tpledit"><svg class="ic sm"><use href="#i-edit"/></svg>Edit template</button></div>`;
 }
 renderTpl();
 $('#tplGrid').addEventListener('click', e => { const c = e.target.closest('[data-tpl]'); if (!c) return; tplSel = +c.dataset.tpl; renderTpl(); });
@@ -1605,6 +2241,177 @@ function setPane(p) { $$('#setNav a').forEach(a => a.classList.toggle('on', a.da
 $('#setNav').addEventListener('click', e => { const a = e.target.closest('[data-pane]'); if (a) setPane(a.dataset.pane); });
 $('#tierRows').innerHTML = TIERS.map(([k, nm, c, rng]) => `<div class="tierrow"><svg class="ic sm faint"><use href="#i-grip"/></svg><span class="sw" style="background:${c}"></span><div class="inp">${nm}</div><span class="muted hide-sm" style="font-size:12.5px">Numbers ${rng}</span><span class="muted hide-sm" style="font-size:12.5px">${ALL.filter(x => x[2] === k).length} channels</span><button class="btn sm ghost" data-toast="Move its channels to another tier first.">Remove</button></div>`).join('');
 $('#logRows').innerHTML = [['8:41 PM', '', 'Tunarr', 'Pushed the Galaxy Anime schedule, 14 slots'], ['8:30 PM', '', 'Advisor', 'Network review finished with 5 findings'], ['8:12 PM', 'warn', 'Tunarr', 'Smart collection save was rejected with "filter", retried with "query" and succeeded'], ['7:58 PM', 'warn', 'Plex', 'Thumbnail for Heat timed out after 5 s'], ['6:04 PM', 'err', 'Plex', '6 titles no longer exist in Plex and were skipped in 2 blocks'], ['5:20 PM', '', 'Blocks', 'Edited Blockbuster prime on Galaxy Action'], ['Yesterday', '', 'Backup', 'Database backup downloaded'], ['Yesterday', '', 'Plex', 'New token created from the device key, valid 7 days']].map(([t, l, a, m]) => `<tr><td class="muted" style="white-space:nowrap">${t}</td><td><span class="lvl ${l}">${l === 'warn' ? 'Warning' : l === 'err' ? 'Error' : 'Info'}</span></td><td class="muted">${a}</td><td>${m}</td></tr>`).join('');
+
+/* ───────────── Channel icon generator ───────────── */
+let icSeq = 0;
+function chIcon(name, n, style = 'grad', o = {}) {
+  const words = name.toUpperCase().split(' ');
+  const top = words.length > 1 ? words[0] : '';
+  const main = words.length > 1 ? words.slice(1).join(' ') : words[0];
+  const h = o.hue ?? hue(name), id = 'ci' + (icSeq++);
+  // Instrument Sans bold caps run about 0.7em wide, so size each line to the tile's usable width
+  const fit = (w, max, txt) => Math.min(max, +(w / (txt.length * 0.7)).toFixed(1));
+  const fs = fit(80, 30, main);
+  const T = (y, sz, txt, extra = '') => `<text x="50" y="${y}" text-anchor="middle" font-family="Instrument Sans, sans-serif" font-weight="700" font-size="${sz}" fill="#fff" ${extra}>${txt}</text>`;
+  if (style === 'classic') return `<svg viewBox="0 0 100 100"><rect x="2" y="2" width="96" height="96" rx="16" fill="#0E0E10"/>${top ? T(36, 9, top, 'letter-spacing="2" opacity=".7"') : ''}${T(top ? 60 : 57, fs, main)}<rect x="22" y="${top ? 68 : 66}" width="56" height="5" rx="2.5" fill="hsl(${h} 85% 58%)"/></svg>`;
+  if (style === 'num') return `<svg viewBox="0 0 100 100"><rect x="2" y="2" width="96" height="96" rx="22" fill="hsl(${h} 45% 22%)"/>${T(60, 40, n)}${T(80, fit(76, 8.5, (top + ' ' + main).trim()), (top + ' ' + main).trim(), 'opacity=".8"')}</svg>`;
+  if (style === 'ring') return `<svg viewBox="0 0 100 100"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h} 80% 60%)"/><stop offset="1" stop-color="hsl(${(h + 40) % 360} 70% 30%)"/></linearGradient></defs><circle cx="50" cy="50" r="47" fill="url(#${id})"/><circle cx="50" cy="50" r="40" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="2"/>${top ? T(40, 8, top, 'letter-spacing="2" opacity=".85"') : ''}${T(top ? 61 : 57, fit(60, 24, main), main)}</svg>`;
+  return `<svg viewBox="0 0 100 100"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h} 80% 60%)"/><stop offset="1" stop-color="hsl(${(h + 35) % 360} 70% 30%)"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="22" fill="url(#${id})"/><path d="M2 70 98 48v13L2 83z" fill="#fff" opacity=".13"/>${top ? T(40, 9.5, top, 'letter-spacing="2.5" opacity=".85"') : ''}${T(top ? 63 : 58, fs, main)}</svg>`;
+}
+
+/* ───────────── Day view ───────────── */
+const DAY = [
+  ['06:00', 'The Expanse', 45, 'S2 E1', 'sci', 0], ['06:45', 'The Expanse', 45, 'S2 E2', 'sci', 0], ['07:30', 'Battlestar Galactica', 44, 'S1 E4', 'sci', 0], ['08:14', 'Battlestar Galactica', 44, 'S1 E5', 'sci', 0],
+  ['09:00', 'Daredevil', 53, 'S1 E3', 'hero', 0], ['09:53', 'Spider-Man: Into the Spider-Verse', 117, 'Movie', 'hero', 1],
+  ['12:00', 'Die Hard', 132, 'Movie', 'mara', 0], ['14:12', 'Speed', 116, 'Movie', 'mara', 0], ['gap', '16:08', 52, 'mara'],
+  ['17:00', 'Edge of Tomorrow', 113, 'Movie', 'prime', 1], ['18:53', 'Top Gun: Maverick', 131, 'Movie', 'prime', 1], ['21:04', 'John Wick', 101, 'Movie', 'prime', 1, 1],
+  ['22:45', 'Mission: Impossible Fallout', 147, 'Movie', 'late', 0], ['gap', '01:12', 48, 'late'],
+  ['02:00', 'Firefly', 44, 'S1 E1', 'over', 0], ['02:44', 'Firefly', 44, 'S1 E2', 'over', 0], ['03:28', 'Firefly', 44, 'S1 E3', 'over', 0], ['04:12', 'Firefly', 44, 'S1 E4', 'over', 0], ['gap', '04:56', 64, 'over'],
+];
+(function dayView() {
+  const P = 1.15, D0 = 360, W = 1440 * P, rel = t => { let m = mins(t) - D0; return m < 0 ? m + 1440 : m; };
+  let h = `<div class="dl-ruler" style="width:${W}px">` + Array.from({ length: 24 }, (_, i) => `<span style="left:${i * 60 * P}px">${fmtH(D0 + i * 60)}</span>`).join('') + '</div>';
+  h += `<div class="dl-blocks" style="width:${W}px">` + ['sci', 'hero', 'mara', 'prime', 'late', 'over'].map(k => { const b = BLOCKS[k]; const s = mins(b.s) - D0, e = mins(b.e) - D0; return `<button class="dl-blk ${b.type}" style="left:${s * P}px;width:${(e - s) * P - 3}px" data-go="blockedit"><b>${b.name}</b><span>${fmtH(mins(b.s))} to ${fmtH(mins(b.e))}</span></button>`; }).join('') + '</div>';
+  h += `<div class="dl-slots" style="width:${W}px">`;
+  for (const r of DAY) {
+    if (r[0] === 'gap') { const s = rel(r[1]); h += `<button class="dl-s gap" style="left:${s * P}px;width:${r[2] * P - 3}px" data-go="fill"><span>${dur(r[2])} gap</span><b>Fill</b></button>`; continue; }
+    const [t, n, d, k, , pin, over] = r, s = rel(t);
+    const live = mins(t) <= NOW && NOW < mins(t) + d;
+    h += `<button class="dl-s ${pin ? 'pin' : ''} ${over ? 'over' : ''} ${live ? 'live' : ''} ${d * P < 72 ? 'tiny' : ''}" title="${n}, ${k}" style="left:${s * P}px;width:${d * P - 3}px" ${over ? 'data-go="overrun"' : ''}><i style="background:${art(n)}"></i><div><b>${n}</b><span>${k}</span></div></button>`;
+  }
+  h += '</div>' + `<div class="nowline" style="left:${(NOW - D0) * P}px" data-t="${fmt(NOW)}"></div>` + `<div class="dl-end" style="left:${(mins('22:00') - D0) * P}px"></div>`;
+  $('#dayline').innerHTML = h; $('#dayline').style.width = W + 'px';
+  $('#runsheet').innerHTML = DAY.map(r => {
+    if (r[0] === 'gap') return `<tr><td class="muted">${fmt(mins(r[1]))}</td><td><span class="chip warn">Nothing scheduled</span></td><td class="muted">${dur(r[2])}</td><td class="muted">${BLOCKS[r[3]].name}</td><td class="faint">Empty</td><td><button class="btn sm" data-go="fill">Fill</button></td></tr>`;
+    const [t, n, d, k, b, pin, over] = r;
+    return `<tr><td class="muted">${fmt(mins(t))}</td><td><div class="chcell"><span class="mini" style="width:22px;height:32px;border-radius:3px;background:${art(n)};flex:none"></span><div>${n}<div class="sub2">${k}</div></div></div></td><td class="muted">${dur(d)}${over ? ' <span class="chip warn" style="margin-left:4px">45 m over</span>' : ''}</td><td class="muted">${BLOCKS[b].name}</td><td>${pin ? 'Pinned by you' : '<span class="muted">Picked by shuffle</span>'}</td><td><button class="btn sm ghost" ${over ? 'data-go="overrun">Fix' : 'data-toast="Pick a replacement.">Swap'}</button></td></tr>`;
+  }).join('');
+})();
+
+/* ───────────── Fill a gap ───────────── */
+$('#fits').innerHTML = [['Searching', 102, 'Movie, 2018', 'Fits, 5 m spare', 1], ["Don't Breathe", 88, 'Movie, 2016', 'Fits, 19 m spare'], ['Searching + Black Mirror S1 E1', 107, '2 titles', 'Exact fit', 1, 1], ['Nightcrawler', 117, 'Movie, 2014', '10 m over, pushes 11:30 PM block'], ['Mindhunter S1 E4 + E5', 110, '2 episodes', '3 m over'], ['Gone Girl', 149, 'Movie, 2014', 'Too long by 42 m', 0, 0, 1]].map(([n, d, m, fit, sel, combo, bad]) => {
+  const pct = Math.min(d / 107, 1.45) * 100 / 1.45, gap = 100 / 1.45;
+  return `<button class="fit ${sel ? 'sel' : ''} ${bad ? 'bad' : ''}"><span class="cbx ${sel ? 'on' : ''}"></span><span class="mini" style="width:26px;height:38px;border-radius:4px;background:${art(n)};flex:none"></span><div class="fi"><div class="ft"><b>${n}</b><span class="muted">${m}, ${dur(d)}</span></div><div class="fbar"><i style="width:${gap}%"></i><b style="width:${pct}%" class="${d > 107 ? 'long' : ''}"></b></div></div><span class="fl ${d > 107 ? 'w' : 'g'}">${fit}</span></button>`;
+}).join('');
+
+/* ───────────── Overrun options ───────────── */
+$('#ovOpts').innerHTML = [
+  ['Swap John Wick for a shorter movie', 'Nobody (1 h 32 m) ends at 9:36 PM. Everything after stays on time.', 1, [['Top Gun', 0, 64, 'm'], ['Nobody', 64, 92, 'm'], ['After hours', 180, 120, 'l']]],
+  ['Let it run', 'After hours starts at 10:45 PM instead of 10:00 PM, and the rest of the night shifts by 45 m.', 0, [['Top Gun', 0, 64, 'm'], ['John Wick', 64, 101, 'm o'], ['After hours, late', 225, 75, 'l']]],
+  ['Cut away at 10:00 PM', 'John Wick is cut off 45 m before the end, like live TV.', 0, [['Top Gun', 0, 64, 'm'], ['John Wick', 64, 56, 'm c'], ['After hours', 180, 120, 'l']]],
+].map(([t, d, on, segs]) => `<label class="ov-opt ${on ? 'on' : ''}"><i class="rd"></i><div style="flex:1;min-width:0"><b>${t}</b><span>${d}</span><div class="mt">${segs.map(([n, l, w, c]) => `<em class="${c}" style="left:${l / 300 * 100}%;width:${w / 300 * 100}%">${n}</em>`).join('')}<u style="left:${180 / 300 * 100}%"></u></div><div class="daybar-l"><span>8 PM</span><span>10 PM</span><span>1 AM</span></div></div></label>`).join('');
+
+/* ───────────── Special dates ───────────── */
+(function month() {
+  const ev = { 3: [['Toonami night', 'classic']], 10: [['Bond weekend', 'main']], 11: [['Bond weekend', 'main']], 16: [['Ghibli weekend', 'main']], 17: [['Ghibli weekend', 'main']], 18: [['Ghibli weekend', 'main']], 31: [['Halloween night', 'air', 1]] };
+  let h = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `<div class="mh">${d}</div>`).join('');
+  for (let i = 0; i < 35; i++) {
+    const d = i - 2; const inM = d >= 1 && d <= 31; const label = inM ? d : d < 1 ? 28 + i : d - 31;
+    h += `<div class="md ${inM ? '' : 'out'} ${d === 2 ? 'today' : ''} ${d === 31 ? 'sel' : ''}"><span class="dn">${label}</span>${(inM && ev[d] || []).map(([n, c]) => `<span class="ev ${c}">${n}</span>`).join('')}</div>`;
+  }
+  $('#month').innerHTML = h;
+})();
+
+/* ───────────── Classic network blocks ───────────── */
+$('#netList').innerHTML = '<h4>Networks</h4>' + [['Cartoon Network', 7, 1], ['Toonami', 3], ['Adult Swim', 4], ['Nickelodeon', 5], ['Nicktoons', 2], ['Disney Channel', 5], ['Disney XD', 2], ["Kids' WB", 2]].map(([n, c, on]) => `<a class="${on ? 'on' : ''}"><span class="nl-ic">${chIcon(n, 0, 'classic')}</span>${n}<span>${c}</span></a>`).join('') + '<h4>Your templates</h4><a data-go="templates"><svg class="ic sm"><use href="#i-layers"/></svg>My templates<span>8</span></a><a data-go="tplday"><svg class="ic sm"><use href="#i-guide"/></svg>Day templates<span>5</span></a>';
+$('#nbGrid').innerHTML = [
+  ['Cartoon Cartoon Fridays', 'Fri, 7 PM to 10 PM', ["Dexter's Laboratory", 'Johnny Bravo', 'Courage the Cowardly Dog', 'Ed, Edd n Eddy', 'The Powerpuff Girls', 'Codename: Kids Next Door'], 9, 11, 'Mike, Lu & Og; Sheep in the Big City'],
+  ['CN Saturday Morning', 'Sat, 7 AM to 12 PM', ['The Powerpuff Girls', 'Samurai Jack', "Dexter's Laboratory", 'Teen Titans'], 12, 12, ''],
+  ['Miguzi', 'Mon to Fri, 5 PM to 7 PM', ['Megas XLR', 'Totally Spies!', 'Atomic Betty', 'Yu-Gi-Oh!'], 3, 8, 'Megas XLR, Atomic Betty and 3 more'],
+  ['DC Nation', 'Sat, 10 AM to 11 AM', ['Young Justice', 'Green Lantern: The Animated Series'], 2, 2, ''],
+  ['CN Action Block', 'Sat, 7 PM to 10 PM', ['Ben 10', 'Star Wars: The Clone Wars', 'Samurai Jack'], 5, 6, 'Transformers: Animated'],
+  ['CN Weekday Afternoon', 'Mon to Fri, 3 PM to 6 PM', ['Ed, Edd n Eddy', 'Courage the Cowardly Dog', 'Grim Adventures of Billy & Mandy'], 7, 9, 'Camp Lazlo, My Gym Partner\'s a Monkey'],
+].map(([n, t, shows, have, tot, miss]) => `<div class="panel nb"><div class="nb-h"><h4>${n}</h4><span class="muted">${t}</span></div><div class="nb-shows">${shows.map(s => `<span class="mini" title="${s}" style="background:${art(s)}"></span>`).join('')}</div><div class="nb-match"><div class="progress"><b style="width:${have / tot * 100}%;background:${have / tot > .7 ? 'var(--ok)' : 'var(--warn)'};opacity:1"></b></div><span><b>${have} of ${tot}</b> shows in your Plex</span></div>${miss ? `<div class="faint" style="font-size:12px">Missing: ${miss}</div>` : '<div style="font-size:12px;color:var(--ok)">You have every show</div>'}<div class="nb-acts"><button class="btn sm ${have / tot > .7 ? 'primary' : ''}" data-go="tplapply">Recreate on 120</button><button class="btn sm ghost" data-go="tpledit">Customise</button></div></div>`).join('');
+
+/* ───────────── Template editor ───────────── */
+const PARTS = [
+  ['Wake-up shorts', '07:00', 60, 'show', 'Collection: Cartoon shorts', '4 shorts under 15 m, shuffled', ["Tom and Jerry", 'Looney Tunes', 'Looney Tunes', 'Pink Panther']],
+  ['Headliners', '08:00', 90, 'show', "Specific shows: Dexter's Laboratory, The Powerpuff Girls", '3 episodes each, in order', ["Dexter's Laboratory S2 E5", "Dexter's Laboratory S2 E6", 'The Powerpuff Girls S3 E1']],
+  ['Action hour', '09:30', 60, 'show', 'Genres: Action, Adventure (animated)', 'Shuffle, no repeats within 4 weeks', ['Samurai Jack S2 E3', 'Teen Titans S1 E7']],
+  ['Feature', '10:30', 90, 'movie', 'Animated movies under 90 m', 'Newest first', ['The Iron Giant']],
+];
+let partSel = 1;
+function renderPattern() {
+  $('#pattern').innerHTML = PARTS.map(([n, s, d, k], i) => `<button class="pt-seg ${k} ${i === partSel ? 'sel' : ''}" style="flex:${d}" data-part="${i}"><b>${n}</b><span>${fmt(mins(s))}, ${dur(d)}</span></button>`).join('');
+  const [n, s, d, k, src, how, picks] = PARTS[partSel];
+  $('#ruleBox').innerHTML = `<div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0;font-size:15px">${n}</h3><span class="muted" style="font-size:12.5px">${fmt(mins(s))} to ${fmt(mins(s) + d)}</span><button class="btn sm ghost" style="margin-left:auto;color:var(--air)">Remove part</button></div>
+    <div class="rules">
+      <div class="rule"><span>Plays</span><div class="inp">${src}<svg class="ic sm" style="margin-left:auto"><use href="#i-chev-d"/></svg></div></div>
+      <div class="rule"><span>How many</span><div class="inp">${how}</div></div>
+      <div class="rule"><span>Episodes</span><div class="seg"><button aria-pressed="true">Continue where it left off</button><button aria-pressed="false">Random</button></div></div>
+      <div class="rule"><span>If nothing fits</span><div class="inp">Use the next part's rule</div></div>
+    </div>
+    <p class="faint" style="font-size:12.5px;margin:12px 0 0">Rules use each channel's own library, so one template works on any channel that has these shows.</p>`;
+  let t = mins('07:00');
+  $('#tplPreview').innerHTML = PARTS.flatMap(([pn, ps, pd, pk, , , pp]) => pp.map((x, j) => { const len = Math.round(pd / pp.length); const row = `<div class="row ${pk === 'movie' ? 'movie' : ''}"><span class="tm">${fmt(t)}</span><i class="k"></i><div><div>${x}</div><div class="sd">${pn}</div></div><span></span></div>`; t += len; return row; })).join('');
+}
+renderPattern();
+$('#pattern').addEventListener('click', e => { const b = e.target.closest('[data-part]'); if (!b) return; partSel = +b.dataset.part; renderPattern(); });
+
+/* ───────────── Apply template ───────────── */
+$('#apList').innerHTML = [
+  [100, 'Galaxy ONE', '', [['Afternoon double', 0, 60, 'm'], ['Flagship premieres', 60, 300, 'b'], ['Late prestige', 360, 120, 'b']], [['Afternoon double', 0, 60, 'm'], ['Flagship', 60, 180, 'b'], ['Prime-time premiere', 240, 180, 'n'], ['Late prestige', 420, 60, 'b c']], 'Shortens Flagship premieres to end at 8 PM and pushes Late prestige back an hour.', 0],
+  [140, 'Galaxy Premieres', 'prem', [['Event series', 0, 240, 's'], ['Gap', 240, 240, 'g']], [['Event series', 0, 240, 's'], ['Prime-time premiere', 240, 180, 'n'], ['Gap', 420, 60, 'g']], 'Fits into empty time. Nothing is replaced.', 1],
+  [102, 'Galaxy Premium', '', [['Serialized marathon', 0, 60, 's'], ['Flagship drama', 60, 300, 's'], ['Intense drama', 360, 120, 's']], null, 'Would replace Flagship drama, which you pinned. Skipped.', 2],
+].map(([n, nm, t, before, after, note, mode]) => `<div class="panel ap"><div class="ap-h"><span class="bug ${t}">${n}</span><b>${nm}</b><span class="muted" style="font-size:12.5px">${note}</span><div class="seg" style="margin-left:auto"><button aria-pressed="${mode === 0}">Replace overlaps</button><button aria-pressed="${mode === 1}">Fit around</button><button aria-pressed="${mode === 2}">Skip</button></div></div>
+  <div class="ap-rows"><span class="faint">Now</span><div class="mt tall">${before.map(([x, l, w, c]) => `<em class="${c}" style="left:${l / 480 * 100}%;width:${w / 480 * 100}%">${x}</em>`).join('')}</div>
+  <span class="faint">After</span><div class="mt tall ${after ? '' : 'skip'}">${(after || before).map(([x, l, w, c]) => `<em class="${c}" style="left:${l / 480 * 100}%;width:${w / 480 * 100}%">${x}</em>`).join('')}</div>
+  <span></span><div class="daybar-l"><span>4 PM</span><span>8 PM</span><span>12 AM</span></div></div></div>`).join('');
+
+/* ───────────── Day templates ───────────── */
+$('#dtGrid').innerHTML = [
+  ['Classic cable day', 'Reruns in the morning, movies in the afternoon, a big prime time and encores overnight.', [['Morning reruns', 0, 360, 's'], ['Afternoon movie', 360, 300, 'm'], ['Prime time', 660, 300, 'b'], ['Late night', 960, 240, 'b'], ['Encores', 1200, 240, 's']], 'Galaxy 2, Galaxy Premium'],
+  ['Kids network day', 'Preschool mornings, cartoons after school, family movie at 7 PM, off-air feel overnight.', [['Preschool', 60, 300, 's'], ['Cartoons', 360, 300, 's'], ['After school', 660, 180, 's'], ['Family movie', 780, 120, 'm'], ['Quiet reruns', 900, 540, 's']], 'Galaxy Kids'],
+  ['Movie channel day', 'Back-to-back features with a premiere at 8 PM.', [['Morning features', 0, 420, 'm'], ['Double feature', 420, 420, 'm'], ['Premiere', 840, 180, 'm'], ['After dark', 1020, 420, 'm']], 'Galaxy Cinema, Galaxy Hits'],
+  ['Prestige drama day', 'Limited series in the morning, marathons in the afternoon, the flagship series in prime time.', [['Limited series', 0, 360, 's'], ['Marathon', 360, 300, 's'], ['Flagship', 660, 300, 's'], ['Encore', 960, 480, 's']], 'Not used yet'],
+  ['Saturday morning cartoons', 'The full Saturday ritual, ending with an action block at night.', [['Cartoons', 60, 300, 's'], ['Movie', 360, 120, 'm'], ['Marathon', 480, 420, 's'], ['Action block', 780, 180, 's'], ['Toonami', 960, 240, 's']], 'Cartoon Network'],
+].map(([n, d, segs, used]) => `<div class="panel dt"><h4>${n}</h4><p>${d}</p><div class="mt tall">${segs.map(([x, l, w, c]) => `<em class="${c}" style="left:${l / 1440 * 100}%;width:${w / 1440 * 100}%">${x}</em>`).join('')}</div><div class="daybar-l"><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span><span>6 AM</span></div><div class="used" style="margin-top:10px">${used === 'Not used yet' ? '<span class="faint">Not used yet</span>' : 'Used by ' + used}</div><div class="nb-acts"><button class="btn sm" data-toast="New channel form opens with this day.">Start a new channel</button><button class="btn sm ghost" data-go="tplapply">Apply to some days</button></div></div>`).join('');
+
+/* ───────────── Icon library ───────────── */
+(function iconLib() {
+  const missing = [109, 110, 125, 142, 143], pack = [120, 121, 122, 123, 124, 126];
+  $('#icGrid').innerHTML = ALL.map(([n, name, t]) => {
+    const st = missing.includes(n) ? 'miss' : pack.includes(n) ? 'pack' : 'custom';
+    const svg = st === 'miss' ? `<span class="ic-miss"><svg class="ic"><use href="#i-plus"/></svg></span>` : chIcon(name, n, st === 'pack' ? 'classic' : 'grad');
+    return `<button class="ic-card ${st}" data-go="branding"><div class="ic-art">${svg}</div><div class="ic-meta"><span class="bug ${tierCls(t)}" style="width:32px;height:22px;font-size:11px">${n}</span><span class="ic-n">${name}</span></div><span class="ic-st">${st === 'miss' ? 'No icon yet' : st === 'pack' ? 'Classics pack' : 'Custom'}</span></button>`;
+  }).join('');
+})();
+
+/* ───────────── Tier batch ───────────── */
+let batchStyle = 'classic';
+const CLASSICS = ALL.filter(c => c[2] === 'classic');
+function renderBatch() {
+  $('#styles').innerHTML = [['classic', 'Network bug', 'Black tile, bold name, a colour bar per channel'], ['grad', 'Galaxy gradient', 'Matches your Galaxy Main icons'], ['num', 'Big number', 'Channel number first, name underneath'], ['ring', 'Round badge', 'Safe for apps that crop to a circle']].map(([k, n, d]) => `<button class="panel stl ${batchStyle === k ? 'sel' : ''}" data-style="${k}"><span class="stl-art">${chIcon('Cartoon Network', 120, k)}</span><div><b>${n}</b><span>${d}</span></div></button>`).join('');
+  $('#btGrid').innerHTML = CLASSICS.map(([n, name]) => `<button class="bt-item" data-toast="Opens ${name} in the studio."><span class="bt-art">${chIcon(name, n, batchStyle)}</span><span class="bt-n"><b>${n}</b> ${name}</span></button>`).join('');
+}
+renderBatch();
+$('#styles').addEventListener('click', e => { const b = e.target.closest('[data-style]'); if (!b) return; batchStyle = b.dataset.style; renderBatch(); });
+
+/* ───────────── Export sizes ───────────── */
+$('#sizes').innerHTML = [[512, 96], [256, 72], [128, 48], [64, 32]].map(([s, px]) => `<div class="sz"><span style="width:${px}px;height:${px}px">${chIcon('Galaxy Action', 103, 'grad', { hue: 8 })}</span><b>${s} px</b><span class="faint">${s === 512 ? 'Tunarr' : s === 256 ? 'Guide tiles' : s === 128 ? 'Lineup' : 'Guide rows'}</span></div>`).join('');
+
+/* ───────────── Login ───────────── */
+(function miniGuide() {
+  const rows = [[100, 'main'], [103, 'main'], [108, 'main'], [116, 'main'], [120, 'classic'], [126, 'classic'], [140, 'prem'], [141, 'prem']];
+  let seed = 3; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  $('#miniGuide').innerHTML = rows.map(([n, t]) => { let bars = ''; for (let i = 0; i < 12; i++) bars += `<i style="flex:${(0.6 + rnd() * 2.2).toFixed(2)}"></i>`; return `<div class="mg-row"><span class="bug ${tierCls(t)}">${n}</span><div class="mg-track"><div class="mg-belt">${bars}${bars}</div></div></div>`; }).join('') + '<span class="mg-now"></span>';
+})();
+$('#loginStates').addEventListener('click', e => { const b = e.target.closest('[data-ls]'); if (!b) return; $('#login').dataset.state = b.dataset.ls; $$('#loginStates button').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+
+/* ───────────── Splash ───────────── */
+const BOOT = ['Opened the database', 'Connected to Plex, Living Room', 'Connected to Tunarr 1.3.6', 'Loaded 29 channels', 'Built tonight\'s guide'];
+let bootT = [];
+function runBoot() {
+  bootT.forEach(clearTimeout); bootT = [];
+  $('#bootSteps').innerHTML = BOOT.map(s => `<li><span class="spin"></span><svg class="ic sm"><use href="#i-check"/></svg>${s}</li>`).join('');
+  const lis = $$('#bootSteps li');
+  lis.forEach((li, i) => { bootT.push(setTimeout(() => li.classList.add('run'), i * 550)); bootT.push(setTimeout(() => { li.classList.remove('run'); li.classList.add('ok'); }, i * 550 + 500)); });
+  const logo = $('.sp-logo'); logo.classList.remove('go'); void logo.offsetWidth; logo.classList.add('go');
+}
+function setSplash(s) { $('#splash').dataset.state = s; $$('#splashStates button').forEach(x => x.setAttribute('aria-pressed', x.dataset.ss === s)); if (s === 'boot') runBoot(); }
+$('#splashStates').addEventListener('click', e => { const b = e.target.closest('[data-ss]'); if (b) setSplash(b.dataset.ss); });
+$('#replay').onclick = () => setSplash('boot');
+runBoot();
 
 /* Size the app to the viewer bar, which wraps on narrower screens */
 const sizeApp = () => document.documentElement.style.setProperty('--vbar', $('.viewer').offsetHeight + 'px');
