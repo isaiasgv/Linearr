@@ -3690,6 +3690,126 @@ def _collection_delta(desired: set[str], current: set[str], already_managed: boo
     return to_add, to_remove
 
 
+async def _plex_items_meta(client: "httpx.AsyncClient", url: str, hdrs: dict,
+                           keys) -> dict[str, dict] | None:
+    """Look up which rating keys Plex still has, and the library section each
+    one lives in: ``{ratingKey: {"section": id, "title": .., "year": ..}}``.
+
+    Keys Plex no longer has are simply absent from the result. Returns None when
+    the lookup itself fails (Plex unreachable, unexpected response) so callers
+    can fall back to their old behaviour instead of treating everything as gone.
+    """
+    out: dict[str, dict] = {}
+    uniq = list(dict.fromkeys(str(k) for k in keys))
+    try:
+        for i in range(0, len(uniq), 50):
+            chunk = uniq[i:i + 50]
+            r = await client.get(f"{url}/library/metadata/{','.join(chunk)}", headers=hdrs)
+            if r.status_code == 404:  # Plex 404s a batch only when none of it exists
+                continue
+            if r.status_code != 200:
+                return None
+            for m in r.json().get("MediaContainer", {}).get("Metadata", []) or []:
+                out[str(m["ratingKey"])] = {
+                    "section": str(m.get("librarySectionID", "")),
+                    "title": m.get("title"),
+                    "year": m.get("year"),
+                }
+    except Exception as e:  # noqa: BLE001 — any failure means "unknown", not "gone"
+        log.warning("Plex metadata lookup failed: %s", e)
+        return None
+    return out
+
+
+def _norm_title(t: str | None) -> str:
+    return " ".join((t or "").casefold().split())
+
+
+async def _repair_stale_assignments(client: "httpx.AsyncClient", url: str, hdrs: dict,
+                                    channel_number: int, sections: list[dict]) -> dict:
+    """Re-point assignments whose Plex rating key no longer exists.
+
+    Plex issues a NEW rating key when a file is replaced (a Radarr/Sonarr
+    upgrade, a re-import, a folder move). Assignments stored the old key, so the
+    item silently dropped out of the channel's collection, and from there out of
+    Tunarr. Galaxy Harry Potter lost 8 of its 10 movies this way and aired
+    offline 90% of the time.
+
+    A stale assignment is matched by exact (case-insensitive) title of the same
+    type, with the year within one when both are known. Preference goes to the
+    library section where the channel's other live items already are. Of
+    several matches there, the newest (highest rating key) wins: duplicates of
+    one title are usually an old and a new copy. Anything without a confident
+    match is left untouched and reported.
+    """
+    with get_db() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT id, plex_rating_key, plex_title, plex_type, plex_year "
+            "FROM assignments WHERE channel_number=?", (channel_number,)
+        ).fetchall()]
+    report = {"checked": False, "stale": 0, "repaired": [], "unresolved": []}
+    if not rows:
+        return report
+    meta = await _plex_items_meta(client, url, hdrs, [r["plex_rating_key"] for r in rows])
+    if meta is None:
+        return report
+    report["checked"] = True
+    stale = [r for r in rows if str(r["plex_rating_key"]) not in meta]
+    report["stale"] = len(stale)
+    if not stale:
+        return report
+
+    live_sections: dict[str, int] = {}
+    for r in rows:
+        m = meta.get(str(r["plex_rating_key"]))
+        if m:
+            live_sections[m["section"]] = live_sections.get(m["section"], 0) + 1
+
+    assigned = {str(r["plex_rating_key"]) for r in rows}
+    for r in stale:
+        type_int = 1 if r["plex_type"] == "movie" else 2
+        candidates: list[tuple[str, dict]] = []
+        for s in sections:
+            if s.get("type") != r["plex_type"]:
+                continue
+            try:
+                resp = await client.get(
+                    f"{url}/library/sections/{s['key']}/all",
+                    params={"type": type_int, "title": r["plex_title"]}, headers=hdrs,
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            if resp.status_code != 200:
+                continue
+            for m in resp.json().get("MediaContainer", {}).get("Metadata", []) or []:
+                if _norm_title(m.get("title")) != _norm_title(r["plex_title"]):
+                    continue
+                if r["plex_year"] and m.get("year") and abs(int(m["year"]) - int(r["plex_year"])) > 1:
+                    continue
+                candidates.append((str(s["key"]), m))
+        if not candidates:
+            report["unresolved"].append({"title": r["plex_title"], "old_key": r["plex_rating_key"]})
+            continue
+        candidates.sort(key=lambda c: (live_sections.get(c[0], 0), int(c[1]["ratingKey"])), reverse=True)
+        new_key = str(candidates[0][1]["ratingKey"])
+        with get_db() as conn:
+            if new_key in assigned:
+                # The replacement is already on this channel: drop the dead row.
+                conn.execute("DELETE FROM assignments WHERE id=?", (r["id"],))
+            else:
+                conn.execute("UPDATE assignments SET plex_rating_key=? WHERE id=?", (new_key, r["id"]))
+                assigned.add(new_key)
+        report["repaired"].append({"title": r["plex_title"], "old_key": r["plex_rating_key"], "new_key": new_key})
+
+    if report["repaired"] or report["unresolved"]:
+        _log_app("collection",
+                 f"Repaired {len(report['repaired'])} stale assignment(s) on ch {channel_number}"
+                 + (f", {len(report['unresolved'])} unresolved" if report["unresolved"] else ""),
+                 level="warn" if report["unresolved"] else "info",
+                 metadata={"channel": channel_number, **report})
+    return report
+
+
 @app.post("/api/collections/generate/{channel_number}")
 async def generate_collections(channel_number: int, take_over_assigned: bool = Query(False)):
     """Create or update Plex collections for a channel's assigned movies and shows.
@@ -3765,6 +3885,20 @@ async def generate_collections(channel_number: int, take_over_assigned: bool = Q
         movie_section = next((s for s in sections if s["type"] == "movie"), None)
         show_section  = next((s for s in sections if s["type"] == "show"),  None)
 
+        # Re-point assignments whose rating key Plex has since replaced, then
+        # learn which section each live item is in.
+        repair = await _repair_stale_assignments(client, url, hdrs, channel_number, sections)
+        if repair["repaired"]:
+            with get_db() as conn:
+                rows = conn.execute(
+                    "SELECT plex_rating_key, plex_type FROM assignments WHERE channel_number=?",
+                    (channel_number,)
+                ).fetchall()
+            movie_keys = [r["plex_rating_key"] for r in rows if r["plex_type"] == "movie"]
+            show_keys  = [r["plex_rating_key"] for r in rows if r["plex_type"] == "show"]
+        item_meta = (await _plex_items_meta(client, url, hdrs, movie_keys + show_keys)
+                     if repair["checked"] else None)
+
         result = {}
 
         for plex_type, keys, section, type_int in [
@@ -3801,136 +3935,174 @@ async def generate_collections(channel_number: int, take_over_assigned: bool = Q
                                      "removed": 0, "total": len(set(keys)), "skipped": msg}
                 continue
 
-            section_id = section["key"]
-            coll_name = _owned_collection_name(ch_name, plex_type)
-
-            # 4a. Resolve target ONLY by owned name. Never trust a stored rating key
-            # (it may point at one of the user's own collections).
-            coll_resp = await client.get(
-                f"{url}/library/sections/{section_id}/collections", headers=hdrs,
-            )
-            collections = []
-            if coll_resp.status_code == 200:
-                collections = coll_resp.json().get("MediaContainer", {}).get("Metadata", []) or []
-            existing = next((c for c in collections if c.get("title") == coll_name), None)
-
-            created = False
-            if existing:
-                coll_id = str(existing["ratingKey"])
-                # Defensive: never manage a collection whose title isn't ours.
-                if not _is_owned_title(existing.get("title", ""), ch_name):
-                    raise HTTPException(500, f"Refusing to manage non-owned collection: {existing.get('title')}")
-            elif not keys:
-                # Emptied down to nothing and Plex has already dropped the
-                # collection (it deletes them at zero items). Creating one here
-                # just to empty it would be absurd.
-                log.info("generate_collections ch %s: %s emptied and no collection "
-                         "remains in Plex — nothing to do", channel_number, plex_type)
-                result[plex_type] = {"name": coll_name, "created": False, "added": 0,
-                                     "removed": 0, "total": 0}
-                continue
-            else:
-                create_resp = await client.post(
-                    f"{url}/library/collections",
-                    params={"type": type_int, "title": coll_name, "smart": 0, "sectionId": section_id},
-                    headers=hdrs,
-                )
-                if create_resp.status_code not in (200, 201):
-                    raise HTTPException(502, f"Failed to create collection: {coll_name}")
-                coll_id = str(create_resp.json()["MediaContainer"]["Metadata"][0]["ratingKey"])
-                created = True
-
-            # 4b. Is this collection already managed by Linearr? (fresh-created => owned)
-            #
-            # Pruning requires ALL of: the same rating key as last time, a
-            # managed slot, AND `linearr_created` — Linearr must have created
-            # the Plex collection itself. The name check above is defeated by a
-            # rename (a user's collection renamed to '{Channel} Movies' resolves
-            # here), so provenance is the guard that actually holds: a
-            # collection Linearr merely *adopted* by name stays additive-only
-            # forever and can never lose the user's items.
-            with get_db() as conn:
-                prior = conn.execute(
-                    "SELECT collection_rating_key, managed, linearr_created "
-                    "FROM channel_collections WHERE channel_number=? AND plex_type=?",
-                    (channel_number, plex_type),
-                ).fetchone()
-            same_collection = bool(prior and str(prior["collection_rating_key"]) == coll_id)
-            prior_linearr_created = bool(
-                same_collection and (prior["linearr_created"] or 0) == 1)
-            linearr_created = created or prior_linearr_created
-            already_managed = bool(
-                created
-                or (same_collection and prior["managed"] == 1 and prior_linearr_created)
-            )
-
-            # 4c. Current items
-            items_resp = await client.get(
-                f"{url}/library/collections/{coll_id}/children", headers=hdrs,
-            )
-            current_keys: set[str] = set()
-            if items_resp.status_code == 200:
-                for item in items_resp.json().get("MediaContainer", {}).get("Metadata", []) or []:
-                    current_keys.add(str(item["ratingKey"]))
-
-            desired_keys = {str(k) for k in keys}
-            to_add, to_remove = _collection_delta(desired_keys, current_keys, already_managed)
-
-            # 4d. Apply add
-            added = 0
-            for rk in to_add:
-                uri = f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"
-                add_resp = await client.put(
-                    f"{url}/library/collections/{coll_id}/items", params={"uri": uri}, headers=hdrs,
-                )
-                if add_resp.status_code in (200, 201):
-                    added += 1
+            # Build in the library section where the items actually live. This
+            # used to take the FIRST section of the type, and once a "3D Movies"
+            # library existed (Plex lists it before "Movies") every rebuild wrote
+            # into a 3D-library collection the movies could not join. Those
+            # collections stayed empty and the real ones in Movies stopped
+            # updating. Items split across sections get a same-named collection
+            # in each; the slot points at the one holding most of them.
+            same_type = {str(sec["key"]) for sec in sections if sec.get("type") == plex_type}
+            by_section: dict[str, list[str]] = {}
+            unplaced: list[str] = []
+            for k in keys:
+                m = item_meta.get(str(k)) if item_meta else None
+                if m and m["section"] in same_type:
+                    by_section.setdefault(m["section"], []).append(k)
                 else:
-                    log.warning("generate_collections ch %s: failed to add %s to '%s' (%s): %s",
-                                channel_number, rk, coll_name, add_resp.status_code, add_resp.text[:200])
+                    unplaced.append(k)
+            # Keys whose section is unknown (lookup failed, or still stale after
+            # repair) stay in the desired set exactly as before. Dropping them
+            # would let an inference about Plex prune the collection.
+            if unplaced:
+                target = (max(by_section, key=lambda s: len(by_section[s]))
+                          if by_section else str(section["key"]))
+                by_section.setdefault(target, []).extend(unplaced)
+            if not by_section:
+                by_section = {str(section["key"]): []}  # emptying a managed collection
+            groups = sorted(by_section.items(), key=lambda kv: len(kv[1]), reverse=True)
 
-            # 4e. Apply remove (always empty on first touch — see _collection_delta)
-            removed = 0
-            for rk in to_remove:
-                del_resp = await client.delete(
-                    f"{url}/library/collections/{coll_id}/items", params={"items": rk}, headers=hdrs,
+            for gi, (section_id, keys) in enumerate(groups):
+                is_primary = gi == 0
+                coll_name = _owned_collection_name(ch_name, plex_type)
+
+                # 4a. Resolve target ONLY by owned name. Never trust a stored rating key
+                # (it may point at one of the user's own collections).
+                coll_resp = await client.get(
+                    f"{url}/library/sections/{section_id}/collections", headers=hdrs,
                 )
-                if del_resp.status_code in (200, 204):
-                    removed += 1
+                collections = []
+                if coll_resp.status_code == 200:
+                    collections = coll_resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+                existing = next((c for c in collections if c.get("title") == coll_name), None)
 
-            # 4f. Persist as managed (owned collection only).
-            # If the slot currently holds an ASSIGNED collection, generating
-            # switches it back to 'owned' — the intentional, documented way to
-            # return to a Linearr-managed collection. Note this only rewrites
-            # the DB slot: the assigned collection itself was never read or
-            # edited above, because the target is resolved by NAME (4a).
-            with get_db() as conn:
-                conn.execute(
-                    """INSERT INTO channel_collections
-                       (channel_number, plex_type, collection_rating_key, collection_title,
-                        managed, source, is_smart, linearr_created)
-                       VALUES (?, ?, ?, ?, 1, 'owned', 0, ?)
-                       ON CONFLICT(channel_number, plex_type) DO UPDATE SET
-                           collection_rating_key=excluded.collection_rating_key,
-                           collection_title=excluded.collection_title,
-                           managed=1,
-                           source='owned',
-                           is_smart=0,
-                           linearr_created=excluded.linearr_created""",
-                    (channel_number, plex_type, coll_id, coll_name,
-                     1 if linearr_created else 0),
+                created = False
+                if existing:
+                    coll_id = str(existing["ratingKey"])
+                    # Defensive: never manage a collection whose title isn't ours.
+                    if not _is_owned_title(existing.get("title", ""), ch_name):
+                        raise HTTPException(500, f"Refusing to manage non-owned collection: {existing.get('title')}")
+                elif not keys:
+                    # Emptied down to nothing and Plex has already dropped the
+                    # collection (it deletes them at zero items). Creating one here
+                    # just to empty it would be absurd.
+                    log.info("generate_collections ch %s: %s emptied and no collection "
+                             "remains in Plex — nothing to do", channel_number, plex_type)
+                    result[plex_type] = {"name": coll_name, "created": False, "added": 0,
+                                         "removed": 0, "total": 0}
+                    continue
+                else:
+                    create_resp = await client.post(
+                        f"{url}/library/collections",
+                        params={"type": type_int, "title": coll_name, "smart": 0, "sectionId": section_id},
+                        headers=hdrs,
+                    )
+                    if create_resp.status_code not in (200, 201):
+                        raise HTTPException(502, f"Failed to create collection: {coll_name}")
+                    coll_id = str(create_resp.json()["MediaContainer"]["Metadata"][0]["ratingKey"])
+                    created = True
+
+                # 4b. Is this collection already managed by Linearr? (fresh-created => owned)
+                #
+                # Pruning requires ALL of: the same rating key as last time, a
+                # managed slot, AND `linearr_created` — Linearr must have created
+                # the Plex collection itself. The name check above is defeated by a
+                # rename (a user's collection renamed to '{Channel} Movies' resolves
+                # here), so provenance is the guard that actually holds: a
+                # collection Linearr merely *adopted* by name stays additive-only
+                # forever and can never lose the user's items.
+                with get_db() as conn:
+                    prior = conn.execute(
+                        "SELECT collection_rating_key, managed, linearr_created "
+                        "FROM channel_collections WHERE channel_number=? AND plex_type=?",
+                        (channel_number, plex_type),
+                    ).fetchone()
+                same_collection = bool(prior and str(prior["collection_rating_key"]) == coll_id)
+                prior_linearr_created = bool(
+                    same_collection and (prior["linearr_created"] or 0) == 1)
+                linearr_created = created or prior_linearr_created
+                already_managed = bool(
+                    created
+                    or (same_collection and prior["managed"] == 1 and prior_linearr_created)
                 )
 
-            log.info("generate_collections ch %s: %s '%s' +%d/-%d (%d desired, additive_only=%s)",
-                     channel_number, plex_type, coll_name, added, removed, len(desired_keys), not already_managed)
-            result[plex_type] = {
-                "name": coll_name,
-                "created": created,
-                "added": added,
-                "removed": removed,
-                "total": len(desired_keys),
-                "additive_only": not already_managed,
-            }
+                # 4c. Current items
+                items_resp = await client.get(
+                    f"{url}/library/collections/{coll_id}/children", headers=hdrs,
+                )
+                current_keys: set[str] = set()
+                if items_resp.status_code == 200:
+                    for item in items_resp.json().get("MediaContainer", {}).get("Metadata", []) or []:
+                        current_keys.add(str(item["ratingKey"]))
+
+                desired_keys = {str(k) for k in keys}
+                to_add, to_remove = _collection_delta(desired_keys, current_keys, already_managed)
+
+                # 4d. Apply add
+                added = 0
+                for rk in to_add:
+                    uri = f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"
+                    add_resp = await client.put(
+                        f"{url}/library/collections/{coll_id}/items", params={"uri": uri}, headers=hdrs,
+                    )
+                    if add_resp.status_code in (200, 201):
+                        added += 1
+                    else:
+                        log.warning("generate_collections ch %s: failed to add %s to '%s' (%s): %s",
+                                    channel_number, rk, coll_name, add_resp.status_code, add_resp.text[:200])
+
+                # 4e. Apply remove (always empty on first touch — see _collection_delta)
+                removed = 0
+                for rk in to_remove:
+                    del_resp = await client.delete(
+                        f"{url}/library/collections/{coll_id}/items", params={"items": rk}, headers=hdrs,
+                    )
+                    if del_resp.status_code in (200, 204):
+                        removed += 1
+
+                if not is_primary:
+                    # Same-named collection in a second library (e.g. 3D Movies):
+                    # kept in step, but the channel's slot points at the primary.
+                    log.info("generate_collections ch %s: %s '%s' in section %s +%d/-%d",
+                             channel_number, plex_type, coll_name, section_id, added, removed)
+                    result.setdefault(plex_type, {}).setdefault("extra_sections", []).append(
+                        {"section": section_id, "collection": coll_id, "added": added,
+                         "removed": removed, "total": len(desired_keys)})
+                    continue
+
+                # 4f. Persist as managed (owned collection only).
+                # If the slot currently holds an ASSIGNED collection, generating
+                # switches it back to 'owned' — the intentional, documented way to
+                # return to a Linearr-managed collection. Note this only rewrites
+                # the DB slot: the assigned collection itself was never read or
+                # edited above, because the target is resolved by NAME (4a).
+                with get_db() as conn:
+                    conn.execute(
+                        """INSERT INTO channel_collections
+                           (channel_number, plex_type, collection_rating_key, collection_title,
+                            managed, source, is_smart, linearr_created)
+                           VALUES (?, ?, ?, ?, 1, 'owned', 0, ?)
+                           ON CONFLICT(channel_number, plex_type) DO UPDATE SET
+                               collection_rating_key=excluded.collection_rating_key,
+                               collection_title=excluded.collection_title,
+                               managed=1,
+                               source='owned',
+                               is_smart=0,
+                               linearr_created=excluded.linearr_created""",
+                        (channel_number, plex_type, coll_id, coll_name,
+                         1 if linearr_created else 0),
+                    )
+
+                log.info("generate_collections ch %s: %s '%s' +%d/-%d (%d desired, additive_only=%s)",
+                         channel_number, plex_type, coll_name, added, removed, len(desired_keys), not already_managed)
+                result[plex_type] = {**result.get(plex_type, {}),
+                    "name": coll_name,
+                    "created": created,
+                    "added": added,
+                    "removed": removed,
+                    "total": len(desired_keys),
+                    "additive_only": not already_managed,
+                }
 
     _log_app("collection", f"Built Plex collections for ch {channel_number}",
              metadata={"channel": channel_number,
@@ -8203,6 +8375,11 @@ def _add_show_key(mapping: dict, show: dict) -> None:
             mapping[str(val).strip()] = show_uuid
             break
 
+# Slot schedule settings that guarantee no offline gaps; see tunarr_push_schedule.
+TUNARR_SLOT_OVERFLOW = {"type": "oneExtra"}
+TUNARR_SLOT_LATENESS_MS = 24 * 60 * 60 * 1000
+
+
 @app.post("/api/tunarr/channel-links/{channel_number}/push-schedule")
 async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
     # Get linked Tunarr channel
@@ -8327,10 +8504,18 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
     # Sort slots by startTime
     slots.sort(key=lambda x: x["startTime"])
 
+    # No dead air. Tunarr's default overflow (`duration`, maxMs 0) only places a
+    # program if it ENDS before the next slot, and turns the leftover into
+    # offline time: up to a whole movie's length before every slot boundary.
+    # `oneExtra` keeps adding programs until the slot is full, letting the last
+    # one run over. The next slot then starts late by at most that one program,
+    # so lateness must tolerate a full movie. With a small `latenessMs` Tunarr
+    # blanks the ENTIRE late slot instead (Galaxy MTV lost 4h slots this way).
     schedule = {
         "type": "time",
         "flexPreference": "distribute",
-        "latenessMs": 1800000,
+        "overflow": TUNARR_SLOT_OVERFLOW,
+        "latenessMs": TUNARR_SLOT_LATENESS_MS,
         "maxDays": 30,
         "padMs": 0,
         "period": "day",
