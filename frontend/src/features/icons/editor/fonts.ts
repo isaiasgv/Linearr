@@ -1,16 +1,52 @@
-// Font registry. Web-safe + Google Fonts via link injection.
+/**
+ * Font registry for the icon editor.
+ *
+ * Every non-system font here is **self-hosted** (`public/fonts/`, declared in
+ * `src/fonts.css`), not fetched from Google. It used to be, and never worked in the deployed
+ * app: the CSP is `default-src 'self'` with `style-src 'self' 'unsafe-inline'`
+ * and `connect-src 'self'`, which blocks the stylesheet link, the woff2 files
+ * and the inlining fetch alike. Text fell back to `cursive` — Comic Sans on
+ * Windows — in both the canvas preview and the exported PNG. Only `npm run dev`
+ * looked right, because Vite's dev server does not send that CSP.
+ *
+ * Two consequences worth keeping in mind when adding a font:
+ *
+ * 1. Add the face to `src/fonts.css` and the woff2 to `public/fonts/`, and list
+ *    it in `FONT_FILES` below. A bare name here with no @font-face resolves to
+ *    the fallback silently — no error, just the wrong letterforms.
+ * 2. Declare the weights the file actually contains. A browser asked for a
+ *    weight a font does not have will *synthesize* one — faux bold, which looks
+ *    subtly wrong and is why "Baloo Thambi at 500" never matched the design.
+ */
 
 export interface FontDef {
   name: string
   family: string // CSS font-family value
-  google?: boolean // load from Google Fonts
+  /** True when the face ships with the app rather than coming from the system. */
+  bundled?: boolean
+  /**
+   * The weights this family can actually render. A variable font lists every
+   * step it supports; a static one-weight font lists exactly one.
+   * Omitted for system fonts, where the answer depends on the machine.
+   */
+  weights?: number[]
 }
 
+/** Every weight a variable Baloo Thambi 2 covers, and what the UI offers. */
+const BALOO_2_WEIGHTS = [400, 500, 600, 700, 800]
+const INTER_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900]
+
 export const FONTS: FontDef[] = [
-  { name: 'Inter', family: 'Inter, sans-serif', google: true },
-  { name: 'Bebas Neue', family: '"Bebas Neue", sans-serif', google: true },
-  { name: 'Baloo Thambi', family: '"Baloo Thambi", cursive', google: true },
-  { name: 'Baloo Thambi 2', family: '"Baloo Thambi 2", cursive', google: true },
+  { name: 'Inter', family: 'Inter, sans-serif', bundled: true, weights: INTER_WEIGHTS },
+  { name: 'Bebas Neue', family: '"Bebas Neue", sans-serif', bundled: true, weights: [400] },
+  // v1 of the family. Static and single-weight — see the note above.
+  { name: 'Baloo Thambi', family: '"Baloo Thambi", cursive', bundled: true, weights: [400] },
+  {
+    name: 'Baloo Thambi 2',
+    family: '"Baloo Thambi 2", cursive',
+    bundled: true,
+    weights: BALOO_2_WEIGHTS,
+  },
   { name: 'Impact', family: 'Impact, "Arial Black", sans-serif' },
   { name: 'Arial', family: 'Arial, Helvetica, sans-serif' },
   { name: 'Helvetica', family: 'Helvetica, Arial, sans-serif' },
@@ -23,20 +59,35 @@ export const FONTS: FontDef[] = [
   { name: 'Comic Sans MS', family: '"Comic Sans MS", cursive' },
 ]
 
-const loaded = new Set<string>()
+/** Weights offered for a font, falling back to the common system range. */
+const SYSTEM_WEIGHTS = [300, 400, 500, 700, 900]
 
-export function loadGoogleFont(name: string) {
-  if (loaded.has(name)) return
-  loaded.add(name)
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(name)}:wght@100;300;400;500;700;900&display=swap`
-  document.head.appendChild(link)
+export function weightsFor(fontName: string): number[] {
+  return FONTS.find((f) => f.name === fontName)?.weights ?? SYSTEM_WEIGHTS
 }
 
-export function ensureFontLoaded(fontName: string) {
-  const def = FONTS.find((f) => f.name === fontName)
-  if (def?.google) loadGoogleFont(def.name)
+/**
+ * Snap a weight onto one the font can actually render.
+ *
+ * Used when switching fonts so a layer never carries a weight the new family
+ * would have to fake — picking the nearest real one is both closer to what the
+ * user sees and honest about what was chosen.
+ */
+export function nearestWeight(fontName: string, weight: number): number {
+  const available = weightsFor(fontName)
+  if (available.includes(weight)) return weight
+  return available.reduce((best, w) => (Math.abs(w - weight) < Math.abs(best - weight) ? w : best))
+}
+
+/**
+ * No-op, kept for call-site compatibility.
+ *
+ * Bundled faces are declared in `fonts.css`, which is imported once at startup,
+ * so there is nothing to inject per font any more. It used to append a
+ * `<link>` to Google Fonts — the thing the CSP was blocking.
+ */
+export function ensureFontLoaded(_fontName: string): void {
+  /* bundled: nothing to do */
 }
 
 export function familyFor(fontName: string): string {
@@ -45,82 +96,122 @@ export function familyFor(fontName: string): string {
 
 // ── Font embedding for SVG export ──────────────────────────────────────────
 
-const fontDataCache = new Map<string, string>()
+/**
+ * Served from `public/fonts/`, so these are same-origin absolute paths —
+ * fetchable under `connect-src 'self'`, and available with no network at all.
+ *
+ * They live in `public/` rather than `src/assets/` deliberately: Tailwind v4
+ * inlines `@import`ed CSS into `index.css` WITHOUT rebasing relative `url()`s,
+ * so a `./x.woff2` written next to the stylesheet came out pointing at
+ * `/assets/x.woff2` while the emitted file was content-hashed. The build
+ * succeeded and every font 404'd at runtime. Absolute paths cannot drift that
+ * way. The same paths back the CSS in `src/fonts.css`; keep the two in step.
+ */
+/**
+ * The unicode-range for each subset, copied from `src/fonts.css`.
+ *
+ * These are NOT decoration and must never be dropped when inlining. The two
+ * subsets are disjoint: `latin-ext` contains no basic Latin at all — verified
+ * against the shipped files, it has no `A`, no `a`, no `G`. Two `@font-face`
+ * rules with the same family/style/weight and no `unicode-range` are a plain
+ * override, so the later one (latin-ext) would win for *every* character and
+ * the exported text would be rendered by a face with none of its glyphs.
+ */
+const LATIN_RANGE =
+  'U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,' +
+  'U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD'
+const LATIN_EXT_RANGE =
+  'U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,' +
+  'U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,' +
+  'U+2C60-2C7F,U+A720-A7FF'
+
+interface FontSubset {
+  url: string
+  unicodeRange: string
+}
+
+function subsets(slug: string): FontSubset[] {
+  return [
+    { url: `/fonts/${slug}-latin.woff2`, unicodeRange: LATIN_RANGE },
+    { url: `/fonts/${slug}-latin-ext.woff2`, unicodeRange: LATIN_EXT_RANGE },
+  ]
+}
+
+const FONT_FILES: Record<string, FontSubset[]> = {
+  Inter: subsets('inter'),
+  'Bebas Neue': subsets('bebas-neue'),
+  'Baloo Thambi': subsets('baloo-thambi'),
+  'Baloo Thambi 2': subsets('baloo-thambi-2'),
+}
+
+const fontDataCache = new Map<string, string | null>()
+
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  // Chunked: String.fromCharCode(...bytes) blows the argument limit on a
+  // 90 KB font and throws RangeError.
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
 
 /**
- * Fetch a Google Font's CSS, extract the woff2 URL, download and convert
- * to a base64 data URL. Returns a `@font-face` CSS block that can be
- * embedded in an SVG `<style>` element so the font renders correctly
- * when rasterized to PNG via canvas.
+ * A `@font-face` block with the font bytes inlined as a data URI.
+ *
+ * Required for export, not merely nice: `rasterizeToPng` draws the SVG through
+ * an `<img>`, and an SVG loaded that way is not allowed to fetch anything —
+ * external font references simply do not resolve, so the canvas would rasterize
+ * the fallback face no matter how correct the on-screen preview looked.
+ *
+ * The weight range is emitted as the declared range so a variable font keeps
+ * every weight after inlining.
  */
 export async function getEmbeddableFontFace(fontName: string): Promise<string | null> {
-  const def = FONTS.find((f) => f.name === fontName)
-  if (!def?.google) return null
-
   const cached = fontDataCache.get(fontName)
-  if (cached) return cached
+  if (cached !== undefined) return cached
+
+  const files = FONT_FILES[fontName]
+  if (!files) {
+    fontDataCache.set(fontName, null)
+    return null
+  }
+
+  const weights = weightsFor(fontName)
+  const range =
+    weights.length > 1 ? `${weights[0]} ${weights[weights.length - 1]}` : String(weights[0] ?? 400)
 
   try {
-    // Fetch CSS — use a woff2-capable user agent so Google returns woff2
-    const cssUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@100;300;400;500;700;900&display=swap`
-    const cssResp = await fetch(cssUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-    })
-    const cssText = await cssResp.text()
-
-    // Extract all @font-face blocks and inline the font files
-    const faceBlocks: string[] = []
-    const faceRegex = /@font-face\s*\{[^}]+\}/g
-    const faces = cssText.match(faceRegex) || []
-
-    for (const face of faces) {
-      const urlMatch = face.match(/url\(([^)]+)\)\s*format\(['"]?woff2['"]?\)/)
-      if (!urlMatch) continue
-      const fontUrl = urlMatch[1].replace(/['"]/g, '')
-
-      try {
-        const fontResp = await fetch(fontUrl)
-        const fontBlob = await fontResp.blob()
-        const base64 = await new Promise<string>((resolve) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.readAsDataURL(fontBlob)
-        })
-
-        // Replace the remote URL with the base64 data URL
-        const inlined = face.replace(
-          /url\([^)]+\)\s*format\(['"]?woff2['"]?\)/,
-          `url(${base64}) format('woff2')`,
-        )
-        faceBlocks.push(inlined)
-      } catch {
-        // Skip this weight if fetch fails
-      }
+    const blocks: string[] = []
+    for (const { url, unicodeRange } of files) {
+      const res = await fetch(url)
+      if (!res.ok) continue
+      const b64 = toBase64(await res.arrayBuffer())
+      // `unicode-range` is what keeps the two subsets from overriding each
+      // other — see the note on LATIN_RANGE. Dropping it is not a cosmetic
+      // regression: the export silently renders in a substitute font.
+      blocks.push(
+        `@font-face{font-family:'${fontName}';font-style:normal;` +
+          `font-weight:${range};unicode-range:${unicodeRange};` +
+          `src:url(data:font/woff2;base64,${b64}) format('woff2');}`,
+      )
     }
-
-    if (faceBlocks.length === 0) return null
-
-    const result = faceBlocks.join('\n')
+    const result = blocks.length > 0 ? blocks.join('\n') : null
     fontDataCache.set(fontName, result)
     return result
   } catch {
+    fontDataCache.set(fontName, null)
     return null
   }
 }
 
-/**
- * Collect all unique Google Font names used in a composition's text layers.
- */
+/** Collect the bundled font names used in a composition's text layers. */
 export function getUsedGoogleFonts(layers: Array<{ kind: string; font?: string }>): string[] {
   const names = new Set<string>()
   for (const l of layers) {
-    if (l.kind === 'text' && l.font) {
-      const def = FONTS.find((f) => f.name === l.font)
-      if (def?.google) names.add(def.name)
-    }
+    if (l.kind === 'text' && l.font && FONT_FILES[l.font]) names.add(l.font)
   }
   return [...names]
 }

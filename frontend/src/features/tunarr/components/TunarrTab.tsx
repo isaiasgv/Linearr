@@ -82,9 +82,9 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
   }
 
   return (
-    <div className="space-y-6 p-4">
+    <div className="space-y-4 p-3 sm:space-y-6 sm:p-4">
       {/* Linked Tunarr Channel */}
-      <section className="bg-slate-900 border border-slate-700 rounded-xl p-4">
+      <section className="bg-slate-900 border border-slate-700 rounded-xl p-3 sm:p-4">
         <h3 className="text-sm font-semibold text-slate-100 mb-3">Tunarr Channel Link</h3>
 
         {link ? (
@@ -189,15 +189,15 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
       </section>
 
       {/* Collections */}
-      <section className="bg-slate-900 border border-slate-700 rounded-xl p-4">
+      <section className="bg-slate-900 border border-slate-700 rounded-xl p-3 sm:p-4">
         <h3 className="text-sm font-semibold text-slate-100 mb-3">Collection Links</h3>
         <div className="space-y-3">
           {/* Movie Collection */}
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 w-12">Movies</span>
+              <span className="w-12 shrink-0 text-xs text-slate-400">Movies</span>
               {movieCollectionLink ? (
-                <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-sm truncate max-w-[200px]">
+                <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-sm truncate max-w-[45vw] md:max-w-[200px]">
                   {movieCollectionLink.tunarr_collection_name ??
                     movieCollectionLink.tunarr_collection_id}
                 </span>
@@ -233,11 +233,11 @@ export function TunarrTab({ channelNumber }: TunarrTabProps) {
           </div>
 
           {/* Show Collection */}
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 w-12">Shows</span>
+              <span className="w-12 shrink-0 text-xs text-slate-400">Shows</span>
               {showCollectionLink ? (
-                <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-sm truncate max-w-[200px]">
+                <span className="text-xs font-medium text-slate-200 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-sm truncate max-w-[45vw] md:max-w-[200px]">
                   {showCollectionLink.tunarr_collection_name ??
                     showCollectionLink.tunarr_collection_id}
                 </span>

@@ -8,14 +8,15 @@ interface TunarrPreviewData {
   preview?: TunarrScheduleItem[]
 }
 
-function formatTime(iso: string): string {
+/** Epoch ms or an ISO string — Tunarr payloads carry both shapes. */
+function formatTime(iso: string | number): string {
   try {
     return new Date(iso).toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
     })
   } catch {
-    return iso
+    return String(iso)
   }
 }
 

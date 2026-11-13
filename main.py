@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -17,6 +18,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
+
+import icon_render
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -44,52 +47,168 @@ _DEFAULT_SECRET = "default-secret-change-me"
 
 APP_USERNAME = os.getenv("APP_USERNAME", "admin")
 APP_PASSWORD = os.getenv("APP_PASSWORD", _DEFAULT_PASSWORD)
-APP_SECRET   = os.getenv("APP_SECRET", _DEFAULT_SECRET)
 
-# Refuse to keep the shipped default HMAC key: if APP_SECRET is unset/default, mint a
-# random per-process secret so an attacker cannot forge HMAC(known_secret, "admin:changeme").
-# (Sessions reset on restart in that case — set APP_SECRET to make them durable.)
-if APP_SECRET == _DEFAULT_SECRET:
-    APP_SECRET = secrets.token_hex(32)
-    log.warning("APP_SECRET not set — using an ephemeral random secret. "
-                "Set APP_SECRET in your .env so sessions survive restarts.")
+# An explicitly configured secret always wins. The shipped default counts as
+# "unset" — keeping it would let anyone forge HMAC(known_secret, "admin:changeme").
+_APP_SECRET_ENV = os.getenv("APP_SECRET", "")
+if _APP_SECRET_ENV == _DEFAULT_SECRET:
+    _APP_SECRET_ENV = ""
+
+# Resolved once per process, then cached — `_sign_session` runs on every
+# authenticated request and must not hit the DB each time.
+_app_secret_cache: str | None = None
+
+
+def _get_app_secret() -> str:
+    """The HMAC key for session cookies: env var, else a persisted random one.
+
+    This used to mint a fresh `secrets.token_hex(32)` per process whenever
+    APP_SECRET was unset, which silently invalidated **every session on every
+    restart** — the sessions are stateless, so a new key means every existing
+    cookie fails verification and everyone is logged out. `.env` is optional in
+    `docker-compose.yml` (`required: false`), so the common setup hits this, and
+    the only signal was a log line nobody reads. Anyone redeploying regularly
+    was being logged out on every pull.
+
+    Generating once and persisting to the `settings` table fixes that while
+    keeping the property that mattered: the key is still random per install,
+    never the shipped default. Same get-or-create pattern as `_get_mcp_token`
+    and `_get_client_id`, and it lives on the same persisted volume.
+    """
+    global _app_secret_cache
+    if _APP_SECRET_ENV:
+        return _APP_SECRET_ENV
+    if _app_secret_cache:
+        return _app_secret_cache
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key='app_secret'").fetchone()
+        if row and row["value"]:
+            _app_secret_cache = row["value"]
+            return _app_secret_cache
+        generated = secrets.token_hex(32)
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('app_secret', ?)", (generated,))
+    _app_secret_cache = generated
+    log.info("Generated a persistent session secret and stored it in the database. "
+             "Set APP_SECRET in your .env to manage it yourself.")
+    return generated
+
+
 if APP_PASSWORD == _DEFAULT_PASSWORD:
     log.warning("APP_PASSWORD is the default 'changeme' — set a strong APP_PASSWORD in your .env.")
 
 # Session cookie should be HTTPS-only in production. Default off so first-run LAN/HTTP
 # deployments still work; set COOKIE_SECURE=true once behind a TLS reverse proxy.
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
-SESSION_MAX_AGE = 86400 * 30  # 30 days
+
+# Sessions SLIDE: the window runs from last use, not from login, so an app you
+# open regularly never logs you out. A fixed window from login does, on a
+# schedule that looks arbitrary from the outside — you are working normally and
+# are suddenly at the login screen.
+SESSION_MAX_AGE = 86400 * 7            # 7 days since last use
+SESSION_REMEMBER_MAX_AGE = 86400 * 90  # 90 days, when "keep me signed in" is ticked
+# Re-issue at most once an hour. The cookie only needs refreshing often enough to
+# stay ahead of its own expiry; doing it on every request would rewrite a
+# Set-Cookie header onto every single API response for no benefit.
+SESSION_REFRESH_AFTER = 3600
+_SESSION_MAX_AGES = (SESSION_MAX_AGE, SESSION_REMEMBER_MAX_AGE)
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 
-def _sign_session(issued: int, nonce: str) -> str:
-    msg = f"{APP_USERNAME}:{APP_PASSWORD}:{issued}:{nonce}".encode()
-    return hmac.new(APP_SECRET.encode(), msg, hashlib.sha256).hexdigest()
+def _sign_session(issued: int, nonce: str, max_age: int) -> str:
+    # `max_age` is inside the signed message on purpose: it is carried in the
+    # token so verification knows which window applies, and a client that could
+    # edit it could grant itself an unbounded session.
+    msg = f"{APP_USERNAME}:{APP_PASSWORD}:{issued}:{max_age}:{nonce}".encode()
+    return hmac.new(_get_app_secret().encode(), msg, hashlib.sha256).hexdigest()
 
-def _make_session_token() -> str:
-    """Issue a fresh, single-use session value: <issued>.<nonce>.<sig>.
-    Bound to the current credentials (changing the password invalidates all sessions)
-    and carries an issued-at timestamp so it expires server-side."""
+def _make_session_token(max_age: int = SESSION_MAX_AGE) -> str:
+    """Issue a session value: `<issued>.<max_age>.<nonce>.<sig>`.
+
+    Bound to the current credentials (changing the password invalidates every
+    session) and carries both an issued-at timestamp and its own lifetime, so a
+    "keep me signed in" cookie outlives an ordinary one without the server
+    keeping any state about which is which.
+    """
     issued = int(time.time())
     nonce = secrets.token_hex(16)
-    return f"{issued}.{nonce}.{_sign_session(issued, nonce)}"
+    return f"{issued}.{max_age}.{nonce}.{_sign_session(issued, nonce, max_age)}"
 
-def _verify_session_token(token: str | None) -> bool:
+def _verify_session_token(token: str | None) -> tuple[int, int] | None:
+    """Return `(issued, max_age)` for a valid token, else None.
+
+    Returning the claims rather than a bool is what lets the middleware slide the
+    window — it needs to know how old the token is and which lifetime it was
+    issued with.
+    """
     if not token:
-        return False
+        return None
     parts = token.split(".")
-    if len(parts) != 3:
-        return False
-    issued_s, nonce, sig = parts
-    if not issued_s.isdigit():
-        return False
-    issued = int(issued_s)
-    if int(time.time()) - issued > SESSION_MAX_AGE:
-        return False
-    return hmac.compare_digest(sig, _sign_session(issued, nonce))
+    if len(parts) != 4:
+        return None
+    issued_s, max_age_s, nonce, sig = parts
+    if not issued_s.isdigit() or not max_age_s.isdigit():
+        return None
+    issued, max_age = int(issued_s), int(max_age_s)
+    # Only the lifetimes this app issues are acceptable. Without this a forged
+    # (or future) token could name any window it liked; the signature check below
+    # already prevents that, so this is belt-and-braces against a token minted
+    # under a different policy surviving a downgrade.
+    if max_age not in _SESSION_MAX_AGES:
+        return None
+    if int(time.time()) - issued > max_age:
+        return None
+    if not hmac.compare_digest(sig, _sign_session(issued, nonce, max_age)):
+        return None
+    return issued, max_age
 
-_PUBLIC_PATHS = {"/", "/api/auth/login", "/api/health", "/docs", "/openapi.json", "/api/plex/webhook"}
+def _upstream_status(code: int) -> int:
+    """Map an upstream (Plex/Tunarr) status onto one safe to return to the browser.
+
+    **A 401 from Linearr means exactly one thing to the frontend: your session is
+    invalid.** `shared/api/client.ts` turns any 401 into a `session-expired`
+    event, which drops you at the login screen. So forwarding an upstream 401
+    verbatim logs you out of Linearr because *Plex's* token expired — a
+    completely different problem with a completely different fix.
+
+    Plex JWT tokens last about 7 days, so this fired on roughly that cadence and
+    looked exactly like a session bug. It is why "I keep getting logged out"
+    survived a persisted session secret AND sliding sessions: neither had
+    anything to do with it.
+
+    401/403 become 502 (the upstream refused us), which the UI surfaces as an
+    ordinary error. Every other status is meaningful and passes through — a 404
+    from Plex really does mean the item is gone.
+    """
+    if code in (401, 403):
+        # Logged loudly because the symptom is otherwise unattributable: calls
+        # start failing and nothing says the stored credential is the reason.
+        _log_app(
+            "auth",
+            "An upstream service rejected our credentials "
+            f"(HTTP {code}). The stored Plex or Tunarr token is most likely "
+            "expired — reconnect it in Settings. This does NOT affect your "
+            "Linearr sign-in.",
+            level="warn",
+        )
+        return 502
+    return code
+
+
+def _set_session_cookie(response, token: str, max_age: int) -> None:
+    """One place that knows the cookie's attributes.
+
+    Login and the sliding refresh both write it, and they must agree — a refresh
+    that dropped `httponly` or `samesite` would quietly weaken every session
+    an hour after it was created.
+    """
+    response.set_cookie(
+        "session", token, httponly=True, secure=COOKIE_SECURE,
+        samesite="lax", max_age=max_age, path="/",
+    )
+
+
+_PUBLIC_PATHS = {"/", "/api/auth/login", "/api/auth/session", "/api/health", "/docs",
+                 "/openapi.json", "/api/plex/webhook"}
 
 # ── Rate limiting (login) ────────────────────────────────────────────────────
 _login_attempts: dict[str, list[float]] = defaultdict(list)
@@ -369,6 +488,24 @@ def init_db():
             conn.execute("ALTER TABLE channels ADD COLUMN watermark_image_url TEXT")
         except sqlite3.OperationalError:
             pass
+        # Absolute URL of the channel ICON hosted by Tunarr, for exactly the same
+        # reason as the watermark above. The icon itself stays a data URI in
+        # `icon` — that is what Linearr's own UI renders — but Tunarr writes
+        # whatever it is given straight into XMLTV, and a data URI there is
+        # unreadable to remote Plex clients. NULL = not uploaded yet.
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN icon_url TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # 1 when `icon_url` was set by hand rather than derived from `icon`.
+        # Mirrors the watermark's `use_channel_icon`: without it, the next sync
+        # would re-upload the stored icon and silently overwrite a URL the user
+        # deliberately pointed somewhere else.
+        try:
+            conn.execute(
+                "ALTER TABLE channels ADD COLUMN icon_url_manual INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS saved_icons (
@@ -493,6 +630,9 @@ async def lifespan(app: FastAPI):
     init_db()
     _check_db_writable()
     _ensure_webhook_secret()
+    # Warm it at startup rather than on the first authenticated request, so a
+    # first-run install writes the secret before anyone can be mid-login.
+    _get_app_secret()
     _get_mcp_token()
     _purge_old_logs()
     _log_app("system", "Linearr started")
@@ -527,9 +667,20 @@ async def auth_middleware(request: Request, call_next):
     # where a future route like /api/export/config.json would silently become public.
     if path in _PUBLIC_PATHS or not path.startswith("/api/"):
         return await call_next(request)
-    if not _verify_session_token(request.cookies.get("session")):
+    claims = _verify_session_token(request.cookies.get("session"))
+    if claims is None:
         return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-    return await call_next(request)
+    response = await call_next(request)
+    # Slide the window. Re-issuing on use is what makes the lifetime "since you
+    # last used it" rather than "since you logged in" — without it an active
+    # session still dies on a fixed schedule mid-session.
+    #
+    # Never on logout: that response deletes the cookie, and re-issuing it here
+    # would hand it straight back and make logging out silently fail.
+    issued, max_age = claims
+    if path != "/api/auth/logout" and int(time.time()) - issued >= SESSION_REFRESH_AFTER:
+        _set_session_cookie(response, _make_session_token(max_age), max_age)
+    return response
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
@@ -543,6 +694,10 @@ async def security_headers_middleware(request: Request, call_next):
         "Content-Security-Policy",
         "default-src 'self'; img-src 'self' data: blob:; "
         "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        # media-src carries blob: for the channel stream player: hls.js feeds
+        # <video> through a MediaSource, whose src is a blob: URL. Without this
+        # the player is blocked by default-src and fails silently.
+        "media-src 'self' blob:; "
         "connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
     )
     if COOKIE_SECURE:
@@ -580,6 +735,16 @@ class SettingsIn(BaseModel):
     openai_base_url: str | None = None
     openai_model: str | None = None
     tunarr_url: str | None = None
+    # Optional. The base URL asset links written INTO Tunarr are built on, when
+    # Tunarr's own address is not reachable from the clients that read them.
+    # Empty means "same as tunarr_url". See `_tunarr_asset_base`.
+    tunarr_public_url: str | None = None
+    # House style for generated channel icons. Stored as one JSON blob rather
+    # than eight settings rows — it is read and written as a unit, and the
+    # renderer that consumes it lives entirely in the frontend.
+    icon_brand_defaults: dict | None = None
+    # Tier -> Tunarr guide group, see `_tunarr_group_for`. `{}` clears it.
+    tunarr_group_map: dict[str, str] | None = None
 
 class TunarrChannelLinkIn(BaseModel):
     channel_number: int
@@ -601,6 +766,10 @@ class AITestIn(BaseModel):
 class LoginIn(BaseModel):
     username: str
     password: str
+    # Defaults true: this is a self-hosted app on your own network, and the
+    # failure people actually hit is being logged out, not a session outliving
+    # its welcome. Unticking it still gives a 7-day sliding window.
+    remember: bool = True
 
 class BlockIn(BaseModel):
     name: str
@@ -637,6 +806,18 @@ class ChannelCollectionAssignIn(BaseModel):
 
 _WATERMARK_POSITIONS = ("top-left", "top-right", "bottom-left", "bottom-right")
 
+# Defaults for a NEW watermark. Tuned for a discreet corner bug: 7% of frame
+# width, 5% margins, 20% opacity. Mirrored in
+# `frontend/src/features/watermark/types.ts` (DEFAULT_WATERMARK) — keep the two
+# in step. Channels with a watermark already saved keep their stored values;
+# these only fill in fields a caller omits.
+_WATERMARK_DEFAULTS = {
+    "width": 7.0,
+    "vertical_margin": 5.0,
+    "horizontal_margin": 5.0,
+    "opacity": 30,
+}
+
 
 class WatermarkFade(BaseModel):
     # Tunarr requires periodMins >= 1 and silently drops entries <= 0.
@@ -654,11 +835,15 @@ class WatermarkIn(BaseModel):
     """
     enabled: bool = False
     position: str = "bottom-right"
-    width: float = Field(default=10.0, gt=0)          # percent of frame width, strictly > 0
-    vertical_margin: float = Field(default=1.0, ge=0, le=100)
-    horizontal_margin: float = Field(default=1.0, ge=0, le=100)
+    # percent of frame width, strictly > 0
+    width: float = Field(default=_WATERMARK_DEFAULTS["width"], gt=0)
+    vertical_margin: float = Field(
+        default=_WATERMARK_DEFAULTS["vertical_margin"], ge=0, le=100)
+    horizontal_margin: float = Field(
+        default=_WATERMARK_DEFAULTS["horizontal_margin"], ge=0, le=100)
     duration: float = Field(default=0.0, ge=0)        # seconds; 0 = always on
-    opacity: int = Field(default=100, ge=0, le=100)   # must be an int for Tunarr
+    # must be an int for Tunarr
+    opacity: int = Field(default=_WATERMARK_DEFAULTS["opacity"], ge=0, le=100)
     fixed_size: bool = False                          # true makes `width` inert
     use_channel_icon: bool = True
     fade: WatermarkFade | None = None
@@ -706,10 +891,37 @@ def login(body: LoginIn, request: Request):
         raise HTTPException(401, "Invalid credentials")
     log.info("Successful login from %s", ip)
     _log_app("auth", f"User logged in from {ip}")
-    response = JSONResponse({"ok": True})
-    response.set_cookie("session", _make_session_token(), httponly=True, secure=COOKIE_SECURE,
-                        samesite="lax", max_age=SESSION_MAX_AGE)
+    max_age = SESSION_REMEMBER_MAX_AGE if body.remember else SESSION_MAX_AGE
+    response = JSONResponse({"ok": True, "expires_in": max_age})
+    _set_session_cookie(response, _make_session_token(max_age), max_age)
     return response
+
+@app.get("/api/auth/session")
+def session_status(request: Request):
+    """Whether the caller's Linearr session is valid, and for how much longer.
+
+    **Public on purpose, and never returns 401.** It is the second opinion the
+    client asks for before tearing down to the login screen: a 401 from any
+    single endpoint used to be treated as "your session is gone", so one
+    unrelated failure logged you out of a perfectly good session. Something that
+    answers "is my session actually dead?" must not be able to 401 and become
+    part of the problem it diagnoses.
+    """
+    claims = _verify_session_token(request.cookies.get("session"))
+    if claims is None:
+        return {"authenticated": False}
+    issued, max_age = claims
+    now = int(time.time())
+    return {
+        "authenticated": True,
+        "issued_at": issued,
+        "expires_at": issued + max_age,
+        "seconds_remaining": max(0, issued + max_age - now),
+        "max_age": max_age,
+        "remember": max_age == SESSION_REMEMBER_MAX_AGE,
+        "server_time": now,
+    }
+
 
 @app.post("/api/auth/logout")
 def logout():
@@ -728,6 +940,11 @@ class ChannelIn(BaseModel):
     style: str = ""
     color: str = "blue"
     icon: str | None = None
+    # Create only: render a house-style icon when `icon` is empty. A Plex
+    # rating key puts that item's clear logo under the brand line instead of
+    # the channel name (how the franchise channels look).
+    auto_icon: bool = False
+    icon_plex_logo: str | None = None
 
 # ── Channel numbering + reorder math ─────────────────────────────────────────
 #
@@ -1231,12 +1448,19 @@ def list_channels():
 
 @app.post("/api/channels", status_code=201)
 async def create_channel(body: ChannelIn):
+    icon = body.icon
+    if not icon and body.auto_icon:
+        # Best-effort: a channel without an icon is still a channel.
+        try:
+            icon = await _render_channel_icon(body.name, body.tier, plex_logo=body.icon_plex_logo)
+        except Exception as e:
+            log.warning("Auto icon failed for CH %s: %s", body.number, e)
     with get_db() as conn:
         try:
             conn.execute(
                 "INSERT INTO channels (number, name, tier, vibe, mode, style, color, icon, uid) VALUES (?,?,?,?,?,?,?,?,?)",
                 (body.number, body.name, body.tier, body.vibe, body.mode, body.style,
-                 body.color, body.icon, _new_channel_uid())
+                 body.color, icon, _new_channel_uid())
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, f"Channel {body.number} already exists")
@@ -1279,7 +1503,9 @@ def _watermark_for_tunarr(ch: dict) -> dict | None:
         return None
     if not isinstance(wm, dict):
         return None
-    return _watermark_to_tunarr(wm, ch.get("watermark_image_url"))
+    # Re-based, not used verbatim: the URL was stored against whatever the asset
+    # base was at upload time, and `tunarr_public_url` may have changed since.
+    return _watermark_to_tunarr(wm, _tunarr_asset_url(ch.get("watermark_image_url")))
 
 def _disabled_watermark_for_tunarr() -> dict:
     """A valid watermark payload that turns the overlay off.
@@ -1293,6 +1519,28 @@ def _disabled_watermark_for_tunarr() -> dict:
     the user configured directly in Tunarr's own UI untouched.
     """
     return _watermark_to_tunarr({"enabled": False}, None)
+
+def _json_dict(raw: str | None) -> dict:
+    try:
+        parsed = json.loads(raw) if raw else {}
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+def _tunarr_group_for(tier: str) -> str:
+    """The Tunarr guide group for a Linearr tier.
+
+    Tiers are Linearr's own classification (the UI filters and numbers by
+    them), while the group is what viewers see in the guide — and an install
+    may group differently, e.g. Galaxy shows "Galaxy" / "Galaxy+" rather than
+    the three tier names. The optional `tunarr_group_map` setting (a JSON
+    object, tier -> group) bridges the two; without it the tier is the group.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key='tunarr_group_map'").fetchone()
+    group = _json_dict(row["value"] if row else None).get(tier)
+    return group if isinstance(group, str) and group.strip() else tier
 
 def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None,
                             icon_override: dict | None = None) -> dict:
@@ -1311,11 +1559,19 @@ def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None,
     changes = {
         "name": ch.get("name", ""),
         "number": ch.get("number", 0),
-        "groupTitle": ch.get("tier", "Linearr"),
+        "groupTitle": _tunarr_group_for(ch.get("tier", "Linearr")),
     }
     icon_data = ch.get("icon")
+    # `icon_url` is the icon uploaded to Tunarr as an ordinary HTTP asset, and is
+    # strongly preferred: Tunarr copies whatever it gets into XMLTV, where a
+    # data URI is unreadable to any Plex client that is not on this machine.
+    # The data URI remains the fallback for when the upload could not be done —
+    # it still renders locally, which beats no icon.
+    icon_url = _tunarr_asset_url(ch.get("icon_url"))
     if icon_override is not None:
         changes["icon"] = icon_override
+    elif icon_url:
+        changes["icon"] = _tunarr_icon_obj(icon_url)
     elif icon_data and str(icon_data).startswith("data:"):
         changes["icon"] = _tunarr_icon_obj(icon_data)
     watermark = watermark_override if watermark_override is not None else _watermark_for_tunarr(ch)
@@ -1324,11 +1580,15 @@ def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None,
     return changes
 
 async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: dict | None = None,
-                                  icon_override: dict | None = None):
+                                  icon_override: dict | None = None,
+                                  icon_explicit: bool = False):
     """Sync Cable Plex channel metadata to linked Tunarr channel.
     If no link exists, creates a new Tunarr channel and links it.
     `watermark_override` / `icon_override`, when given, take precedence over the
     channel row's stored value (used to push an explicit clear).
+    `icon_explicit` marks a sync that exists to change the icon. Without it, an
+    icon Linearr did not upload (one set in Tunarr's own UI) is left in place —
+    see `_tunarr_icon_is_foreign`.
     Returns {"synced": True/False, "action": "updated"|"created"|"error", ...}"""
     with get_db() as conn:
         ch = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
@@ -1340,6 +1600,14 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
     if not url:
         return {"synced": False, "action": "error", "message": "Tunarr not configured"}
 
+    # Upload the icon BEFORE building the payload, so the push carries an HTTP
+    # URL rather than the data URI. Best-effort: a failure leaves `icon_url`
+    # unset and `_tunarr_channel_changes` falls back to the data URI.
+    if icon_override is None and ch.get("icon"):
+        resolved_icon = await _resolve_channel_icon_url(channel_number, ch.get("icon"))
+        if resolved_icon:
+            ch["icon_url"] = resolved_icon
+
     # Only the keys Linearr owns; _tunarr_save_channel preserves everything else.
     changes = _tunarr_channel_changes(ch, watermark_override, icon_override)
     icon_data = ch.get("icon")
@@ -1349,7 +1617,9 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
         async with httpx.AsyncClient(timeout=15.0) as client:
             if link:
                 tunarr_id = link["tunarr_id"]
-                r = await _tunarr_save_channel(client, url, tunarr_id, changes)
+                r = await _tunarr_save_channel(
+                    client, url, tunarr_id, changes,
+                    keep_foreign_icon=not icon_explicit and icon_override is None)
                 if r.status_code in (200, 204):
                     with get_db() as conn:
                         conn.execute(
@@ -1370,9 +1640,13 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
                 channel_obj = _tunarr_channel_obj(
                     name=ch.get("name", ""),
                     number=ch.get("number", 0),
-                    group_title=ch.get("tier", "Linearr"),
+                    group_title=_tunarr_group_for(ch.get("tier", "Linearr")),
                     transcode_id=transcode_id,
-                    icon_data=icon_data if (icon_data and icon_data.startswith("data:")) else None,
+                    # The uploaded URL resolved above, never the data URI when
+                    # there is one: Tunarr copies the icon into XMLTV verbatim,
+                    # and a 200 KB data URI there is what CH 132/133 got.
+                    icon_data=ch.get("icon_url") or (
+                        icon_data if (icon_data and icon_data.startswith("data:")) else None),
                     watermark=watermark,
                 )
                 r = await _tunarr_create_channel(client, url, channel_obj)
@@ -1411,12 +1685,20 @@ async def update_channel(channel_number: int, body: ChannelIn):
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
     result = dict(row)
     _log_app("channel", f"Updated channel {channel_number}", metadata={"old_number": channel_number, "new_number": body.number, "name": body.name})
-    # This route can change the icon too, so an icon-following watermark has to
-    # be re-uploaded here as well (best-effort; never blocks the save).
-    if body.icon != existing["icon"]:
+    # This route can change the icon too. Same order as `set_channel_icon`:
+    # drop the cached upload of the OLD icon, upload the new one, then let the
+    # watermark follow it — re-pointing first left it on the previous icon.
+    icon_changed = body.icon != existing["icon"]
+    if icon_changed:
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET icon_url=CASE WHEN icon_url_manual THEN icon_url END "
+                "WHERE number=?", (body.number,))
+        await _resolve_channel_icon_url(body.number, body.icon)
         await _refollow_channel_icon_watermark(body.number)
+        result["icon_url"] = _channel_icon_url_of(body.number)
     # Auto-sync metadata to Tunarr (creates channel if not linked)
-    sync = await _sync_channel_to_tunarr(body.number)
+    sync = await _sync_channel_to_tunarr(body.number, icon_explicit=icon_changed)
     result["tunarr_sync"] = sync
     return result
 
@@ -1428,9 +1710,48 @@ async def sync_channel_to_tunarr(channel_number: int):
         raise HTTPException(502, result.get("message", "Sync failed"))
     return result
 
+async def _tunarr_delete_channel(tunarr_id: str) -> dict:
+    """Best-effort delete of a Tunarr channel. Never raises.
+
+    Deliberately tolerant of 404: a channel already gone from Tunarr is the
+    desired end state, not an error worth reporting to someone who just asked
+    for it to be deleted.
+    """
+    url = get_tunarr_url()
+    if not url:
+        return {"deleted": False, "message": "Tunarr not configured"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.delete(f"{url}/api/channels/{tunarr_id}")
+    except Exception as e:
+        log.warning("Tunarr channel delete failed for %s: %s", tunarr_id, e)
+        return {"deleted": False, "message": str(e)}
+    if r.status_code in (200, 202, 204, 404):
+        return {"deleted": True, "tunarr_id": tunarr_id}
+    return {"deleted": False, "tunarr_id": tunarr_id,
+            "message": f"Tunarr returned {r.status_code}: {r.text[:200]}"}
+
+
 @app.delete("/api/channels/{channel_number}")
-def delete_channel(channel_number: int):
+async def delete_channel(channel_number: int,
+                         delete_tunarr: bool = Query(True)):
+    """Delete a channel, and by default the Tunarr channel linked to it.
+
+    The Tunarr side used to be left behind: this route cleared
+    `tunarr_channel_links` along with every other referencing table, which
+    severed the link but stranded the actual Tunarr channel — still in the
+    lineup, still in the guide, no longer reachable from Linearr to clean up.
+
+    Order matters. Linearr is authoritative, so the local delete commits first
+    and the Tunarr call is best-effort afterwards; a Tunarr failure is reported
+    in `tunarr` but never undoes the delete the user asked for. Pass
+    `delete_tunarr=false` to keep the Tunarr channel and only unlink it.
+    """
     with get_db() as conn:
+        link = conn.execute(
+            "SELECT tunarr_id FROM tunarr_channel_links WHERE channel_number=?",
+            (channel_number,),
+        ).fetchone()
         cur = conn.execute("DELETE FROM channels WHERE number=?", (channel_number,))
         if cur.rowcount == 0:
             raise HTTPException(404, "Channel not found")
@@ -1445,9 +1766,154 @@ def delete_channel(channel_number: int):
         for table in _present_ref_tables(conn, _CHANNEL_DELETE_TABLES):
             conn.execute(f"DELETE FROM {table} WHERE channel_number=?", (channel_number,))
     _log_app("channel", f"Deleted channel {channel_number}", level="warn", metadata={"number": channel_number})
-    return {"ok": True}
+
+    tunarr: dict | None = None
+    if link and delete_tunarr:
+        tunarr = await _tunarr_delete_channel(link["tunarr_id"])
+        _log_app(
+            "channel",
+            f"Deleted Tunarr channel for {channel_number}" if tunarr["deleted"]
+            else f"Could not delete Tunarr channel for {channel_number}",
+            level="warn" if tunarr["deleted"] else "error",
+            metadata={"number": channel_number, **tunarr},
+        )
+    elif link:
+        tunarr = {"deleted": False, "tunarr_id": link["tunarr_id"],
+                  "message": "Kept in Tunarr — unlinked only"}
+    return {"ok": True, "tunarr": tunarr}
 
 # ── Channel Icons ─────────────────────────────────────────────────────────────
+
+def _channel_icon_filename(channel_number: int, raw: bytes, mime: str) -> str:
+    """Collision-free upload name for a channel icon.
+
+    Same scheme and same reasoning as `_watermark_image_filename`: Tunarr keys
+    uploads by FILENAME and silently overwrites on a repeat, so the channel
+    number keeps two channels apart and the content hash keeps a channel's old
+    icon intact when it gets a new one.
+    """
+    digest = hashlib.sha1(raw).hexdigest()[:10]
+    return f"linearr-icon-ch{channel_number}-{digest}.{_MIME_EXT.get(mime, 'png')}"
+
+
+def _channel_icon_url_of(channel_number: int) -> str | None:
+    with get_db() as conn:
+        row = conn.execute("SELECT icon_url FROM channels WHERE number=?",
+                           (channel_number,)).fetchone()
+    return row["icon_url"] if row else None
+
+
+async def _plex_clear_logo(rating_key: str) -> bytes | None:
+    """The clear logo Plex holds for an item (show, movie or collection).
+
+    Franchise channels put the show's own logo under the brand line; Plex
+    already has that art for most titles, so nobody has to hunt it down.
+    """
+    url, token = get_plex_config()
+    if not token or not rating_key:
+        return None
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.get(f"{url}/library/metadata/{rating_key}", headers=plex_headers(token))
+        if r.status_code != 200:
+            return None
+        meta = (r.json().get("MediaContainer", {}).get("Metadata") or [{}])[0]
+        path = next((i.get("url") for i in meta.get("Image") or []
+                     if i.get("type") == "clearLogo" and i.get("url")), None)
+        if not path:
+            return None
+        img = await client.get(f"{url}{path}", headers={"X-Plex-Token": token})
+        return img.content if img.status_code == 200 and img.content else None
+
+
+async def _render_channel_icon(name: str, tier: str | None = None, *, brand: str | None = None,
+                               text: str | None = None, plex_logo: str | None = None,
+                               logo: str | None = None, scale: float | None = None) -> str:
+    """Render a house-style icon (see `icon_render`) and return it as a data URI.
+
+    `brand`/`text` override the two lines worked out from the name and tier.
+    `logo` (a data URI) or `plex_logo` (a Plex rating key) replaces the name
+    line with logo art. Raises ValueError for a missing Plex logo, so a caller
+    asking for one is told rather than silently given a text icon.
+    """
+    spec = icon_render.brand_for(name, tier)
+    if brand is not None or text is not None:
+        spec = icon_render.IconSpec(brand if brand is not None else spec.brand,
+                                    text if text is not None else spec.name)
+    art: bytes | None = None
+    if logo:
+        decoded = _decode_data_uri(logo)
+        if decoded is None:
+            raise ValueError("`logo` must be a base64 data URI")
+        art = decoded[0]
+    elif plex_logo:
+        art = await _plex_clear_logo(str(plex_logo))
+        if art is None:
+            raise ValueError(f"Plex has no clear logo for item {plex_logo}")
+    png = await asyncio.to_thread(
+        icon_render.render_icon, spec, logo=art,
+        scale=scale if scale else icon_render.DEFAULT_SCALE)
+    return "data:image/png;base64," + base64.b64encode(png).decode()
+
+
+async def _resolve_channel_icon_url(channel_number: int, icon_data: str | None) -> str | None:
+    """Upload the channel's icon to Tunarr and return an absolute URL for it.
+
+    Tunarr writes whatever it is given as the icon straight into XMLTV. Linearr
+    used to hand it the base64 `data:` URI the icon is stored as, which renders
+    in Tunarr's own UI and in Plex clients on the same machine — and nowhere
+    else, because a remote client cannot resolve a data URI it was served as an
+    image *source*. Uploading makes it an ordinary HTTP asset.
+
+    Best-effort by design: on any failure the caller falls back to the data URI.
+    An icon that renders only locally is better than no icon at all, and this
+    must never be able to break a channel sync.
+
+    Cached in `channels.icon_url`. The filename is content-addressed, so an
+    unchanged icon short-circuits without touching Tunarr.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT icon_url, icon_url_manual FROM channels WHERE number=?", (channel_number,)
+        ).fetchone()
+    # A hand-set URL is never re-derived. It may point at an entirely different
+    # host, and re-uploading the stored icon over it would silently undo a
+    # deliberate choice — the same reason `_refollow_channel_icon_watermark`
+    # requires `use_channel_icon` to be explicitly true.
+    if row is not None and row["icon_url_manual"]:
+        return _tunarr_asset_url(row["icon_url"])
+
+    if not icon_data or not str(icon_data).startswith("data:"):
+        return None
+    decoded = _decode_data_uri(icon_data)
+    if decoded is None:
+        return None
+    raw, content_type, _ = decoded
+    filename = _channel_icon_filename(channel_number, raw, content_type)
+
+    cached = (row["icon_url"] if row else None) or ""
+    # The digest is in the filename, so a matching tail means these exact bytes
+    # are already uploaded. Re-base it in case the public URL changed since.
+    if cached and cached.rsplit("/", 1)[-1] == filename:
+        return _tunarr_asset_url(cached)
+
+    tunarr_url = get_tunarr_url()
+    if not tunarr_url:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            uploaded = await _tunarr_upload_image(
+                client, tunarr_url, raw, content_type, filename)
+    except Exception as e:
+        log.warning("Channel icon upload failed for CH %s: %s", channel_number, e)
+        return None
+    if not uploaded:
+        return None
+    public = _tunarr_asset_url(uploaded)
+    with get_db() as conn:
+        conn.execute("UPDATE channels SET icon_url=? WHERE number=?",
+                     (public, channel_number))
+    return public
+
 
 async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
     """Re-upload the channel's icon as its watermark image, if it follows it.
@@ -1465,7 +1931,8 @@ async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
     try:
         with get_db() as conn:
             row = conn.execute(
-                "SELECT icon, watermark FROM channels WHERE number=?", (channel_number,)
+                "SELECT icon, icon_url, watermark FROM channels WHERE number=?",
+                (channel_number,),
             ).fetchone()
         if row is None or not row["watermark"]:
             return None
@@ -1475,13 +1942,35 @@ async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
             return None
         if not isinstance(wm, dict) or wm.get("use_channel_icon") is not True:
             return None
+
+        # Prefer the icon's OWN uploaded URL. The icon is already an HTTP asset
+        # in Tunarr, and "the watermark is the channel icon" means literally the
+        # same image — so uploading a second copy under a watermark filename was
+        # pure duplication. It also forced a genuinely silly workflow: to point a
+        # watermark at a specific domain you had to upload the icon, apply it as
+        # a watermark, copy the URL that came back, then paste it into the URL
+        # field. Reusing the icon URL means setting it once is enough, and a
+        # hand-set icon URL now carries through to the watermark for free.
+        icon_url = _tunarr_asset_url(row["icon_url"])
+        if icon_url:
+            with get_db() as conn:
+                conn.execute("UPDATE channels SET watermark_image_url=? WHERE number=?",
+                             (icon_url, channel_number))
+            _log_app("channel",
+                     f"Watermark image now follows the icon URL for channel {channel_number}",
+                     metadata={"number": channel_number, "image_url": icon_url})
+            return icon_url
+
         decoded = _decode_data_uri(row["icon"] or "")
         if decoded is None:
             return None
         tunarr_url = get_tunarr_url()
         if not tunarr_url:
             return None
-        raw, content_type, filename = decoded
+        raw, content_type, _ = decoded
+        # Channel-scoped + content-addressed: a shared filename would overwrite
+        # every other channel's watermark image (see _watermark_image_filename).
+        filename = _watermark_image_filename(channel_number, raw, content_type)
         async with httpx.AsyncClient(timeout=30.0) as client:
             image_url = await _tunarr_upload_image(
                 client, tunarr_url, raw, content_type, filename)
@@ -1499,20 +1988,197 @@ async def _refollow_channel_icon_watermark(channel_number: int) -> str | None:
         return None
 
 
+@app.get("/api/channels/{channel_number}/icon")
+def get_channel_icon(channel_number: int):
+    """The channel's icon and the URL Tunarr is given for it.
+
+    Two different things, deliberately. `icon` is the data URI Linearr renders
+    in its own UI; `icon_url` is the absolute HTTP URL written into Tunarr and
+    from there into XMLTV, which is what remote Plex clients fetch. `manual`
+    says the URL was set by hand and will not be re-derived from the icon.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT icon, icon_url, icon_url_manual FROM channels WHERE number=?",
+            (channel_number,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+    return {
+        "icon": row["icon"],
+        "icon_url": _tunarr_asset_url(row["icon_url"]),
+        "manual": bool(row["icon_url_manual"]),
+    }
+
+
+class ChannelIconImageIn(BaseModel):
+    # Omit both to (re-)derive from the channel's stored icon.
+    image: str | None = None   # data URI to upload to Tunarr
+    url: str | None = None     # absolute URL to use as-is
+
+
+@app.post("/api/channels/{channel_number}/icon/image")
+async def set_channel_icon_image(channel_number: int, body: ChannelIconImageIn):
+    """Set the URL Tunarr is given for this channel's icon.
+
+    The counterpart of `POST .../watermark/image`, and for the same reason: the
+    icon Tunarr publishes has to be an HTTP URL, and which URL is sometimes a
+    decision only the user can make — a reverse-proxied domain that Plex clients
+    outside the LAN can actually reach, or an image hosted somewhere else
+    entirely.
+
+    - `{"url": ...}` stores an absolute URL verbatim and marks it manual, so no
+      later icon change or sync overwrites it.
+    - `{"image": "data:..."}` uploads those bytes to Tunarr.
+    - `{}` re-derives from the stored channel icon and clears the manual flag.
+
+    `tunarr_public_url` already re-bases Tunarr-hosted URLs globally; this is the
+    per-channel override for everything that setting cannot know about.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT icon FROM channels WHERE number=?", (channel_number,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+
+    manual = False
+    if body.url:
+        parsed = _urlparse(body.url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise HTTPException(
+                400, "Icon URL must be absolute (http:// or https://) — Tunarr "
+                     "publishes it in the guide and clients fetch it over HTTP"
+            )
+        icon_url = body.url.strip()
+        manual = True
+    elif body.image:
+        decoded = _decode_data_uri(body.image)
+        if decoded is None:
+            raise HTTPException(400, "`image` must be a base64 data URI")
+        tunarr_url = get_tunarr_url()
+        if not tunarr_url:
+            raise HTTPException(400, "Tunarr not configured")
+        raw, content_type, _ = decoded
+        filename = _channel_icon_filename(channel_number, raw, content_type)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            uploaded = await _tunarr_upload_image(
+                client, tunarr_url, raw, content_type, filename)
+        if not uploaded:
+            raise HTTPException(502, "Tunarr rejected the icon image upload")
+        icon_url = _tunarr_asset_url(uploaded) or uploaded
+        manual = True
+    else:
+        # Re-derive. Clear both first so the resolver does not short-circuit on
+        # the manual flag it is being asked to drop.
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET icon_url=NULL, icon_url_manual=0 WHERE number=?",
+                (channel_number,))
+        icon_url = await _resolve_channel_icon_url(channel_number, row["icon"])
+        if not icon_url:
+            raise HTTPException(
+                400, "No usable icon — set a channel icon first, or supply an "
+                     "absolute URL"
+            )
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE channels SET icon_url=?, icon_url_manual=? WHERE number=?",
+            (icon_url, 1 if manual else 0, channel_number),
+        )
+    _log_app("channel", f"Set icon image URL for channel {channel_number}",
+             metadata={"number": channel_number, "icon_url": icon_url, "manual": manual})
+    # The watermark follows the icon when asked to, so it may need re-pointing
+    # at the new URL before the sync carries both.
+    await _refollow_channel_icon_watermark(channel_number)
+    sync = await _sync_channel_to_tunarr(channel_number, icon_explicit=True)
+    return {"ok": True, "icon_url": icon_url, "manual": manual, "tunarr_sync": sync}
+
+
 @app.put("/api/channels/{channel_number}/icon")
 async def set_channel_icon(channel_number: int, request: Request):
     """Set channel icon (base64 PNG data URL)."""
     body = await request.json()
-    icon_data = body.get("icon", "")
+    return await _apply_channel_icon(channel_number, body.get("icon", ""))
+
+
+async def _apply_channel_icon(channel_number: int, icon_data: str) -> dict:
+    """Store a new icon and push it everywhere it shows. Every route that
+    replaces a channel's icon goes through here, so none of them can get the
+    upload / watermark / sync order wrong."""
     with get_db() as conn:
-        cur = conn.execute("UPDATE channels SET icon=? WHERE number=?", (icon_data, channel_number))
+        # Clear the cached upload URL: it points at the OLD icon, and
+        # `_tunarr_channel_changes` prefers it over the data URI, so leaving it
+        # would push the previous logo. The sync below re-resolves it.
+        #
+        # A hand-set URL is left alone — the user pointed it somewhere on
+        # purpose, possibly at a host that has nothing to do with this upload.
+        cur = conn.execute(
+            "UPDATE channels SET icon=?, icon_url=CASE WHEN icon_url_manual THEN icon_url END "
+            "WHERE number=?",
+            (icon_data, channel_number),
+        )
     if cur.rowcount == 0:
         raise HTTPException(404, "Channel not found")
     _log_app("channel", f"Set icon for channel {channel_number}", metadata={"number": channel_number})
-    # Before the sync, so the pushed watermark carries the NEW image URL.
+    # Order matters. Resolve the icon's own URL first so the watermark — which
+    # now reuses it rather than uploading a duplicate — has something to follow;
+    # then re-point the watermark; then sync, so the push carries both.
+    await _resolve_channel_icon_url(channel_number, icon_data)
     await _refollow_channel_icon_watermark(channel_number)
-    sync = await _sync_channel_to_tunarr(channel_number)
-    return {"ok": True, "tunarr_sync": sync}
+    sync = await _sync_channel_to_tunarr(channel_number, icon_explicit=True)
+    return {"ok": True, "icon_url": _channel_icon_url_of(channel_number), "tunarr_sync": sync}
+
+
+class IconRenderIn(BaseModel):
+    """Inputs for a house-style icon. Only `name` is needed; the brand line
+    comes from its "Galaxy"/"Galaxy+" prefix, or from `tier`."""
+    name: str = ""
+    tier: str | None = None
+    brand: str | None = None        # override the top line ("" for none)
+    text: str | None = None         # override the bottom line
+    plex_logo: str | None = None    # Plex rating key: its clear logo replaces `text`
+    logo: str | None = None         # data URI: logo art replacing `text`
+    scale: float | None = Field(None, ge=0.5, le=16)
+
+
+async def _render_from(body: IconRenderIn, fallback_name: str = "",
+                       fallback_tier: str | None = None) -> str:
+    try:
+        return await _render_channel_icon(
+            body.name or fallback_name, body.tier or fallback_tier, brand=body.brand,
+            text=body.text, plex_logo=body.plex_logo, logo=body.logo, scale=body.scale)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/icons/render")
+async def render_icon_preview(body: IconRenderIn):
+    """Render a house-style icon without saving it — the generator's preview."""
+    if not (body.name or body.text or body.brand or body.plex_logo or body.logo):
+        raise HTTPException(400, "Give a channel name, a line of text or a logo")
+    return {"icon": await _render_from(body)}
+
+
+@app.post("/api/channels/{channel_number}/icon/generate")
+async def generate_channel_icon(channel_number: int, body: IconRenderIn | None = None):
+    """Render a house-style icon for a channel and make it the channel's icon.
+
+    Defaults to the channel's own name and tier, so an empty body is enough:
+    "Galaxy+ Premieres" becomes "Galaxy+" over "Premieres". Pass `plex_logo`
+    for a franchise channel to put the show's logo under the brand line.
+    """
+    with get_db() as conn:
+        row = conn.execute("SELECT name, tier FROM channels WHERE number=?",
+                           (channel_number,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+    icon = await _render_from(body or IconRenderIn(), row["name"], row["tier"])
+    _log_app("channel", f"Generated icon for channel {channel_number}",
+             metadata={"number": channel_number})
+    result = await _apply_channel_icon(channel_number, icon)
+    return {**result, "icon": icon}
 
 @app.delete("/api/channels/{channel_number}/icon")
 async def delete_channel_icon(channel_number: int):
@@ -1528,7 +2194,14 @@ async def delete_channel_icon(channel_number: int):
     still sends no icon key, leaving one set directly in Tunarr's own UI alone.
     """
     with get_db() as conn:
-        conn.execute("UPDATE channels SET icon=NULL WHERE number=?", (channel_number,))
+        # `icon_url` goes with it — a stale one would be pushed straight back on
+        # the next sync, and `_tunarr_channel_changes` prefers it over the icon.
+        # `icon_url_manual` goes too: with no icon there is nothing for a manual
+        # override to override, and leaving the flag set would make a later icon
+        # silently keep the old URL.
+        conn.execute(
+            "UPDATE channels SET icon=NULL, icon_url=NULL, icon_url_manual=0 WHERE number=?",
+            (channel_number,))
     _log_app("channel", f"Removed icon for channel {channel_number}", metadata={"number": channel_number})
     sync = await _sync_channel_to_tunarr(
         channel_number, icon_override=_tunarr_icon_obj(None))
@@ -1567,30 +2240,49 @@ def get_channel_watermark(channel_number: int):
 async def put_channel_watermark(channel_number: int, body: WatermarkIn):
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT watermark_image_url FROM channels WHERE number=?", (channel_number,)
+            "SELECT watermark, watermark_image_url FROM channels WHERE number=?",
+            (channel_number,)
         ).fetchone()
         if existing is None:
             raise HTTPException(404, "Channel not found")
-        # An enabled watermark with no resolved image maps to `url: ""`, which
-        # Tunarr may reject — and because every channel write is a full
-        # SaveableChannel PUT, that would then fail EVERY later save for this
-        # channel (name, number, tier included), not just the watermark. The
-        # mapper still emits `url: ""` by design (it has no channel context);
-        # the gate belongs here, where the resolved image is known.
-        if body.enabled and not (existing["watermark_image_url"] or "").strip():
-            raise HTTPException(
-                400, "Set a watermark image before enabling the watermark — "
-                     "Tunarr needs an image URL to draw. Apply the channel icon "
-                     "or an absolute image URL first, then enable it."
-            )
+        previous_watermark = existing["watermark"]
         conn.execute(
             "UPDATE channels SET watermark=? WHERE number=?",
             (json.dumps(body.model_dump()), channel_number),
         )
+
+    # "Leave the image blank and it uses the channel icon" is the behaviour
+    # people expect, but Tunarr does NOT do that fallback — an enabled watermark
+    # with no URL kills the stream (see `_watermark_to_tunarr`). So Linearr does
+    # the fallback itself: resolve the icon to a real Tunarr-hosted URL here,
+    # before the sync, so what gets pushed always has an image to draw.
+    #
+    # The config has to be written first, because the resolver reads
+    # `use_channel_icon` off the stored blob. If resolution then fails there is
+    # nothing to draw, so the write is rolled back rather than left behind — a
+    # stored enabled-with-no-image row is the exact state `watermark-audit`
+    # exists to find, and a rejected request must not create one.
+    image_url = (existing["watermark_image_url"] or "").strip()
+    if body.enabled and not image_url:
+        image_url = (await _refollow_channel_icon_watermark(channel_number)) or ""
+        if not image_url:
+            with get_db() as conn:
+                conn.execute("UPDATE channels SET watermark=? WHERE number=?",
+                             (previous_watermark, channel_number))
+            raise HTTPException(
+                400,
+                "This channel has no watermark image and no icon to derive one "
+                "from, so there is nothing for Tunarr to draw — an enabled "
+                "watermark with no image stops the channel playing entirely. "
+                "Add a channel icon (it will be used automatically) or set an "
+                "image URL, then enable the watermark.",
+            )
+
     _log_app("channel", f"Updated watermark for channel {channel_number}",
              metadata={"number": channel_number, "enabled": body.enabled})
     sync = await _sync_channel_to_tunarr(channel_number)
-    return {"ok": True, "watermark": body.model_dump(), "tunarr_sync": sync}
+    return {"ok": True, "watermark": body.model_dump(), "tunarr_sync": sync,
+            "image_url": image_url or None}
 
 
 @app.delete("/api/channels/{channel_number}/watermark")
@@ -1658,7 +2350,10 @@ async def set_channel_watermark_image(channel_number: int, body: WatermarkImageI
                 400, "No usable image — supply a data URI, an absolute URL, or "
                      "set a channel icon first"
             )
-        raw, content_type, filename = decoded
+        raw, content_type, _ = decoded
+        # Channel-scoped + content-addressed: a shared filename would overwrite
+        # every other channel's watermark image (see _watermark_image_filename).
+        filename = _watermark_image_filename(channel_number, raw, content_type)
         tunarr_url = get_tunarr_url()
         if not tunarr_url:
             raise HTTPException(400, "Tunarr not configured")
@@ -1677,6 +2372,114 @@ async def set_channel_watermark_image(channel_number: int, body: WatermarkImageI
              metadata={"number": channel_number, "image_url": image_url})
     sync = await _sync_channel_to_tunarr(channel_number)
     return {"ok": True, "image_url": image_url, "tunarr_sync": sync}
+
+
+# ── Watermark repair ─────────────────────────────────────────────────────────
+# A channel with `watermark.enabled` and no image URL does not play at all:
+# Tunarr builds a dangling `-i` into the ffmpeg command, the transcode exits
+# 254, no playlist is ever written and the channel 404s in a retry loop. It is
+# reachable by an ordinary sequence — upload an image, then clear it — so the
+# app needs both a way to find channels in that state and a way to fix them.
+
+def _find_broken_watermarks() -> list[dict]:
+    """Channels whose watermark needs fixing, and why.
+
+    Two distinct faults, both repairable by re-resolving the image:
+
+    - `no_image` — enabled with no URL at all. The channel does not play (Tunarr
+      builds a dangling ffmpeg `-i`).
+    - `shared_image` — pointing at the legacy `linearr-watermark.png`, which every
+      channel used to upload over. The channel plays, but draws whichever
+      channel's image was applied last.
+    """
+    out: list[dict] = []
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT number, name, icon, watermark, watermark_image_url FROM channels "
+            "WHERE watermark IS NOT NULL ORDER BY number"
+        ).fetchall()
+    for row in rows:
+        try:
+            wm = json.loads(row["watermark"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(wm, dict) or not wm.get("enabled"):
+            continue
+        image_url = (row["watermark_image_url"] or "").strip()
+        if not image_url:
+            issue = "no_image"
+        elif _LEGACY_WATERMARK_FILENAME in image_url:
+            issue = "shared_image"
+        else:
+            continue
+        out.append({
+            "number": row["number"],
+            "name": row["name"],
+            "issue": issue,
+            # Repairable in place when there is an icon to upload as the image.
+            "can_use_icon": bool((row["icon"] or "").strip()),
+        })
+    return out
+
+
+@app.get("/api/channels/watermark-audit")
+def watermark_audit():
+    """Channels whose watermark needs fixing, with the `issue` per channel:
+    `no_image` (the channel will not play at all) or `shared_image` (it plays but
+    draws another channel's logo, from the legacy shared upload filename).
+    `can_use_icon` marks the ones repair can fix without losing the watermark;
+    the rest can only be switched off."""
+    broken = _find_broken_watermarks()
+    return {"broken": broken, "count": len(broken)}
+
+
+@app.post("/api/channels/watermark-repair")
+async def watermark_repair(channel_number: int | None = Query(None)):
+    """Fix channels reported by `watermark-audit`.
+
+    Per channel: re-upload its icon under a collision-free filename and keep the
+    watermark if it has one, otherwise switch the watermark off. Either way the
+    channel afterwards plays and draws its own logo. Pass `channel_number` to
+    repair just one.
+    """
+    broken = _find_broken_watermarks()
+    if channel_number is not None:
+        broken = [b for b in broken if b["number"] == channel_number]
+    results = []
+    for entry in broken:
+        n = entry["number"]
+        if entry["issue"] == "shared_image":
+            # Clear it first: the resolver is a no-op for a channel that already
+            # has a URL, and this one is a URL we must stop trusting.
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE channels SET watermark_image_url=NULL WHERE number=?", (n,))
+        image_url = await _refollow_channel_icon_watermark(n)
+        if image_url:
+            action = "image_resolved_from_icon"
+        else:
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT watermark FROM channels WHERE number=?", (n,)).fetchone()
+            try:
+                wm = json.loads(row["watermark"]) if row and row["watermark"] else {}
+            except (TypeError, ValueError):
+                wm = {}
+            wm["enabled"] = False
+            with get_db() as conn:
+                conn.execute("UPDATE channels SET watermark=? WHERE number=?",
+                             (json.dumps(wm), n))
+            action = "watermark_disabled"
+        sync = await _sync_channel_to_tunarr(n)
+        results.append({"number": n, "name": entry["name"], "issue": entry["issue"],
+                        "action": action, "image_url": image_url,
+                        "tunarr_sync": sync})
+        _log_app("channel",
+                 f"Repaired watermark for channel {n} ({entry['issue']}): {action}",
+                 level="warn",
+                 metadata={"number": n, "issue": entry["issue"], "action": action})
+    return {"repaired": results, "count": len(results)}
+
 
 @app.get("/api/icons/export")
 def export_icon_pack():
@@ -1697,10 +2500,99 @@ async def import_icon_pack(request: Request):
             icon_data = data.get("icon", data) if isinstance(data, dict) else data
             if not icon_data:
                 continue
-            conn.execute("UPDATE channels SET icon=? WHERE number=?", (icon_data, int(ch_num)))
+            # icon_url follows the icon; a stale one would be pushed instead. A
+            # hand-set URL stays, exactly as in `set_channel_icon` — clearing the
+            # URL but not the manual flag left a channel that never uploaded again.
+            conn.execute(
+                "UPDATE channels SET icon=?, icon_url=CASE WHEN icon_url_manual THEN icon_url END "
+                "WHERE number=?", (icon_data, int(ch_num)))
             imported += 1
     _log_app("icons", f"Imported {imported} channel icons")
     return {"ok": True, "imported": imported}
+
+
+@app.post("/api/channels/resync-assets")
+async def resync_channel_assets(channel_number: int | None = Query(None),
+                                force: bool = Query(False)):
+    """Re-upload every channel's icon to Tunarr and push the result.
+
+    The operational counterpart of the `tunarr_public_url` setting. Channels
+    synced before that setting existed hold their icon in Tunarr as a `data:`
+    URI, which no remote Plex client can render; this walks the lineup and
+    replaces each one with a real uploaded asset. Without it, adopting the
+    setting would mean re-saving every channel by hand.
+
+    Icon uploads are content-addressed, so this is naturally idempotent — an
+    unchanged icon short-circuits without touching Tunarr. `force=true` clears
+    the cached URL first, for when Tunarr's upload directory has been wiped and
+    the cache is lying about what exists there.
+
+    Per-channel failures are collected rather than raised: one unreachable
+    channel must not abandon the rest of the lineup half-done.
+    """
+    with get_db() as conn:
+        if channel_number is not None:
+            rows = conn.execute(
+                "SELECT number FROM channels WHERE number=? AND icon IS NOT NULL AND icon != ''",
+                (channel_number,)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT number FROM channels WHERE icon IS NOT NULL AND icon != '' "
+                "ORDER BY number").fetchall()
+        if force:
+            numbers = [r["number"] for r in rows]
+            for n in numbers:
+                # A pinned (manual) URL is not a cache, so force leaves it.
+                conn.execute("UPDATE channels SET icon_url=NULL "
+                             "WHERE number=? AND NOT icon_url_manual", (n,))
+
+    results: list[dict] = []
+    for row in rows:
+        n = row["number"]
+        url = await _resolve_channel_icon_url(
+            n, _channel_icon_data(n))
+        entry = {"channel_number": n, "icon_url": url, "uploaded": bool(url)}
+        if url:
+            # Only `force` may replace an icon set in Tunarr's own UI.
+            sync = await _sync_channel_to_tunarr(n, icon_explicit=force)
+            entry["synced"] = bool(sync.get("synced"))
+            if not sync.get("synced"):
+                entry["message"] = sync.get("message", "")
+        else:
+            entry["synced"] = False
+            entry["message"] = "Icon could not be uploaded to Tunarr"
+        results.append(entry)
+
+    uploaded = sum(1 for r in results if r["uploaded"])
+    _log_app("icons",
+             f"Re-synced assets for {uploaded}/{len(results)} channels",
+             level="warn" if uploaded < len(results) else "info",
+             metadata={"asset_base": _tunarr_asset_base()})
+    out = {"ok": True, "asset_base": _tunarr_asset_base(),
+           "total": len(results), "uploaded": uploaded,
+           "failed": [r for r in results if not r["uploaded"] or not r["synced"]],
+           "channels": results}
+    warning = _asset_base_warning()
+    if warning:
+        out["warning"] = warning
+    return out
+
+
+def _asset_base_warning() -> str | None:
+    """Icon URLs go into the guide, so a host only reachable inside Docker
+    (`tunarr:8000`) means every remote client loses its logos."""
+    host = _urlparse(_tunarr_asset_base()).hostname or ""
+    if host and "." not in host and host != "localhost":
+        return (f"Icon URLs use '{host}', which only resolves inside Docker. Set "
+                "Settings → Tunarr public URL so clients outside it can load logos.")
+    return None
+
+
+def _channel_icon_data(channel_number: int) -> str | None:
+    with get_db() as conn:
+        row = conn.execute("SELECT icon FROM channels WHERE number=?",
+                           (channel_number,)).fetchone()
+    return row["icon"] if row else None
 
 # ── Icon Library ─────────────────────────────────────────────────────────────
 
@@ -1913,6 +2805,45 @@ def purge_channel_assignments(channel_number: int, content_type: str = Query("bo
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 
+# House style for generated channel icons: a brand line over the channel line.
+# The values are the Galaxy Network defaults; every one is user-editable. They
+# drive the designer in the frontend. Generated icons come from `icon_render`,
+# whose metrics are measured from the logos on air: Baloo Thambi 2 Bold over
+# Baloo Thambi 2 Regular — so these defaults match it.
+_ICON_BRAND_DEFAULTS = {
+    "brand_line": "Galaxy",
+    "brand_font": "Baloo Thambi 2",
+    "brand_weight": 700,
+    "name_font": "Baloo Thambi 2",
+    "name_weight": 400,
+    "color": "#ffffff",
+    "width": 512,
+    "height": 512,
+}
+
+
+def _icon_brand_defaults(stored: str | None) -> dict:
+    """Stored icon defaults merged over the built-ins.
+
+    Merged rather than replaced so a blob written before a key existed still
+    produces a complete config, and unknown keys are dropped rather than
+    reaching the renderer.
+    """
+    out = dict(_ICON_BRAND_DEFAULTS)
+    if not stored:
+        return out
+    try:
+        parsed = json.loads(stored)
+    except (TypeError, ValueError):
+        return out
+    if not isinstance(parsed, dict):
+        return out
+    for k in _ICON_BRAND_DEFAULTS:
+        if k in parsed and parsed[k] not in (None, ""):
+            out[k] = parsed[k]
+    return out
+
+
 @app.get("/api/settings")
 def get_settings():
     with get_db() as conn:
@@ -1931,6 +2862,9 @@ def get_settings():
         "openai_base_url": rows.get("openai_base_url", "https://api.openai.com/v1"),
         "openai_model": rows.get("openai_model", "gpt-4o-mini"),
         "tunarr_url": rows.get("tunarr_url", "http://tunarr:8000"),
+        "tunarr_public_url": rows.get("tunarr_public_url", ""),
+        "icon_brand_defaults": _icon_brand_defaults(rows.get("icon_brand_defaults")),
+        "tunarr_group_map": _json_dict(rows.get("tunarr_group_map")),
         "plex_webhook_path": f"/api/plex/webhook?token={webhook_secret}" if webhook_secret else "",
     }
 
@@ -1950,6 +2884,22 @@ def save_settings(body: SettingsIn):
             conn.execute("INSERT OR REPLACE INTO settings VALUES ('openai_model', ?)", (body.openai_model,))
         if body.tunarr_url is not None:
             conn.execute("INSERT OR REPLACE INTO settings VALUES ('tunarr_url', ?)", (body.tunarr_url,))
+        if body.tunarr_public_url is not None:
+            # Stored even when blank — clearing it is a meaningful action that
+            # reverts asset links to the internal Tunarr URL.
+            conn.execute("INSERT OR REPLACE INTO settings VALUES ('tunarr_public_url', ?)",
+                         (body.tunarr_public_url.strip().rstrip("/"),))
+        if body.icon_brand_defaults is not None:
+            # Merged through the same reader used on GET, so an unknown key
+            # cannot be persisted and a partial write keeps the other values.
+            merged = _icon_brand_defaults(json.dumps(body.icon_brand_defaults))
+            conn.execute("INSERT OR REPLACE INTO settings VALUES ('icon_brand_defaults', ?)",
+                         (json.dumps(merged),))
+        if body.tunarr_group_map is not None:
+            clean = {k.strip(): v.strip() for k, v in body.tunarr_group_map.items()
+                     if k.strip() and v.strip()}
+            conn.execute("INSERT OR REPLACE INTO settings VALUES ('tunarr_group_map', ?)",
+                         (json.dumps(clean),))
     _log_app("settings", "Settings saved")
     return {"ok": True}
 
@@ -2069,7 +3019,7 @@ async def plex_libraries():
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{url}/library/sections", headers=plex_headers(token))
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     data = resp.json()
     dirs = data.get("MediaContainer", {}).get("Directory", [])
     return [{"id": d["key"], "title": d["title"], "type": d["type"]} for d in dirs
@@ -2096,7 +3046,7 @@ async def plex_library(section_id: str, type_filter: str = Query("all"),
             params=params,
         )
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", [])
     return _format_items(items, type_filter)
 
@@ -2175,7 +3125,7 @@ async def plex_item(rating_key: str):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{url}/library/metadata/{rating_key}", headers=hdrs)
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     meta = resp.json().get("MediaContainer", {}).get("Metadata", [])
     if not meta:
         raise HTTPException(404, "Item not found")
@@ -2274,7 +3224,7 @@ async def plex_show_seasons(rating_key: str):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{url}/library/metadata/{rating_key}/children", headers=hdrs)
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
     return [
         {"rating_key": s.get("ratingKey"), "title": s.get("title"),
@@ -2291,7 +3241,7 @@ async def plex_season_episodes(rating_key: str):
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.get(f"{url}/library/metadata/{rating_key}/children", headers=hdrs)
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
     return [
         {
@@ -2315,7 +3265,7 @@ async def plex_collection_items(rating_key: str):
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(f"{url}/library/collections/{rating_key}/children", headers=hdrs)
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex error")
     items = resp.json().get("MediaContainer", {}).get("Metadata", []) or []
     return _format_items(items, "all")
 
@@ -2939,18 +3889,146 @@ def _collection_delta(desired: set[str], current: set[str], already_managed: boo
     return to_add, to_remove
 
 
+async def _plex_items_meta(client: "httpx.AsyncClient", url: str, hdrs: dict,
+                           keys) -> dict[str, dict] | None:
+    """Look up which rating keys Plex still has, and the library section each
+    one lives in: ``{ratingKey: {"section": id, "title": .., "year": ..}}``.
+
+    Keys Plex no longer has are simply absent from the result. Returns None when
+    the lookup itself fails (Plex unreachable, unexpected response) so callers
+    can fall back to their old behaviour instead of treating everything as gone.
+    """
+    out: dict[str, dict] = {}
+    uniq = list(dict.fromkeys(str(k) for k in keys))
+    try:
+        for i in range(0, len(uniq), 50):
+            chunk = uniq[i:i + 50]
+            r = await client.get(f"{url}/library/metadata/{','.join(chunk)}", headers=hdrs)
+            if r.status_code == 404:  # Plex 404s a batch only when none of it exists
+                continue
+            if r.status_code != 200:
+                return None
+            for m in r.json().get("MediaContainer", {}).get("Metadata", []) or []:
+                out[str(m["ratingKey"])] = {
+                    "section": str(m.get("librarySectionID", "")),
+                    "title": m.get("title"),
+                    "year": m.get("year"),
+                }
+    except Exception as e:  # noqa: BLE001 — any failure means "unknown", not "gone"
+        log.warning("Plex metadata lookup failed: %s", e)
+        return None
+    return out
+
+
+def _norm_title(t: str | None) -> str:
+    return " ".join((t or "").casefold().split())
+
+
+async def _repair_stale_assignments(client: "httpx.AsyncClient", url: str, hdrs: dict,
+                                    channel_number: int, sections: list[dict]) -> dict:
+    """Re-point assignments whose Plex rating key no longer exists.
+
+    Plex issues a NEW rating key when a file is replaced (a Radarr/Sonarr
+    upgrade, a re-import, a folder move). Assignments stored the old key, so the
+    item silently dropped out of the channel's collection, and from there out of
+    Tunarr. Galaxy Harry Potter lost 8 of its 10 movies this way and aired
+    offline 90% of the time.
+
+    A stale assignment is matched by exact (case-insensitive) title of the same
+    type, with the year within one when both are known. Preference goes to the
+    library section where the channel's other live items already are. Of
+    several matches there, the newest (highest rating key) wins: duplicates of
+    one title are usually an old and a new copy. Anything without a confident
+    match is left untouched and reported.
+    """
+    with get_db() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT id, plex_rating_key, plex_title, plex_type, plex_year "
+            "FROM assignments WHERE channel_number=?", (channel_number,)
+        ).fetchall()]
+    report = {"checked": False, "stale": 0, "repaired": [], "unresolved": []}
+    if not rows:
+        return report
+    meta = await _plex_items_meta(client, url, hdrs, [r["plex_rating_key"] for r in rows])
+    if meta is None:
+        return report
+    report["checked"] = True
+    stale = [r for r in rows if str(r["plex_rating_key"]) not in meta]
+    report["stale"] = len(stale)
+    if not stale:
+        return report
+
+    live_sections: dict[str, int] = {}
+    for r in rows:
+        m = meta.get(str(r["plex_rating_key"]))
+        if m:
+            live_sections[m["section"]] = live_sections.get(m["section"], 0) + 1
+
+    assigned = {str(r["plex_rating_key"]) for r in rows}
+    for r in stale:
+        type_int = 1 if r["plex_type"] == "movie" else 2
+        candidates: list[tuple[str, dict]] = []
+        for s in sections:
+            if s.get("type") != r["plex_type"]:
+                continue
+            try:
+                resp = await client.get(
+                    f"{url}/library/sections/{s['key']}/all",
+                    params={"type": type_int, "title": r["plex_title"]}, headers=hdrs,
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            if resp.status_code != 200:
+                continue
+            for m in resp.json().get("MediaContainer", {}).get("Metadata", []) or []:
+                if _norm_title(m.get("title")) != _norm_title(r["plex_title"]):
+                    continue
+                if r["plex_year"] and m.get("year") and abs(int(m["year"]) - int(r["plex_year"])) > 1:
+                    continue
+                candidates.append((str(s["key"]), m))
+        if not candidates:
+            report["unresolved"].append({"title": r["plex_title"], "old_key": r["plex_rating_key"]})
+            continue
+        candidates.sort(key=lambda c: (live_sections.get(c[0], 0), int(c[1]["ratingKey"])), reverse=True)
+        new_key = str(candidates[0][1]["ratingKey"])
+        with get_db() as conn:
+            if new_key in assigned:
+                # The replacement is already on this channel: drop the dead row.
+                conn.execute("DELETE FROM assignments WHERE id=?", (r["id"],))
+            else:
+                conn.execute("UPDATE assignments SET plex_rating_key=? WHERE id=?", (new_key, r["id"]))
+                assigned.add(new_key)
+        report["repaired"].append({"title": r["plex_title"], "old_key": r["plex_rating_key"], "new_key": new_key})
+
+    if report["repaired"] or report["unresolved"]:
+        _log_app("collection",
+                 f"Repaired {len(report['repaired'])} stale assignment(s) on ch {channel_number}"
+                 + (f", {len(report['unresolved'])} unresolved" if report["unresolved"] else ""),
+                 level="warn" if report["unresolved"] else "info",
+                 metadata={"channel": channel_number, **report})
+    return report
+
+
 @app.post("/api/collections/generate/{channel_number}")
-async def generate_collections(channel_number: int):
+async def generate_collections(channel_number: int, take_over_assigned: bool = Query(False)):
     """Create or update Plex collections for a channel's assigned movies and shows.
 
     Linearr manages ONLY its own '{Channel} Movies' / '{Channel} TV' collections,
     resolved by name — never a user-linked collection. First touch of any
     collection is additive-only, so a user's own collection can never be pruned.
 
-    If a type's slot currently holds an ASSIGNED collection (source='assigned'),
-    generating switches that slot back to 'owned'. That is a DB-slot change
-    only: the assigned collection is never read, added to, or pruned, because
-    the target is still resolved purely by owned name.
+    **The two types are independent.** A channel may legitimately reference an
+    existing collection for its movies while Linearr generates its shows, so a
+    slot holding an ASSIGNED collection is left alone here and reported as
+    skipped. Rebuilding used to force BOTH slots back to 'owned', which made
+    that mixed setup impossible to keep — one build silently discarded the
+    assignment. `take_over_assigned=true` is the explicit opt-in to convert.
+
+    **An emptied type empties its collection.** A type with no assignments is
+    only skipped when there is also no managed collection to maintain; if
+    Linearr owns one, removing the last movie from the channel removes the last
+    movie from the collection. Skipping outright is what left deleted items
+    sitting in Plex (and therefore in Tunarr) indefinitely.
     """
     url, token = get_plex_config()
     if not token:
@@ -2962,8 +4040,19 @@ async def generate_collections(channel_number: int):
             "SELECT plex_rating_key, plex_type FROM assignments WHERE channel_number=?",
             (channel_number,)
         ).fetchall()
+        slots = {
+            r["plex_type"]: dict(r)
+            for r in conn.execute(
+                "SELECT plex_type, source, managed, linearr_created "
+                "FROM channel_collections WHERE channel_number=?",
+                (channel_number,),
+            ).fetchall()
+        }
 
-    if not rows:
+    # No assignments AND nothing already managed means there is genuinely
+    # nothing to do. With a managed collection present, zero assignments is a
+    # real instruction — empty it.
+    if not rows and not any(s.get("managed") for s in slots.values()):
         raise HTTPException(404, "No assignments for this channel")
 
     # Find channel name
@@ -2995,13 +4084,46 @@ async def generate_collections(channel_number: int):
         movie_section = next((s for s in sections if s["type"] == "movie"), None)
         show_section  = next((s for s in sections if s["type"] == "show"),  None)
 
+        # Re-point assignments whose rating key Plex has since replaced, then
+        # learn which section each live item is in.
+        repair = await _repair_stale_assignments(client, url, hdrs, channel_number, sections)
+        if repair["repaired"]:
+            with get_db() as conn:
+                rows = conn.execute(
+                    "SELECT plex_rating_key, plex_type FROM assignments WHERE channel_number=?",
+                    (channel_number,)
+                ).fetchall()
+            movie_keys = [r["plex_rating_key"] for r in rows if r["plex_type"] == "movie"]
+            show_keys  = [r["plex_rating_key"] for r in rows if r["plex_type"] == "show"]
+        item_meta = (await _plex_items_meta(client, url, hdrs, movie_keys + show_keys)
+                     if repair["checked"] else None)
+
         result = {}
 
         for plex_type, keys, section, type_int in [
             ("movie", movie_keys, movie_section, 1),
             ("show",  show_keys,  show_section,  2),
         ]:
-            if not keys:
+            slot = slots.get(plex_type) or {}
+
+            # Leave a referenced collection alone. Building the OTHER type must
+            # not quietly convert this one — see the docstring.
+            if slot.get("source") == "assigned" and not take_over_assigned:
+                log.info("generate_collections ch %s: %s slot is assigned — leaving it",
+                         channel_number, plex_type)
+                result[plex_type] = {
+                    "name": None, "created": False, "added": 0, "removed": 0,
+                    "total": len(set(keys)),
+                    "skipped": "This type references an existing collection. Unassign it "
+                               "first (or pass take_over_assigned) to have Linearr "
+                               "generate it instead.",
+                }
+                continue
+
+            # Nothing assigned and nothing owned to maintain — don't create an
+            # empty collection out of nowhere. But if Linearr already manages
+            # one, fall through with an empty desired set so it gets emptied.
+            if not keys and not slot.get("managed"):
                 log.info("generate_collections ch %s: no %s assignments — skipping",
                          channel_number, plex_type)
                 continue
@@ -3012,127 +4134,174 @@ async def generate_collections(channel_number: int):
                                      "removed": 0, "total": len(set(keys)), "skipped": msg}
                 continue
 
-            section_id = section["key"]
-            coll_name = _owned_collection_name(ch_name, plex_type)
-
-            # 4a. Resolve target ONLY by owned name. Never trust a stored rating key
-            # (it may point at one of the user's own collections).
-            coll_resp = await client.get(
-                f"{url}/library/sections/{section_id}/collections", headers=hdrs,
-            )
-            collections = []
-            if coll_resp.status_code == 200:
-                collections = coll_resp.json().get("MediaContainer", {}).get("Metadata", []) or []
-            existing = next((c for c in collections if c.get("title") == coll_name), None)
-
-            created = False
-            if existing:
-                coll_id = str(existing["ratingKey"])
-                # Defensive: never manage a collection whose title isn't ours.
-                if not _is_owned_title(existing.get("title", ""), ch_name):
-                    raise HTTPException(500, f"Refusing to manage non-owned collection: {existing.get('title')}")
-            else:
-                create_resp = await client.post(
-                    f"{url}/library/collections",
-                    params={"type": type_int, "title": coll_name, "smart": 0, "sectionId": section_id},
-                    headers=hdrs,
-                )
-                if create_resp.status_code not in (200, 201):
-                    raise HTTPException(502, f"Failed to create collection: {coll_name}")
-                coll_id = str(create_resp.json()["MediaContainer"]["Metadata"][0]["ratingKey"])
-                created = True
-
-            # 4b. Is this collection already managed by Linearr? (fresh-created => owned)
-            #
-            # Pruning requires ALL of: the same rating key as last time, a
-            # managed slot, AND `linearr_created` — Linearr must have created
-            # the Plex collection itself. The name check above is defeated by a
-            # rename (a user's collection renamed to '{Channel} Movies' resolves
-            # here), so provenance is the guard that actually holds: a
-            # collection Linearr merely *adopted* by name stays additive-only
-            # forever and can never lose the user's items.
-            with get_db() as conn:
-                prior = conn.execute(
-                    "SELECT collection_rating_key, managed, linearr_created "
-                    "FROM channel_collections WHERE channel_number=? AND plex_type=?",
-                    (channel_number, plex_type),
-                ).fetchone()
-            same_collection = bool(prior and str(prior["collection_rating_key"]) == coll_id)
-            prior_linearr_created = bool(
-                same_collection and (prior["linearr_created"] or 0) == 1)
-            linearr_created = created or prior_linearr_created
-            already_managed = bool(
-                created
-                or (same_collection and prior["managed"] == 1 and prior_linearr_created)
-            )
-
-            # 4c. Current items
-            items_resp = await client.get(
-                f"{url}/library/collections/{coll_id}/children", headers=hdrs,
-            )
-            current_keys: set[str] = set()
-            if items_resp.status_code == 200:
-                for item in items_resp.json().get("MediaContainer", {}).get("Metadata", []) or []:
-                    current_keys.add(str(item["ratingKey"]))
-
-            desired_keys = {str(k) for k in keys}
-            to_add, to_remove = _collection_delta(desired_keys, current_keys, already_managed)
-
-            # 4d. Apply add
-            added = 0
-            for rk in to_add:
-                uri = f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"
-                add_resp = await client.put(
-                    f"{url}/library/collections/{coll_id}/items", params={"uri": uri}, headers=hdrs,
-                )
-                if add_resp.status_code in (200, 201):
-                    added += 1
+            # Build in the library section where the items actually live. This
+            # used to take the FIRST section of the type, and once a "3D Movies"
+            # library existed (Plex lists it before "Movies") every rebuild wrote
+            # into a 3D-library collection the movies could not join. Those
+            # collections stayed empty and the real ones in Movies stopped
+            # updating. Items split across sections get a same-named collection
+            # in each; the slot points at the one holding most of them.
+            same_type = {str(sec["key"]) for sec in sections if sec.get("type") == plex_type}
+            by_section: dict[str, list[str]] = {}
+            unplaced: list[str] = []
+            for k in keys:
+                m = item_meta.get(str(k)) if item_meta else None
+                if m and m["section"] in same_type:
+                    by_section.setdefault(m["section"], []).append(k)
                 else:
-                    log.warning("generate_collections ch %s: failed to add %s to '%s' (%s): %s",
-                                channel_number, rk, coll_name, add_resp.status_code, add_resp.text[:200])
+                    unplaced.append(k)
+            # Keys whose section is unknown (lookup failed, or still stale after
+            # repair) stay in the desired set exactly as before. Dropping them
+            # would let an inference about Plex prune the collection.
+            if unplaced:
+                target = (max(by_section, key=lambda s: len(by_section[s]))
+                          if by_section else str(section["key"]))
+                by_section.setdefault(target, []).extend(unplaced)
+            if not by_section:
+                by_section = {str(section["key"]): []}  # emptying a managed collection
+            groups = sorted(by_section.items(), key=lambda kv: len(kv[1]), reverse=True)
 
-            # 4e. Apply remove (always empty on first touch — see _collection_delta)
-            removed = 0
-            for rk in to_remove:
-                del_resp = await client.delete(
-                    f"{url}/library/collections/{coll_id}/items", params={"items": rk}, headers=hdrs,
+            for gi, (section_id, keys) in enumerate(groups):
+                is_primary = gi == 0
+                coll_name = _owned_collection_name(ch_name, plex_type)
+
+                # 4a. Resolve target ONLY by owned name. Never trust a stored rating key
+                # (it may point at one of the user's own collections).
+                coll_resp = await client.get(
+                    f"{url}/library/sections/{section_id}/collections", headers=hdrs,
                 )
-                if del_resp.status_code in (200, 204):
-                    removed += 1
+                collections = []
+                if coll_resp.status_code == 200:
+                    collections = coll_resp.json().get("MediaContainer", {}).get("Metadata", []) or []
+                existing = next((c for c in collections if c.get("title") == coll_name), None)
 
-            # 4f. Persist as managed (owned collection only).
-            # If the slot currently holds an ASSIGNED collection, generating
-            # switches it back to 'owned' — the intentional, documented way to
-            # return to a Linearr-managed collection. Note this only rewrites
-            # the DB slot: the assigned collection itself was never read or
-            # edited above, because the target is resolved by NAME (4a).
-            with get_db() as conn:
-                conn.execute(
-                    """INSERT INTO channel_collections
-                       (channel_number, plex_type, collection_rating_key, collection_title,
-                        managed, source, is_smart, linearr_created)
-                       VALUES (?, ?, ?, ?, 1, 'owned', 0, ?)
-                       ON CONFLICT(channel_number, plex_type) DO UPDATE SET
-                           collection_rating_key=excluded.collection_rating_key,
-                           collection_title=excluded.collection_title,
-                           managed=1,
-                           source='owned',
-                           is_smart=0,
-                           linearr_created=excluded.linearr_created""",
-                    (channel_number, plex_type, coll_id, coll_name,
-                     1 if linearr_created else 0),
+                created = False
+                if existing:
+                    coll_id = str(existing["ratingKey"])
+                    # Defensive: never manage a collection whose title isn't ours.
+                    if not _is_owned_title(existing.get("title", ""), ch_name):
+                        raise HTTPException(500, f"Refusing to manage non-owned collection: {existing.get('title')}")
+                elif not keys:
+                    # Emptied down to nothing and Plex has already dropped the
+                    # collection (it deletes them at zero items). Creating one here
+                    # just to empty it would be absurd.
+                    log.info("generate_collections ch %s: %s emptied and no collection "
+                             "remains in Plex — nothing to do", channel_number, plex_type)
+                    result[plex_type] = {"name": coll_name, "created": False, "added": 0,
+                                         "removed": 0, "total": 0}
+                    continue
+                else:
+                    create_resp = await client.post(
+                        f"{url}/library/collections",
+                        params={"type": type_int, "title": coll_name, "smart": 0, "sectionId": section_id},
+                        headers=hdrs,
+                    )
+                    if create_resp.status_code not in (200, 201):
+                        raise HTTPException(502, f"Failed to create collection: {coll_name}")
+                    coll_id = str(create_resp.json()["MediaContainer"]["Metadata"][0]["ratingKey"])
+                    created = True
+
+                # 4b. Is this collection already managed by Linearr? (fresh-created => owned)
+                #
+                # Pruning requires ALL of: the same rating key as last time, a
+                # managed slot, AND `linearr_created` — Linearr must have created
+                # the Plex collection itself. The name check above is defeated by a
+                # rename (a user's collection renamed to '{Channel} Movies' resolves
+                # here), so provenance is the guard that actually holds: a
+                # collection Linearr merely *adopted* by name stays additive-only
+                # forever and can never lose the user's items.
+                with get_db() as conn:
+                    prior = conn.execute(
+                        "SELECT collection_rating_key, managed, linearr_created "
+                        "FROM channel_collections WHERE channel_number=? AND plex_type=?",
+                        (channel_number, plex_type),
+                    ).fetchone()
+                same_collection = bool(prior and str(prior["collection_rating_key"]) == coll_id)
+                prior_linearr_created = bool(
+                    same_collection and (prior["linearr_created"] or 0) == 1)
+                linearr_created = created or prior_linearr_created
+                already_managed = bool(
+                    created
+                    or (same_collection and prior["managed"] == 1 and prior_linearr_created)
                 )
 
-            log.info("generate_collections ch %s: %s '%s' +%d/-%d (%d desired, additive_only=%s)",
-                     channel_number, plex_type, coll_name, added, removed, len(desired_keys), not already_managed)
-            result[plex_type] = {
-                "name": coll_name,
-                "created": created,
-                "added": added,
-                "removed": removed,
-                "total": len(desired_keys),
-                "additive_only": not already_managed,
-            }
+                # 4c. Current items
+                items_resp = await client.get(
+                    f"{url}/library/collections/{coll_id}/children", headers=hdrs,
+                )
+                current_keys: set[str] = set()
+                if items_resp.status_code == 200:
+                    for item in items_resp.json().get("MediaContainer", {}).get("Metadata", []) or []:
+                        current_keys.add(str(item["ratingKey"]))
+
+                desired_keys = {str(k) for k in keys}
+                to_add, to_remove = _collection_delta(desired_keys, current_keys, already_managed)
+
+                # 4d. Apply add
+                added = 0
+                for rk in to_add:
+                    uri = f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"
+                    add_resp = await client.put(
+                        f"{url}/library/collections/{coll_id}/items", params={"uri": uri}, headers=hdrs,
+                    )
+                    if add_resp.status_code in (200, 201):
+                        added += 1
+                    else:
+                        log.warning("generate_collections ch %s: failed to add %s to '%s' (%s): %s",
+                                    channel_number, rk, coll_name, add_resp.status_code, add_resp.text[:200])
+
+                # 4e. Apply remove (always empty on first touch — see _collection_delta)
+                removed = 0
+                for rk in to_remove:
+                    del_resp = await client.delete(
+                        f"{url}/library/collections/{coll_id}/items", params={"items": rk}, headers=hdrs,
+                    )
+                    if del_resp.status_code in (200, 204):
+                        removed += 1
+
+                if not is_primary:
+                    # Same-named collection in a second library (e.g. 3D Movies):
+                    # kept in step, but the channel's slot points at the primary.
+                    log.info("generate_collections ch %s: %s '%s' in section %s +%d/-%d",
+                             channel_number, plex_type, coll_name, section_id, added, removed)
+                    result.setdefault(plex_type, {}).setdefault("extra_sections", []).append(
+                        {"section": section_id, "collection": coll_id, "added": added,
+                         "removed": removed, "total": len(desired_keys)})
+                    continue
+
+                # 4f. Persist as managed (owned collection only).
+                # If the slot currently holds an ASSIGNED collection, generating
+                # switches it back to 'owned' — the intentional, documented way to
+                # return to a Linearr-managed collection. Note this only rewrites
+                # the DB slot: the assigned collection itself was never read or
+                # edited above, because the target is resolved by NAME (4a).
+                with get_db() as conn:
+                    conn.execute(
+                        """INSERT INTO channel_collections
+                           (channel_number, plex_type, collection_rating_key, collection_title,
+                            managed, source, is_smart, linearr_created)
+                           VALUES (?, ?, ?, ?, 1, 'owned', 0, ?)
+                           ON CONFLICT(channel_number, plex_type) DO UPDATE SET
+                               collection_rating_key=excluded.collection_rating_key,
+                               collection_title=excluded.collection_title,
+                               managed=1,
+                               source='owned',
+                               is_smart=0,
+                               linearr_created=excluded.linearr_created""",
+                        (channel_number, plex_type, coll_id, coll_name,
+                         1 if linearr_created else 0),
+                    )
+
+                log.info("generate_collections ch %s: %s '%s' +%d/-%d (%d desired, additive_only=%s)",
+                         channel_number, plex_type, coll_name, added, removed, len(desired_keys), not already_managed)
+                result[plex_type] = {**result.get(plex_type, {}),
+                    "name": coll_name,
+                    "created": created,
+                    "added": added,
+                    "removed": removed,
+                    "total": len(desired_keys),
+                    "additive_only": not already_managed,
+                }
 
     _log_app("collection", f"Built Plex collections for ch {channel_number}",
              metadata={"channel": channel_number,
@@ -3274,7 +4443,7 @@ async def plex_thumb(path: str = Query(...), w: int = Query(240), h: int = Query
             # Some art paths don't transcode — fall back to the raw image.
             resp = await client.get(f"{url}{path}", headers=plex_headers(token))
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, "Plex thumb error")
+        raise HTTPException(_upstream_status(resp.status_code), "Plex thumb error")
     content_type = resp.headers.get("content-type", "image/jpeg")
     _thumb_cache_put(cache_key, content_type, resp.content)
     return Response(content=resp.content, media_type=content_type, headers=_THUMB_HEADERS)
@@ -3373,7 +4542,7 @@ async def plex_scan_library(section_id: str):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{url}/library/sections/{section_id}/refresh", headers=hdrs)
     if resp.status_code not in (200, 202):
-        raise HTTPException(resp.status_code, "Failed to trigger library scan")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to trigger library scan")
     _log_app("plex", f"Triggered Plex library scan for section {section_id}", metadata={"section_id": section_id})
     return {"ok": True, "message": f"Library scan triggered for section {section_id}"}
 
@@ -3395,7 +4564,7 @@ async def plex_rate_item(rating_key: str, body: PlexRateIn):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.put(f"{url}/:/rate", headers=hdrs, params=params)
     if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code, "Failed to set rating")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to set rating")
     _log_app("plex", f"Rated item {rating_key}: {body.rating}", metadata={"rating_key": rating_key, "rating": body.rating})
     return {"ok": True}
 
@@ -3563,7 +4732,7 @@ async def plex_create_collection(request: Request):
             params={"type": plex_type, "title": title, "smart": "0", "sectionId": section_id},
         )
     if resp.status_code not in (200, 201):
-        raise HTTPException(resp.status_code, f"Plex error: {resp.text[:200]}")
+        raise HTTPException(_upstream_status(resp.status_code), f"Plex error: {resp.text[:200]}")
     coll = (resp.json().get("MediaContainer", {}).get("Metadata", [{}]) or [{}])[0]
     _log_app("collection", f"Created Plex collection '{title}'",
              metadata={"rating_key": coll.get("ratingKey"), "title": title, "type": collection_type, "section_id": section_id})
@@ -3584,7 +4753,7 @@ async def plex_delete_collection(rating_key: str):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.delete(f"{url}/library/collections/{rating_key}", headers=hdrs)
     if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code, "Failed to delete collection")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to delete collection")
     # Clean up any channel_collections references
     with get_db() as conn:
         conn.execute("DELETE FROM channel_collections WHERE collection_rating_key=?", (rating_key,))
@@ -3636,7 +4805,7 @@ async def plex_remove_collection_item(rating_key: str, item_key: str):
             headers=hdrs,
         )
     if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code, "Failed to remove item")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to remove item")
     _log_app("collection", f"Removed item {item_key} from collection {rating_key}",
              metadata={"collection": rating_key, "item_key": item_key})
     return {"ok": True}
@@ -3659,7 +4828,7 @@ async def plex_update_collection(rating_key: str, request: Request):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.put(f"{url}/library/metadata/{rating_key}", headers=hdrs, params=params)
     if resp.status_code not in (200, 204):
-        raise HTTPException(resp.status_code, "Failed to update collection")
+        raise HTTPException(_upstream_status(resp.status_code), "Failed to update collection")
     _log_app("collection", f"Updated Plex collection {rating_key}",
              metadata={"rating_key": rating_key, "fields": [k.split(".")[0] for k in params]})
     return {"ok": True}
@@ -3779,7 +4948,7 @@ async def plex_create_smart_collection(body: SmartCollectionIn):
                     "smart": "1", "sectionId": body.section_id, "uri": uri},
         )
     if resp.status_code not in (200, 201):
-        raise HTTPException(resp.status_code, f"Plex error: {resp.text[:200]}")
+        raise HTTPException(_upstream_status(resp.status_code), f"Plex error: {resp.text[:200]}")
     coll = (resp.json().get("MediaContainer", {}).get("Metadata", [{}]) or [{}])[0]
     _log_app("collection", f"Created smart collection '{body.title}'",
              metadata={"section_id": body.section_id, "type": body.type})
@@ -3893,13 +5062,13 @@ async def plex_update_smart_collection(rating_key: str, body: SmartCollectionUpd
             r = await client.put(f"{url}/library/collections/{rating_key}/items",
                                  headers=hdrs, params={"uri": uri})
             if r.status_code not in (200, 201, 204):
-                raise HTTPException(r.status_code, f"Failed to update filters: {r.text[:200]}")
+                raise HTTPException(_upstream_status(r.status_code), f"Failed to update filters: {r.text[:200]}")
             updated.append("filters")
         if body.title:
             r = await client.put(f"{url}/library/metadata/{rating_key}",
                                  headers=hdrs, params={"title.value": body.title})
             if r.status_code not in (200, 204):
-                raise HTTPException(r.status_code, "Failed to update title")
+                raise HTTPException(_upstream_status(r.status_code), "Failed to update title")
             updated.append("title")
     if not updated:
         raise HTTPException(400, "Nothing to update — provide filters and/or title")
@@ -5363,7 +6532,17 @@ TUNARR_V13 = "1.3.0"
 TUNARR_SUPPORTED_VERSION = TUNARR_TESTED_VERSION
 
 def _previous_sunday_midnight_ms() -> int:
-    """Return Unix epoch milliseconds for the most recent Sunday at 00:00:00 UTC."""
+    """Unix epoch milliseconds for the most recent Sunday at 00:00:00 UTC.
+
+    This is a CHANNEL's programming start, and it must always land on 12:00AM —
+    Linearr pushes `period: "day"` time-slot schedules whose slot times are
+    offsets from midnight, so a channel anchored anywhere else shifts every slot
+    on that channel by the same amount. `test_tunarr_channel_writer.py` asserts
+    the midnight invariant directly.
+
+    Do NOT reuse this for a slot's `startTime`: a slot start is an offset within
+    the period (see `_hhmm_to_ms`), not an absolute timestamp.
+    """
     from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
     days_since_sunday = now.weekday() + 1  # Monday=0, Sunday=6 → +1 gives days since Sunday
@@ -5385,6 +6564,63 @@ def get_tunarr_url() -> str:
     with get_db() as conn:
         rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
     return rows.get("tunarr_url", "http://tunarr:8000").rstrip("/")
+
+
+def get_tunarr_public_url() -> str:
+    """The configured public base, or "" when none is set."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key='tunarr_public_url'").fetchone()
+    return (row["value"] if row else "").strip().rstrip("/")
+
+
+def _tunarr_asset_base() -> str:
+    """Base URL for asset links written INTO Tunarr — icons and watermarks.
+
+    Distinct from `get_tunarr_url`, which is where Linearr sends API requests.
+    The two differ because they are read by different things: Linearr talks to
+    Tunarr container-to-container (`http://tunarr:8000`), but the URLs Tunarr
+    stores end up in XMLTV and in ffmpeg command lines, where they are fetched
+    by Plex clients that may be nowhere near this network. A LAN-only address
+    there is why icons render locally and nowhere else.
+
+    Falls back to the internal URL, so an install that never sets this behaves
+    exactly as before.
+    """
+    return get_tunarr_public_url() or get_tunarr_url()
+
+
+def _tunarr_asset_url(stored: str | None) -> str | None:
+    """Re-base a stored Tunarr asset URL onto the CURRENT asset base.
+
+    Stored URLs are absolute and already in the database, so changing
+    `tunarr_public_url` must not require a migration or leave a row pointing at
+    the old host. Rather than rewrite rows, every read passes through here.
+
+    Only Tunarr's own uploads are re-based: the path must live under
+    `/images/` AND the host must be one we recognise as Tunarr. That second
+    condition is the important one — a user may paste a third-party watermark
+    URL (`https://example.com/logo.png`), and rewriting that onto the Tunarr
+    domain would silently point at a 404.
+    """
+    if not stored or not str(stored).strip():
+        return None
+    stored = str(stored).strip()
+    parsed = _urlparse(stored)
+    path = parsed.path or ""
+    if not path.startswith(tuple(_TUNARR_IMAGE_ALLOWED_PREFIXES)):
+        return stored
+    known = {
+        _urlparse(u).netloc
+        for u in (get_tunarr_url(), get_tunarr_public_url())
+        if u
+    }
+    if parsed.netloc and parsed.netloc not in known:
+        return stored
+    suffix = path
+    if parsed.query:
+        suffix = f"{suffix}?{parsed.query}"
+    return f"{_tunarr_asset_base().rstrip('/')}{suffix}"
 
 _DATA_URI_RE = _re.compile(r"^data:(?P<mime>[\w.+/-]+);base64,(?P<b64>.+)$", _re.DOTALL)
 
@@ -5413,6 +6649,29 @@ def _decode_data_uri(data_uri: str) -> tuple[bytes, str, str] | None:
     if not raw:
         return None
     return raw, mime, f"linearr-watermark.{_MIME_EXT.get(mime, 'png')}"
+
+
+# Legacy shared filename. Every channel's watermark image used to upload under
+# this one name, and Tunarr keys uploads by filename — so each new upload
+# OVERWROTE the previous one and every channel ended up drawing whichever image
+# was applied last. `watermark-audit` reports channels still pointing at it.
+_LEGACY_WATERMARK_FILENAME = "linearr-watermark."
+
+
+def _watermark_image_filename(channel_number: int, raw: bytes, mime: str) -> str:
+    """A filename no other channel can collide with.
+
+    Tunarr's `POST /api/upload/image` stores by filename and returns the same
+    `fileUrl` for a repeat name, overwriting what was there (verified against
+    1.3.10). So the name has to carry both the channel and the image:
+
+    - the channel number keeps two channels apart, and keeps the uploads
+      directory readable when you are staring at an ffmpeg command;
+    - the content hash keeps one channel's *old* image intact when it gets a new
+      one, and makes re-applying an unchanged image a no-op rather than a new file.
+    """
+    digest = hashlib.sha1(raw).hexdigest()[:10]
+    return f"linearr-ch{channel_number}-{digest}.{_MIME_EXT.get(mime, 'png')}"
 
 
 async def _tunarr_upload_image(
@@ -5468,6 +6727,152 @@ _TUNARR_IMAGE_HEADERS = {
 }
 
 
+# ── Tunarr stream proxy (for the browser) ────────────────────────────────────
+# Tunarr serves a channel at `{tunarr}/stream/channels/{uuid}?streamMode=hls`,
+# and the playlist it returns points at segments with ABSOLUTE urls on Tunarr's
+# own configured base — `http://tunarr:8000/...` in a default Docker deploy. A
+# LAN browser cannot resolve that hostname, so playing the URL directly is a
+# guaranteed failure. These two routes are the browser-facing pair: fetch the
+# playlist server-side, rewrite every URI back through Linearr, then stream the
+# segments.
+
+_HLS_CONTENT_TYPE = "application/vnd.apple.mpegurl"
+# Prefixes a rewritten segment path is allowed to live under. Tunarr's HLS
+# segments and playlists all hang off /stream/.
+_TUNARR_STREAM_PREFIXES = ("/stream/",)
+
+
+def _is_safe_tunarr_path(path: str, prefixes: tuple[str, ...]) -> bool:
+    """SSRF guard shared by the stream routes — same rules as /api/tunarr/image.
+
+    `path` is caller-controlled, so only a plain path under an allow-listed
+    prefix is accepted: no scheme, no `//`, no `@`, no backslash, no traversal.
+    The Tunarr base is prefixed server-side, never taken from the caller.
+    """
+    path_only = path.split("?", 1)[0]
+    return not (
+        not path.startswith("/") or path.startswith("//") or "://" in path
+        or any(c in path for c in ("@", "\\"))
+        or ".." in path_only
+        or not path_only.startswith(prefixes)
+    )
+
+
+def _rewrite_hls_playlist(text: str, tunarr_base: str) -> str:
+    """Point every URI in an HLS playlist back at `/api/tunarr/stream-segment`.
+
+    Two kinds of reference need rewriting: bare URI lines (segments, and variant
+    playlists in a master), and `URI="..."` attributes on tags like
+    EXT-X-KEY and EXT-X-MAP. Anything already relative is resolved against
+    Tunarr's base first, so the proxy only ever forwards an absolute Tunarr path.
+    """
+    from urllib.parse import quote, urljoin, urlsplit
+
+    def to_proxy(ref: str) -> str:
+        absolute = urljoin(tunarr_base + "/stream/", ref)
+        split = urlsplit(absolute)
+        path_q = split.path + (f"?{split.query}" if split.query else "")
+        return f"/api/tunarr/stream-segment?path={quote(path_q, safe='')}"
+
+    out: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            out.append(line)
+        elif stripped.startswith("#"):
+            # Rewrite any URI="..." attribute in place, leave the rest of the tag.
+            def _attr(m):
+                return f'URI="{to_proxy(m.group(1))}"'
+            out.append(_re.sub(r'URI="([^"]+)"', _attr, line))
+        else:
+            out.append(to_proxy(stripped))
+    return "\n".join(out) + "\n"
+
+
+@app.get("/api/tunarr/stream/{tunarr_id}")
+async def tunarr_stream(tunarr_id: str):
+    """HLS playlist for a Tunarr channel, rewritten to play in the browser.
+
+    Tunarr spins up ffmpeg on first request, so this can take several seconds —
+    hence the long read timeout. Redirects ARE followed here (Tunarr may bounce
+    to a session-specific playlist), but only the final playlist body is used and
+    every URI in it is rewritten to a same-origin path.
+    """
+    if not _UUID_RE.match(tunarr_id):
+        raise HTTPException(400, "Invalid Tunarr channel id")
+    url = get_tunarr_url()
+    if not url:
+        raise HTTPException(400, "Tunarr not configured")
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0), follow_redirects=True
+        ) as client:
+            resp = await client.get(f"{url}/stream/channels/{tunarr_id}",
+                                    params={"streamMode": "hls"})
+    except Exception as e:
+        log.warning("Tunarr stream proxy failed for %s: %s", tunarr_id, e)
+        raise HTTPException(502, f"Could not start the Tunarr stream: {e}")
+    if resp.status_code != 200:
+        raise HTTPException(_upstream_status(resp.status_code),
+                            f"Tunarr stream error: {resp.text[:200]}")
+    body = _rewrite_hls_playlist(resp.text, url.rstrip("/"))
+    _log_app("tunarr", f"Started stream proxy for Tunarr channel {tunarr_id}",
+             metadata={"tunarr_id": tunarr_id})
+    return Response(
+        content=body,
+        media_type=_HLS_CONTENT_TYPE,
+        # A live playlist must never be cached — it changes every segment.
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.get("/api/tunarr/stream-segment")
+async def tunarr_stream_segment(path: str = Query(...)):
+    """Stream one HLS segment (or a nested playlist) from Tunarr.
+
+    Only reached via a path this server wrote into a rewritten playlist, but the
+    guard is applied anyway — the query string is still caller-controlled.
+    Nested playlists are rewritten in turn so a master/variant chain keeps
+    working; everything else is streamed through untouched.
+    """
+    if not _is_safe_tunarr_path(path, _TUNARR_STREAM_PREFIXES):
+        raise HTTPException(400, "Invalid Tunarr stream path")
+    url = get_tunarr_url()
+    if not url:
+        raise HTTPException(400, "Tunarr not configured")
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0),
+                               follow_redirects=True)
+    try:
+        resp = await client.get(f"{url}{path}")
+    except Exception as e:
+        await client.aclose()
+        log.warning("Tunarr segment proxy failed for %s: %s", path, e)
+        raise HTTPException(502, "Tunarr segment fetch failed")
+    if resp.status_code != 200:
+        status = resp.status_code
+        await client.aclose()
+        raise HTTPException(status, "Tunarr segment error")
+
+    content_type = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type in (_HLS_CONTENT_TYPE, "application/x-mpegurl", "audio/x-mpegurl"):
+        text = resp.text
+        await client.aclose()
+        return Response(
+            content=_rewrite_hls_playlist(text, url.rstrip("/")),
+            media_type=_HLS_CONTENT_TYPE,
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
+    body = resp.content
+    await client.aclose()
+    return Response(
+        content=body,
+        media_type=content_type or "video/mp2t",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @app.get("/api/tunarr/image")
 async def tunarr_image(path: str = Query(...)):
     """Proxy an image hosted by Tunarr, for the BROWSER.
@@ -5500,7 +6905,7 @@ async def tunarr_image(path: str = Query(...)):
         log.warning("Tunarr image proxy failed for %s: %s", path, e)
         raise HTTPException(502, "Tunarr image fetch failed")
     if resp.status_code != 200 or not resp.content:
-        raise HTTPException(resp.status_code if resp.status_code != 200 else 502,
+        raise HTTPException(_upstream_status(resp.status_code) if resp.status_code != 200 else 502,
                             "Tunarr image error")
     content_type = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type not in _TUNARR_IMAGE_TYPES:
@@ -5518,18 +6923,42 @@ def _watermark_to_tunarr(wm: dict, image_url: str | None) -> dict:
     Only `fadeConfig[0]` is ever applied by Tunarr, so at most one entry is
     sent. `animated` and `fadeConfig[].programType` are omitted: Tunarr
     persists both but no pipeline builder reads them (1.3.6).
+
+    **An enabled watermark is never emitted without an image URL.** Tunarr's API
+    happily accepts one (both `url: ""` and an absent `url` return 200), but its
+    ffmpeg pipeline then builds a command with a dangling `-i` and no path:
+
+        ... input.mkv -i  -filter_complex [0:0]hwdownload...
+
+    ffmpeg consumes `-filter_complex` as the input filename and exits 254, the
+    filter graph still references `[1:0]` for the overlay, and the channel never
+    writes a playlist — so the stream 404s and retries forever. Diagnosed on a
+    real deployment (Tunarr's own Program Playback Troubleshooter) against two
+    channels that had an enabled watermark with a blank URL; an otherwise
+    identical channel with a valid URL transcoded fine.
+
+    So the mapper degrades instead: no URL means `enabled: false` goes to Tunarr.
+    That also self-heals a row already in the bad state — the next sync turns a
+    dead channel back into a working one with no overlay, rather than leaving it
+    unplayable. The image is resolved upstream (the watermark PUT uploads the
+    channel icon), so a channel with an icon still gets its overlay.
     """
+    image_url = (image_url or "").strip() or None
+    enabled = bool(wm.get("enabled", False)) and image_url is not None
     out: dict = {
-        "enabled": bool(wm.get("enabled", False)),
+        "enabled": enabled,
         "position": wm.get("position", "bottom-right"),
-        "width": float(wm.get("width", 10.0)),
-        "verticalMargin": float(wm.get("vertical_margin", 1.0)),
-        "horizontalMargin": float(wm.get("horizontal_margin", 1.0)),
+        "width": float(wm.get("width", _WATERMARK_DEFAULTS["width"])),
+        "verticalMargin": float(wm.get("vertical_margin",
+                                       _WATERMARK_DEFAULTS["vertical_margin"])),
+        "horizontalMargin": float(wm.get("horizontal_margin",
+                                         _WATERMARK_DEFAULTS["horizontal_margin"])),
         "duration": float(wm.get("duration", 0.0)),
-        "opacity": int(wm.get("opacity", 100)),
+        "opacity": int(wm.get("opacity", _WATERMARK_DEFAULTS["opacity"])),
         "fixedSize": bool(wm.get("fixed_size", False)),
-        "url": image_url or "",
     }
+    if image_url is not None:
+        out["url"] = image_url
     fade = wm.get("fade")
     if isinstance(fade, dict) and int(fade.get("period_mins", 0)) >= 1:
         out["fadeConfig"] = [{
@@ -5649,8 +7078,24 @@ _TUNARR_READONLY_CHANNEL_KEYS = frozenset(
 )
 
 
+def _tunarr_icon_is_foreign(icon: dict | None) -> bool:
+    """True when a Tunarr channel's icon was not put there by Linearr.
+
+    Linearr's uploads are all named `linearr-*` (see `_channel_icon_filename`),
+    and a `data:` icon is what older Linearr versions pushed. Anything else — a
+    `<uuid>_icon.png` from Tunarr's own upload button, a hand-picked file — is
+    somebody's deliberate logo, which a routine sync must not replace.
+    """
+    path = str((icon or {}).get("path") or "").strip()
+    if not path or path.startswith("data:"):
+        return False
+    name = _urlparse(path).path.rsplit("/", 1)[-1]
+    return not name.startswith("linearr-")
+
+
 async def _tunarr_save_channel(
-    client: "httpx.AsyncClient", url: str, tunarr_id: str, changes: dict
+    client: "httpx.AsyncClient", url: str, tunarr_id: str, changes: dict,
+    *, keep_foreign_icon: bool = False,
 ) -> "httpx.Response":
     """Update a Tunarr channel by read-modify-write.
 
@@ -5664,6 +7109,10 @@ async def _tunarr_save_channel(
 
     Returns the PUT response, or the failing GET response when the read fails
     (so the caller sees one status either way).
+
+    `keep_foreign_icon` drops the `icon` change when Tunarr's current icon was
+    not uploaded by Linearr, so a metadata sync cannot replace a hand-made logo
+    with Linearr's copy of it. Explicit icon changes pass False.
     """
     r = await client.get(f"{url}/api/channels/{tunarr_id}")
     if r.status_code != 200:
@@ -5679,6 +7128,8 @@ async def _tunarr_save_channel(
             request=r.request,
         )
 
+    if keep_foreign_icon and "icon" in changes and _tunarr_icon_is_foreign(current.get("icon")):
+        changes = {k: v for k, v in changes.items() if k != "icon"}
     payload = {**current, **changes}
     payload = {k: v for k, v in payload.items() if k not in _TUNARR_READONLY_CHANNEL_KEYS}
     payload.setdefault("id", tunarr_id)
@@ -5754,7 +7205,7 @@ async def tunarr_list_channels():
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.get(f"{url}/api/channels")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr error")
     return r.json()
 
 @app.post("/api/icons/import-from-tunarr")
@@ -5815,7 +7266,16 @@ async def import_icons_from_tunarr():
                     # Auto-assign if this Tunarr channel is linked to a Linearr channel
                     link = links.get(tunarr_id)
                     if link:
-                        conn.execute("UPDATE channels SET icon=? WHERE number=?", (data_url, link["channel_number"]))
+                        # The icon came FROM Tunarr, so Tunarr's own file is its
+                        # URL. Pinning it (manual) means a later sync keeps that
+                        # file instead of uploading a `linearr-icon-*` copy over a
+                        # logo someone made by hand. A data-URI icon has no file
+                        # to pin, and gets a normal upload on its next sync.
+                        is_file = icon_path.startswith(("http", "/"))
+                        conn.execute(
+                            "UPDATE channels SET icon=?, icon_url=?, icon_url_manual=? WHERE number=?",
+                            (data_url, _tunarr_asset_url(icon_url) if is_file else None,
+                             1 if is_file else 0, link["channel_number"]))
                         assigned += 1
             except Exception as e:
                 log.warning("Failed to import icon for Tunarr channel %s: %s", tunarr_id, e)
@@ -5849,7 +7309,7 @@ async def tunarr_create_channel(body: dict):
         )
         r = await _tunarr_create_channel(client, url, channel_obj)
     if r.status_code not in (200, 201):
-        raise HTTPException(r.status_code, f"Tunarr error: {r.text[:300]}")
+        raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:300]}")
     return r.json()
 
 @app.get("/api/tunarr/channels/{tunarr_id}/detail")
@@ -5860,7 +7320,7 @@ async def tunarr_get_channel_detail(tunarr_id: str):
     if r.status_code == 404:
         return None
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr error")
     return r.json()
 
 def _extract_schedule_items(data) -> list[dict]:
@@ -6018,8 +7478,15 @@ def _normalize_guide_programs(programs: list) -> list[dict]:
             or listing.get("title")  # for episodes, listing.title is often the episode title
             or ""
         )
-        season_num = listing.get("seasonNumber") or program.get("seasonNumber") or lineup.get("seasonNumber") or p.get("season")
-        episode_num = listing.get("episodeNumber") or program.get("episodeNumber") or lineup.get("episodeNumber") or p.get("episode_number") or p.get("episodeNumber")
+        # `p.get("seasonNumber")` is where the bulk EPG puts it — without it the
+        # episode label came out as "S?E1", since the episode chain already
+        # covered `p` but the season chain stopped at the older `p["season"]`.
+        season_num = (listing.get("seasonNumber") or program.get("seasonNumber")
+                      or lineup.get("seasonNumber") or p.get("seasonNumber")
+                      or p.get("season"))
+        episode_num = (listing.get("episodeNumber") or program.get("episodeNumber")
+                       or lineup.get("episodeNumber") or p.get("episode_number")
+                       or p.get("episodeNumber"))
 
         # For shows: if listing has showTitle, the title is the show, ep_title is the episode
         show_title = listing.get("showTitle") or program.get("showTitle") or ""
@@ -6156,7 +7623,7 @@ async def tunarr_get_channel_shows(tunarr_id: str):
     if r.status_code == 404:
         return []
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr error")
     return r.json()
 
 @app.get("/api/tunarr/guide")
@@ -6175,35 +7642,48 @@ async def tunarr_guide(hours: int = Query(24)):
     link_by_tunarr_id = {l["tunarr_id"]: l for l in links}
     linked_ids = set(link_by_tunarr_id.keys())
 
+    # The BULK guide is the primary source, and the per-channel endpoint is not a
+    # fallback for it at all.
+    #
+    # `GET /api/guide/channels/{id}` returns the channel's LINEUP, not its EPG:
+    # `[{index, startTimeMs, lineupItem: {durationMs, type}}]`. `lineupItem`
+    # carries no title — so every entry fell through the title chain below to the
+    # literal string "Program", which is what the guide used to render for every
+    # programme. `GET /api/guide/channels` (no id) is the materialized EPG:
+    # `{<channelId>: {id, name, number, icon, programs: [{title, start, stop,
+    # duration, type}]}}`. Verified against Tunarr 1.3.10.
+    #
+    # It is also one request instead of one per channel, which for a 40-channel
+    # lineup is the difference between 1 and 40 round trips.
+    bulk_by_channel: dict[str, list] = {}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            r = await client.get(f"{url}/api/guide/channels",
+                                 params={"dateFrom": date_from, "dateTo": date_to})
+            if r.status_code == 200:
+                bulk = r.json()
+                if isinstance(bulk, dict):
+                    # Either keyed directly by channel id, or nested under
+                    # "channels" — accept both, then read `.programs`.
+                    source = bulk.get("channels") if isinstance(
+                        bulk.get("channels"), dict) else bulk
+                    for cid, entry in (source or {}).items():
+                        if isinstance(entry, dict):
+                            bulk_by_channel[cid] = entry.get("programs") or []
+                        elif isinstance(entry, list):
+                            bulk_by_channel[cid] = entry
+        except Exception as e:
+            log.warning("Tunarr bulk guide failed: %s", e)
+
     guide_channels = []
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Strategy: fetch per-channel to avoid format guessing with the bulk API
         for link in links:
             tunarr_id = link["tunarr_id"]
-            items = []
+            items = _normalize_guide_programs(bulk_by_channel.get(tunarr_id) or [])
 
-            # 1. Try per-channel guide API (most reliable)
-            try:
-                r = await client.get(f"{url}/api/guide/channels/{tunarr_id}",
-                                     params={"dateFrom": date_from, "dateTo": date_to})
-                if r.status_code == 200:
-                    data = r.json()
-                    log.debug("Tunarr guide response for %s: type=%s keys=%s",
-                              tunarr_id, type(data).__name__,
-                              list(data.keys())[:5] if isinstance(data, dict) else f"list[{len(data)}]" if isinstance(data, list) else "?")
-                    # Extract programs from various response shapes
-                    programs = []
-                    if isinstance(data, list):
-                        programs = data
-                    elif isinstance(data, dict):
-                        programs = data.get("programs", data.get("items", data.get("lineup", [])))
-                        if not programs and isinstance(programs, list):
-                            programs = []
-                    items = _normalize_guide_programs(programs)
-            except Exception as e:
-                log.warning("Tunarr guide for %s failed: %s", tunarr_id, e)
-
-            # 2. Fallback: channel lineup API
+            # Fallback: the channel's lineup. Titleless by nature, so entries come
+            # out as "Program" — only worth showing when the EPG has not
+            # materialized yet and the alternative is an empty row.
             if not items:
                 try:
                     r = await client.get(f"{url}/api/channels/{tunarr_id}/lineup",
@@ -6213,27 +7693,10 @@ async def tunarr_guide(hours: int = Query(24)):
                         raw_items = raw if isinstance(raw, list) else raw.get("items", raw.get("programs", []))
                         items = _normalize_guide_programs(raw_items)
                         if items:
-                            log.debug("Tunarr lineup fallback returned %d items for %s", len(items), tunarr_id)
+                            log.debug("Tunarr lineup fallback returned %d titleless "
+                                      "items for %s", len(items), tunarr_id)
                 except Exception as e:
                     log.warning("Tunarr lineup for %s failed: %s", tunarr_id, e)
-
-            # 3. Last fallback: bulk guide API with channel filtering
-            if not items:
-                try:
-                    r = await client.get(f"{url}/api/guide/channels",
-                                         params={"dateFrom": date_from, "dateTo": date_to})
-                    if r.status_code == 200:
-                        bulk = r.json()
-                        log.debug("Tunarr bulk guide: type=%s", type(bulk).__name__)
-                        if isinstance(bulk, dict):
-                            # Dict keyed by channel UUID
-                            ch_data = bulk.get(tunarr_id, bulk.get("channels", {}).get(tunarr_id))
-                            if isinstance(ch_data, list):
-                                items = _normalize_guide_programs(ch_data)
-                            elif isinstance(ch_data, dict):
-                                items = _normalize_guide_programs(ch_data.get("programs", []))
-                except Exception:
-                    pass
 
             guide_channels.append({
                 "channel_number": link["channel_number"],
@@ -6266,7 +7729,7 @@ async def tunarr_import_preview(body: dict | None = None):
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.get(f"{url}/api/channels")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Could not fetch Tunarr channels")
+        raise HTTPException(_upstream_status(r.status_code), "Could not fetch Tunarr channels")
     tunarr_channels = r.json() if isinstance(r.json(), list) else []
 
     # Filter by IDs if provided
@@ -6423,7 +7886,7 @@ async def tunarr_export_channels(body: TunarrExportRequest):
             channel_obj = _tunarr_channel_obj(
                 name=cp.get("name", f"Channel {cp_num}"),
                 number=cp_num,
-                group_title=cp.get("tier", "Linearr"),
+                group_title=_tunarr_group_for(cp.get("tier", "Linearr")),
                 transcode_id=transcode_id,
             )
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -6454,7 +7917,7 @@ async def tunarr_xmltv():
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(f"{url}/api/xmltv.xml")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr XMLTV error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr XMLTV error")
     return StreamingResponse(
         iter([r.content]),
         media_type="application/xml",
@@ -6468,7 +7931,7 @@ async def tunarr_m3u():
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(f"{url}/api/channels.m3u")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Tunarr M3U error")
+        raise HTTPException(_upstream_status(r.status_code), "Tunarr M3U error")
     return StreamingResponse(
         iter([r.content]),
         media_type="audio/x-mpegurl",
@@ -6501,7 +7964,7 @@ async def tunarr_update_xmltv_settings(request: Request):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.put(f"{url}/api/xmltv-settings", json=body)
     if r.status_code not in (200, 204):
-        raise HTTPException(r.status_code, "Failed to update XMLTV settings")
+        raise HTTPException(_upstream_status(r.status_code), "Failed to update XMLTV settings")
     return {"ok": True}
 
 # ── Tunarr Sessions ───────────────────────────────────────────────────────────
@@ -6543,7 +8006,7 @@ async def tunarr_filler_list_detail(filler_id: str):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.get(f"{url}/api/filler-lists/{filler_id}")
     if r.status_code != 200:
-        raise HTTPException(r.status_code, "Filler list not found")
+        raise HTTPException(_upstream_status(r.status_code), "Filler list not found")
     return r.json()
 
 @app.post("/api/tunarr/filler-lists")
@@ -6554,7 +8017,7 @@ async def tunarr_create_filler_list(request: Request):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.post(f"{url}/api/filler-lists", json=body)
     if r.status_code not in (200, 201):
-        raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+        raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:200]}")
     return r.json()
 
 @app.put("/api/tunarr/filler-lists/{filler_id}")
@@ -6565,7 +8028,7 @@ async def tunarr_update_filler_list(filler_id: str, request: Request):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.put(f"{url}/api/filler-lists/{filler_id}", json=body)
     if r.status_code not in (200, 204):
-        raise HTTPException(r.status_code, "Failed to update filler list")
+        raise HTTPException(_upstream_status(r.status_code), "Failed to update filler list")
     return r.json() if r.status_code == 200 else {"ok": True}
 
 @app.delete("/api/tunarr/filler-lists/{filler_id}")
@@ -6575,7 +8038,7 @@ async def tunarr_delete_filler_list(filler_id: str):
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.delete(f"{url}/api/filler-lists/{filler_id}")
     if r.status_code not in (200, 204):
-        raise HTTPException(r.status_code, "Failed to delete filler list")
+        raise HTTPException(_upstream_status(r.status_code), "Failed to delete filler list")
     return {"ok": True}
 
 @app.get("/api/tunarr/filler-lists/{filler_id}/programs")
@@ -6600,7 +8063,7 @@ async def tunarr_list_smart_collections():
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{url}{_TUNARR_SC_PATH}")
         if r.status_code != 200:
-            raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+            raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:200]}")
         return r.json()
     except HTTPException:
         raise
@@ -6623,7 +8086,7 @@ async def tunarr_list_custom_shows():
         if r.status_code == 404:
             return []  # Tunarr too old to have custom shows
         if r.status_code != 200:
-            raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+            raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:200]}")
         data = r.json()
         return data if isinstance(data, list) else data.get("data", [])
     except HTTPException:
@@ -6672,7 +8135,7 @@ async def tunarr_create_smart_collection(body: dict):
         r = await _tunarr_write_smart_collection(
             client, url, _TUNARR_SC_PATH, name=name, structured=structured)
     if r is None or r.status_code not in (200, 201):
-        raise HTTPException(r.status_code if r is not None else 502,
+        raise HTTPException(_upstream_status(r.status_code) if r is not None else 502,
                             r.text[:300] if r is not None else "No response from Tunarr")
     if not _sc_response_has_search(r):
         raise HTTPException(502, "Tunarr accepted the smart collection but dropped its rules — not created correctly")
@@ -6707,7 +8170,7 @@ async def tunarr_update_smart_collection(sc_id: str, body: dict):
     if r.status_code == 404:
         raise HTTPException(404, "Smart collection not found in Tunarr")
     if r.status_code not in (200, 201, 204):
-        raise HTTPException(r.status_code, r.text[:300])
+        raise HTTPException(_upstream_status(r.status_code), r.text[:300])
     _log_app("tunarr", f"Updated Tunarr smart collection {sc_id}",
              metadata={"uuid": sc_id, "rules_rewritten": structured is not None})
     return r.json() if r.status_code != 204 else {"ok": True}
@@ -6720,7 +8183,7 @@ async def tunarr_delete_smart_collection(sc_id: str):
     if r.status_code == 404:
         raise HTTPException(404, "Smart collection not found in Tunarr")
     if r.status_code not in (200, 204):
-        raise HTTPException(r.status_code, r.text[:300])
+        raise HTTPException(_upstream_status(r.status_code), r.text[:300])
     # Also remove any local collection links referencing this UUID
     with get_db() as conn:
         conn.execute("DELETE FROM tunarr_collection_links WHERE tunarr_collection_id=?", (sc_id,))
@@ -6746,7 +8209,7 @@ async def tunarr_purge_smart_collections():
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{url}{_TUNARR_SC_PATH}")
             if r.status_code != 200:
-                raise HTTPException(r.status_code, f"Tunarr error: {r.text[:200]}")
+                raise HTTPException(_upstream_status(r.status_code), f"Tunarr error: {r.text[:200]}")
             data = r.json()
             items = data if isinstance(data, list) else data.get("data", []) or []
 
@@ -6805,7 +8268,7 @@ async def tunarr_run_task(task_name: str, body: dict | None = None):
     async with httpx.AsyncClient(timeout=15.0) as client:
         r = await _tunarr_run_task_request(client, url, task_name, body=body)
     if r.status_code not in (200, 202, 204):
-        raise HTTPException(r.status_code, f"Tunarr task failed: {r.text[:200]}")
+        raise HTTPException(_upstream_status(r.status_code), f"Tunarr task failed: {r.text[:200]}")
     _log_app("tunarr", f"Ran Tunarr task {task_name}", metadata={"task": task_name})
     return {"ok": True, "task": task_name}
 
@@ -6873,7 +8336,31 @@ def tunarr_delete_collection_link(channel_number: int, plex_type: str):
 # ── Tunarr smart collection sync ──────────────────────────────────────────────
 
 @app.post("/api/tunarr/channel-links/{channel_number}/sync-collections")
-async def tunarr_sync_collections(channel_number: int):
+async def tunarr_sync_collections(channel_number: int, rebuild: bool = Query(True)):
+    """Publish this channel's Plex collections to Tunarr as smart collections.
+
+    Rebuilds the OWNED Plex collections first (`rebuild=false` to skip). Tunarr's
+    smart collections are tag-based — they resolve to whatever Plex currently has
+    in the collection of that name — so pushing without rebuilding publishes
+    whatever the Plex collection last contained. Anything removed from the
+    channel since then stayed on the Tunarr channel, which is exactly the
+    "collections don't update when I remove things" symptom: the removal never
+    reached Plex, so it could never reach Tunarr.
+
+    Best-effort: a rebuild failure is reported and the push continues, because
+    publishing a slightly stale collection still beats publishing nothing.
+    """
+    rebuilt: dict | None = None
+    if rebuild:
+        try:
+            rebuilt = await generate_collections(channel_number)
+        except HTTPException as e:
+            # 404 just means there is nothing to rebuild (no assignments and
+            # nothing managed) — not a reason to refuse the push.
+            if e.status_code != 404:
+                rebuilt = {"error": e.detail}
+                log.warning("sync-collections ch %s: rebuild failed: %s", channel_number, e.detail)
+
     # Get Plex collections linked to this channel
     with get_db() as conn:
         plex_cols = conn.execute(
@@ -6939,7 +8426,7 @@ async def tunarr_sync_collections(channel_number: int):
 
     _log_app("tunarr", f"Tunarr collection sync for ch {channel_number}: {len(created)} created, {len(updated)} updated",
              metadata={"channel": channel_number, "created": created, "updated": updated})
-    return {"created": created, "updated": updated}
+    return {"created": created, "updated": updated, "rebuilt": rebuilt}
 
 # ── Tunarr time slot push ─────────────────────────────────────────────────────
 
@@ -7118,6 +8605,11 @@ def _add_show_key(mapping: dict, show: dict) -> None:
             mapping[str(val).strip()] = show_uuid
             break
 
+# Slot schedule settings that guarantee no offline gaps; see tunarr_push_schedule.
+TUNARR_SLOT_OVERFLOW = {"type": "oneExtra"}
+TUNARR_SLOT_LATENESS_MS = 24 * 60 * 60 * 1000
+
+
 @app.post("/api/tunarr/channel-links/{channel_number}/push-schedule")
 async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
     # Get linked Tunarr channel
@@ -7147,14 +8639,21 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
     # Build slots — start with smart collection at midnight as base
     slots: list[dict] = []
 
-    # Base: smart collection at midnight — shuffles all day as fallback
+    # Base: smart collection at midnight — shuffles all day as fallback.
+    #
+    # A slot's `startTime` in a `period: "day"` schedule is an OFFSET FROM
+    # MIDNIGHT (0 .. 86_400_000), the same unit `_hhmm_to_ms` produces for the
+    # block slots below — not an absolute epoch timestamp. This slot used to be
+    # built from `_previous_sunday_midnight_ms()`, an epoch value ~1.7e12, which
+    # put the "midnight" base slot roughly 20,000 days into the period and sorted
+    # it last instead of first. Programming start is always 12:00AM.
     base_col = col_links.get("show") or col_links.get("movie")
     if base_col:
         slots.append({
             "id": str(uuid.uuid4()),  # Tunarr 1.3 lineup migration: linkable slots carry an id
             "type": "smart-collection",
             "smartCollectionId": base_col["tunarr_collection_id"],
-            "startTime": _previous_sunday_midnight_ms(),
+            "startTime": _hhmm_to_ms("00:00"),
             "order": "ordered_shuffle",
             "direction": "asc",
             "padMs": 0,
@@ -7235,10 +8734,18 @@ async def tunarr_push_schedule(channel_number: int, body: TunarrPushScheduleIn):
     # Sort slots by startTime
     slots.sort(key=lambda x: x["startTime"])
 
+    # No dead air. Tunarr's default overflow (`duration`, maxMs 0) only places a
+    # program if it ENDS before the next slot, and turns the leftover into
+    # offline time: up to a whole movie's length before every slot boundary.
+    # `oneExtra` keeps adding programs until the slot is full, letting the last
+    # one run over. The next slot then starts late by at most that one program,
+    # so lateness must tolerate a full movie. With a small `latenessMs` Tunarr
+    # blanks the ENTIRE late slot instead (Galaxy MTV lost 4h slots this way).
     schedule = {
         "type": "time",
         "flexPreference": "distribute",
-        "latenessMs": 1800000,
+        "overflow": TUNARR_SLOT_OVERFLOW,
+        "latenessMs": TUNARR_SLOT_LATENESS_MS,
         "maxDays": 30,
         "padMs": 0,
         "period": "day",
@@ -7655,24 +9162,19 @@ async def restore_db(request: Request):
 
 # ── MCP server ────────────────────────────────────────────────────────────────
 # Streamable-HTTP Model Context Protocol endpoint at /mcp. Lets AI assistants
-# (Claude Code, Claude Desktop, any MCP client) manage channels, browse the
-# Plex library, assign content, and build/manage collections. Auth: bearer
-# token (settings key `mcp_token`), enforced in auth_middleware. Tools call
-# the internal route handlers directly — no HTTP-to-self loop.
+# (Claude Code, Claude Desktop, any MCP client) drive Linearr. Tools live in the
+# `linearr_mcp` package, one module per toolset; they call the route handlers in
+# this module directly — no HTTP-to-self loop. Auth: bearer token (settings key
+# `mcp_token`), enforced in auth_middleware.
 
-from mcp.server.fastmcp import FastMCP
+import sys
+
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
 
-mcp_server = FastMCP(
-    "linearr",
-    instructions=(
-        "Linearr manages TV channel lineups for Plex + Tunarr. Channels hold "
-        "content assignments (movies/shows from the user's Plex library). "
-        "Typical flow: browse or search the library, create/pick a channel, "
-        "assign items to it, then build Plex collections from the channel."
-    ),
-)
+from linearr_mcp import build_mcp_server
+
+mcp_server, MCP_TOOLSET_INFO = build_mcp_server(sys.modules[__name__])
 
 _mcp_session_manager: StreamableHTTPSessionManager | None = None
 
@@ -7687,395 +9189,6 @@ def _make_mcp_session_manager() -> StreamableHTTPSessionManager:
         security_settings=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
 
-def _tool_error(exc: HTTPException) -> RuntimeError:
-    """Convert an internal HTTPException into a human-readable tool error."""
-    return RuntimeError(f"{exc.detail}" if exc.detail else f"HTTP {exc.status_code}")
-
-# ---- Channels ----------------------------------------------------------------
-
-@mcp_server.tool(name="list_channels")
-async def mcp_list_channels() -> list[dict]:
-    """List all channels in the lineup (number, name, tier, vibe, mode, style, color)."""
-    # Strip icon blobs (base64 PNGs) — pure noise for an LLM consumer.
-    return [{k: v for k, v in ch.items() if k != "icon"} for ch in list_channels()]
-
-@mcp_server.tool(name="get_channel")
-async def mcp_get_channel(number: int) -> dict:
-    """Get one channel plus everything assigned to it (titles, types, years)."""
-    ch = _get_channel(number)
-    if not ch:
-        raise RuntimeError(f"Channel {number} not found")
-    ch.pop("icon", None)  # base64 blob — noise for an LLM
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT id, plex_rating_key, plex_title, plex_type, plex_year FROM assignments "
-            "WHERE channel_number=? ORDER BY plex_title", (number,)).fetchall()
-    ch["assignments"] = [dict(r) for r in rows]
-    ch["assignment_count"] = len(ch["assignments"])
-    return ch
-
-@mcp_server.tool(name="create_channel")
-async def mcp_create_channel(number: int, name: str, tier: str = "Galaxy Main",
-                             vibe: str = "", mode: str = "Shuffle", style: str = "",
-                             color: str = "blue") -> dict:
-    """Create a channel. tier: 'Galaxy Main' | 'Classics' | 'Galaxy Premium'.
-    mode: 'Shuffle' | 'Flex' | 'Sequential'. If Tunarr is configured, this also
-    CREATES a matching Tunarr channel and links it (not just a sync)."""
-    try:
-        result = await create_channel(ChannelIn(number=number, name=name, tier=tier,
-                                                vibe=vibe, mode=mode, style=style, color=color))
-    except HTTPException as e:
-        raise _tool_error(e)
-    result.pop("icon", None)
-    return result
-
-@mcp_server.tool(name="update_channel")
-async def mcp_update_channel(number: int, new_number: int | None = None,
-                             name: str | None = None, tier: str | None = None,
-                             vibe: str | None = None, mode: str | None = None,
-                             style: str | None = None, color: str | None = None) -> dict:
-    """Update a channel. Only the fields you pass change; pass new_number to renumber
-    (assignments, blocks and links follow the channel). If Tunarr is configured
-    and no link exists yet, a matching Tunarr channel may be created."""
-    existing = _get_channel(number)
-    if not existing:
-        raise RuntimeError(f"Channel {number} not found")
-    body = ChannelIn(
-        number=new_number if new_number is not None else number,
-        name=name if name is not None else existing["name"],
-        tier=tier if tier is not None else existing["tier"],
-        vibe=vibe if vibe is not None else (existing.get("vibe") or ""),
-        mode=mode if mode is not None else (existing.get("mode") or "Shuffle"),
-        style=style if style is not None else (existing.get("style") or ""),
-        color=color if color is not None else (existing.get("color") or "blue"),
-        icon=existing.get("icon"),
-    )
-    try:
-        result = await update_channel(number, body)
-    except HTTPException as e:
-        raise _tool_error(e)
-    result.pop("icon", None)
-    return result
-
-@mcp_server.tool(name="delete_channel")
-async def mcp_delete_channel(number: int) -> dict:
-    """Delete a channel. DESTRUCTIVE: also removes its assignments, schedule
-    blocks, collection links and Tunarr links. Cannot be undone."""
-    try:
-        return delete_channel(number)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-# ---- Plex library ------------------------------------------------------------
-
-@mcp_server.tool(name="list_libraries")
-async def mcp_list_libraries() -> list[dict]:
-    """List the Plex libraries (movie/show sections) with their section ids."""
-    try:
-        return await plex_libraries()
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="browse_library")
-async def mcp_browse_library(section_id: str, type_filter: str = "all",
-                             genre: str | None = None, year: int | None = None,
-                             content_rating: str | None = None,
-                             offset: int = 0, limit: int = 50) -> dict:
-    """Browse a Plex library section. type_filter: all|movie|show. Filter by genre
-    name, year, or content rating. Paged — returns total plus a window."""
-    try:
-        items = await plex_library(section_id, type_filter=type_filter, genre=genre,
-                                   year=year, content_rating=content_rating)
-    except HTTPException as e:
-        raise _tool_error(e)
-    return {"total": len(items), "offset": offset,
-            "items": items[offset:offset + max(1, min(limit, 200))]}
-
-@mcp_server.tool(name="search_library")
-async def mcp_search_library(query: str, type_filter: str = "all") -> list[dict]:
-    """Search the whole Plex server for movies/shows by title. type_filter: all|movie|show."""
-    try:
-        return await plex_search(q=query, type_filter=type_filter)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="get_item")
-async def mcp_get_item(rating_key: str) -> dict:
-    """Full details for one Plex item: summary, genres, duration, ratings, media quality."""
-    try:
-        return await plex_item(rating_key)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="get_show_seasons")
-async def mcp_get_show_seasons(rating_key: str) -> list[dict]:
-    """List a show's seasons (pass the show's rating_key)."""
-    try:
-        return await plex_show_seasons(rating_key)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="get_season_episodes")
-async def mcp_get_season_episodes(rating_key: str) -> list[dict]:
-    """List a season's episodes (pass the season's rating_key from get_show_seasons)."""
-    try:
-        return await plex_season_episodes(rating_key)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-# ---- Assignments ---------------------------------------------------------------
-
-@mcp_server.tool(name="list_assignments")
-async def mcp_list_assignments(channel_number: int | None = None) -> dict:
-    """List content assignments — all channels, or one channel if channel_number given."""
-    with get_db() as conn:
-        if channel_number is not None:
-            rows = conn.execute(
-                "SELECT id, channel_number, plex_rating_key, plex_title, plex_type, plex_year "
-                "FROM assignments WHERE channel_number=? ORDER BY plex_title",
-                (channel_number,)).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT id, channel_number, plex_rating_key, plex_title, plex_type, plex_year "
-                "FROM assignments ORDER BY channel_number, plex_title").fetchall()
-    grouped: dict[str, list] = {}
-    for r in rows:
-        grouped.setdefault(str(r["channel_number"]), []).append(
-            {k: r[k] for k in ("id", "plex_rating_key", "plex_title", "plex_type", "plex_year")})
-    return {"channels": grouped, "total": len(rows)}
-
-@mcp_server.tool(name="assign_items")
-async def mcp_assign_items(channel_number: int, rating_keys: list[str]) -> dict:
-    """Assign Plex items (movies/shows) to a channel by rating key. Fetches each
-    item's metadata from Plex; duplicates are skipped, not errors."""
-    if not _get_channel(channel_number):
-        raise RuntimeError(f"Channel {channel_number} not found")
-    items, failed = [], []
-    for rk in rating_keys:
-        try:
-            it = await plex_item(rk)
-            items.append(BulkAssignmentItem(
-                plex_rating_key=str(it["rating_key"]),
-                plex_title=it.get("title") or rk, plex_type=it.get("type") or "movie",
-                plex_thumb=it.get("thumb"), plex_year=it.get("year")))
-        except HTTPException as e:
-            failed.append({"rating_key": rk, "error": str(e.detail)})
-    if not items and failed:
-        raise RuntimeError(f"No items could be fetched from Plex: {failed}")
-    try:
-        result = bulk_assignments(BulkAssignmentIn(channel_number=channel_number, items=items))
-    except HTTPException as e:
-        raise _tool_error(e)
-    return {"added": result["added"], "skipped_duplicates": result["skipped"], "failed": failed}
-
-@mcp_server.tool(name="unassign_item")
-async def mcp_unassign_item(channel_number: int, rating_key: str) -> dict:
-    """Remove one assigned item from a channel (by Plex rating key)."""
-    with get_db() as conn:
-        cur = conn.execute(
-            "DELETE FROM assignments WHERE channel_number=? AND plex_rating_key=?",
-            (channel_number, rating_key))
-    if cur.rowcount == 0:
-        raise RuntimeError(f"Nothing assigned with rating key {rating_key} on channel {channel_number}")
-    _log_app("assignment", f"Unassigned {rating_key} from ch {channel_number}",
-             metadata={"channel": channel_number, "rating_key": rating_key})
-    return {"ok": True, "removed": cur.rowcount}
-
-@mcp_server.tool(name="purge_channel_content")
-async def mcp_purge_channel_content(channel_number: int, content_type: str = "both") -> dict:
-    """Bulk-remove a channel's assigned content. DESTRUCTIVE. content_type:
-    'movies' removes all movies, 'shows' removes all shows, 'both' clears
-    everything assigned to the channel. Returns how many items were removed."""
-    try:
-        return purge_channel_assignments(channel_number, content_type=content_type)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-# ---- Collections ---------------------------------------------------------------
-
-@mcp_server.tool(name="get_collection_status")
-async def mcp_get_collection_status(channel_number: int) -> dict:
-    """Check whether Plex collections already exist for a channel's movies/shows."""
-    try:
-        return await collection_status(channel_number)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="build_collections")
-async def mcp_build_collections(channel_number: int) -> dict:
-    """Create/update Plex collections from a channel's assignments (one for movies,
-    one for shows) and link them to the channel. Also syncs Tunarr if linked."""
-    try:
-        return await generate_collections(channel_number)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="list_plex_collections")
-async def mcp_list_plex_collections(offset: int = 0, limit: int = 100) -> dict:
-    """List collections on the Plex server (title, type, item count, smart flag).
-    Paged — returns total plus a window."""
-    try:
-        items = await plex_collections()
-    except HTTPException as e:
-        raise _tool_error(e)
-    return {"total": len(items), "offset": offset,
-            "collections": items[offset:offset + max(1, min(limit, 500))]}
-
-@mcp_server.tool(name="get_collection_items")
-async def mcp_get_collection_items(rating_key: str, offset: int = 0, limit: int = 100) -> dict:
-    """List the items inside a Plex collection. Paged — returns total plus a window."""
-    try:
-        items = await plex_collection_items(rating_key)
-    except HTTPException as e:
-        raise _tool_error(e)
-    return {"total": len(items), "offset": offset,
-            "items": items[offset:offset + max(1, min(limit, 500))]}
-
-@mcp_server.tool(name="create_smart_collection")
-async def mcp_create_smart_collection(section_id: str, title: str, type: str = "movie",
-                                      genres: list[str] = [], year_min: int | None = None,
-                                      year_max: int | None = None, decade: int | None = None,
-                                      unwatched: bool = False, content_rating: str | None = None,
-                                      title_contains: str | None = None, sort: str | None = None,
-                                      limit: int | None = None) -> dict:
-    """Create a rule-based Plex smart collection that stays current automatically.
-    Genres are names (e.g. ['Horror']); sort: title_asc|title_desc|year_asc|
-    year_desc|added_desc|random. type: movie|show."""
-    body = SmartCollectionIn(
-        section_id=section_id, type=type, title=title, sort=sort, limit=limit,
-        filters=SmartCollectionFilters(genres=genres, year_min=year_min, year_max=year_max,
-                                       decade=decade, unwatched=unwatched,
-                                       content_rating=content_rating,
-                                       title_contains=title_contains))
-    try:
-        return await plex_create_smart_collection(body)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="update_smart_collection")
-async def mcp_update_smart_collection(rating_key: str, section_id: str, type: str = "movie",
-                                      title: str | None = None, genres: list[str] = [],
-                                      year_min: int | None = None, year_max: int | None = None,
-                                      decade: int | None = None, unwatched: bool = False,
-                                      content_rating: str | None = None,
-                                      title_contains: str | None = None, sort: str | None = None,
-                                      limit: int | None = None) -> dict:
-    """Update a smart collection's title and/or REPLACE its filter rules.
-    Filter rules are only touched when at least one filter argument (genres,
-    year_min/max, decade, unwatched, content_rating, title_contains, sort,
-    limit) is provided — passing only `title` renames without changing rules.
-    When replacing rules, pass the COMPLETE new rule set: whatever you send
-    becomes the entire filter."""
-    # Only rebuild the filter when the caller actually supplied filter args —
-    # otherwise a rename-only call would replace the rules with an empty
-    # match-everything filter.
-    filters_given = bool(genres) or unwatched or any(
-        v is not None for v in (year_min, year_max, decade, content_rating,
-                                title_contains, sort, limit))
-    filters = SmartCollectionFilters(genres=genres, year_min=year_min, year_max=year_max,
-                                     decade=decade, unwatched=unwatched,
-                                     content_rating=content_rating,
-                                     title_contains=title_contains) if filters_given else None
-    body = SmartCollectionUpdateIn(section_id=section_id, type=type, title=title,
-                                   filters=filters, sort=sort, limit=limit)
-    try:
-        return await plex_update_smart_collection(rating_key, body)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="delete_collection")
-async def mcp_delete_collection(rating_key: str) -> dict:
-    """Delete a Plex collection (regular or smart). DESTRUCTIVE — removes it from
-    Plex and unlinks it from any channel. Library items themselves are untouched."""
-    try:
-        return await plex_delete_collection(rating_key)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-# ---- Server --------------------------------------------------------------------
-
-@mcp_server.tool(name="get_server_info")
-async def mcp_get_server_info() -> dict:
-    """Plex server metadata: name, version, platform, library summary. Good health check."""
-    try:
-        return await plex_server_info()
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="get_now_playing")
-async def mcp_get_now_playing() -> list[dict]:
-    """What's streaming on the Plex server right now (active sessions)."""
-    try:
-        return await plex_sessions()
-    except HTTPException as e:
-        raise _tool_error(e)
-
-@mcp_server.tool(name="get_recent_events")
-async def mcp_get_recent_events(limit: int = 50) -> list[dict]:
-    """Recent Plex webhook events recorded by Linearr (new content, playback, etc.)."""
-    try:
-        return plex_events(event_type=None, limit=limit)
-    except HTTPException as e:
-        raise _tool_error(e)
-
-def _mcp_args_summary(kwargs: dict) -> dict:
-    """Compact, log-safe view of a tool call's arguments."""
-    out = {}
-    for k, v in kwargs.items():
-        if isinstance(v, list) and len(v) > 5:
-            out[k] = f"[{len(v)} items]"
-        elif isinstance(v, str) and len(v) > 80:
-            out[k] = v[:77] + "..."
-        else:
-            out[k] = v
-    return out
-
-def _instrument_mcp_tools() -> None:
-    """Wrap every registered MCP tool so each invocation lands in the Activity
-    Log (category 'mcp') with duration, arg summary, and outcome — successes
-    and failures alike. Also converts raw network errors (Plex/Tunarr down)
-    into a readable tool error instead of an httpx traceback. Wrapping happens
-    AFTER registration so the input schemas were already built from the
-    original signatures."""
-    import inspect as _inspect
-
-    def _wrap(tool):
-        orig = tool.fn
-
-        async def logged(**kwargs):
-            t0 = time.monotonic()
-            summary = _mcp_args_summary(kwargs)
-            try:
-                res = orig(**kwargs)
-                if _inspect.isawaitable(res):
-                    res = await res
-            except httpx.HTTPError as e:
-                _log_app("mcp", f"Tool {tool.name} failed", level="error",
-                         detail=f"Upstream unreachable: {e}",
-                         duration_ms=int((time.monotonic() - t0) * 1000),
-                         metadata={"tool": tool.name, "args": summary})
-                raise RuntimeError(f"Cannot reach the upstream server: {e}") from e
-            except Exception as e:
-                _log_app("mcp", f"Tool {tool.name} failed", level="error",
-                         detail=str(e)[:500],
-                         duration_ms=int((time.monotonic() - t0) * 1000),
-                         metadata={"tool": tool.name, "args": summary})
-                raise
-            _log_app("mcp", f"Tool {tool.name}",
-                     duration_ms=int((time.monotonic() - t0) * 1000),
-                     metadata={"tool": tool.name, "args": summary})
-            return res
-
-        try:
-            tool.fn = logged
-        except Exception:  # pydantic-frozen model fallback
-            object.__setattr__(tool, "fn", logged)
-
-    for t in mcp_server._tool_manager.list_tools():
-        _wrap(t)
-
-_instrument_mcp_tools()
-
 async def _mcp_asgi(scope, receive, send):
     """Thin delegate so the mount always talks to the CURRENT session manager
     (a fresh one is created per app lifecycle in lifespan)."""
@@ -8087,6 +9200,10 @@ app.mount("/mcp", _mcp_asgi)
 
 # ---- MCP management (session-cookie auth, like the rest of /api) --------------
 
+class McpToolsetsIn(BaseModel):
+    toolsets: list[str]
+
+
 @app.get("/api/mcp/info")
 def mcp_info():
     """Connection info for the MCP endpoint (shown in Settings)."""
@@ -8094,7 +9211,29 @@ def mcp_info():
         "endpoint": "/mcp",
         "token": _get_mcp_token(),
         "tool_count": len(mcp_server._tool_manager.list_tools()),
+        "toolsets": MCP_TOOLSET_INFO,
     }
+
+
+@app.put("/api/mcp/toolsets")
+def mcp_set_toolsets(body: McpToolsetsIn):
+    """Choose which MCP toolsets are registered.
+
+    Tools are registered at import, so a change takes effect on the next app
+    start — the response says so rather than pretending it was live.
+    """
+    from linearr_mcp.registry import TOOLSETS as _ALL
+    chosen = [t.strip().lower() for t in body.toolsets if t.strip()]
+    unknown = [t for t in chosen if t not in _ALL]
+    if unknown:
+        raise HTTPException(400, f"Unknown toolset(s): {', '.join(unknown)}")
+    if not chosen:
+        raise HTTPException(400, "Select at least one toolset")
+    value = ",".join(t for t in _ALL if t in chosen)
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO settings VALUES ('mcp_toolsets', ?)", (value,))
+    _log_app("system", f"MCP toolsets set to: {value}", "warn")
+    return {"ok": True, "toolsets": value.split(","), "restart_required": True}
 
 @app.post("/api/mcp/regenerate-token")
 def mcp_regenerate_token():
@@ -8112,17 +9251,39 @@ def mcp_regenerate_token():
 
 DIST_DIR = Path("/app/dist")
 
+# Built-output subdirectories served as files rather than falling through to the
+# SPA shell. `fonts/` is here because the editor fonts are self-hosted (the CSP
+# blocks Google Fonts); without it a request for a .woff2 would be answered with
+# index.html and every face would fail to parse — a failure that looks exactly
+# like the CSP bug it was meant to fix.
+_STATIC_PREFIXES = ("assets/", "fonts/")
+
+
+def _dist_file(rel: str) -> Path | None:
+    """Resolve a path under DIST_DIR, or None if it escapes or does not exist.
+
+    The traversal check is on the RESOLVED path: `full_path` arrives from the
+    URL, and `DIST_DIR / "../.."` would otherwise walk out of the served tree.
+    """
+    try:
+        candidate = (DIST_DIR / rel).resolve()
+        candidate.relative_to(DIST_DIR.resolve())
+    except (ValueError, OSError):
+        return None
+    return candidate if candidate.is_file() else None
+
+
 @app.get("/{full_path:path}", include_in_schema=False)
 def spa_fallback(full_path: str = ""):
-    # Serve built static assets (JS, CSS, etc.) directly
-    if full_path.startswith("assets/"):
-        asset = DIST_DIR / full_path
-        if asset.exists():
+    # Serve built static assets (JS, CSS, fonts) directly
+    if full_path.startswith(_STATIC_PREFIXES):
+        asset = _dist_file(full_path)
+        if asset:
             return FileResponse(asset)
     # Serve root-level static files (favicon, manifest, icons, sw.js)
-    if full_path and not "/" in full_path:
-        root_file = DIST_DIR / full_path
-        if root_file.exists() and root_file.is_file():
+    if full_path and "/" not in full_path:
+        root_file = _dist_file(full_path)
+        if root_file:
             return FileResponse(root_file)
     # All other paths → SPA shell
     if INDEX_HTML.exists():

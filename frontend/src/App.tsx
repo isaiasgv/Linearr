@@ -74,6 +74,16 @@ const IconEditorModal = lazy(() =>
     default: m.IconEditorModal,
   })),
 )
+const IconGeneratorModal = lazy(() =>
+  import('@/features/icons/components/IconGeneratorModal').then((m) => ({
+    default: m.IconGeneratorModal,
+  })),
+)
+const ChannelIconUrlModal = lazy(() =>
+  import('@/features/icons/components/ChannelIconUrlModal').then((m) => ({
+    default: m.ChannelIconUrlModal,
+  })),
+)
 const IconPickerModal = lazy(() =>
   import('@/features/channels/components/IconPickerModal').then((m) => ({
     default: m.IconPickerModal,
@@ -87,6 +97,17 @@ const WatermarkEditorModal = lazy(() =>
 const AddContentModal = lazy(() =>
   import('@/features/cable-plex/components/AddContentModal').then((m) => ({
     default: m.AddContentModal,
+  })),
+)
+const ChannelGuideModal = lazy(() =>
+  import('@/features/tunarr/components/ChannelGuideModal').then((m) => ({
+    default: m.ChannelGuideModal,
+  })),
+)
+// Lazy matters here: this pulls hls.js (~150 KB) on first open only.
+const ChannelStreamModal = lazy(() =>
+  import('@/features/tunarr/components/ChannelStreamModal').then((m) => ({
+    default: m.ChannelStreamModal,
   })),
 )
 const TunarrView = lazy(() =>
@@ -175,9 +196,13 @@ export default function App() {
         <AssignCollectionModal />
         <SmartCollectionBuilderModal />
         <IconEditorModal />
+        <IconGeneratorModal />
+        <ChannelIconUrlModal />
         <IconPickerModal />
         <WatermarkEditorModal />
         <AddContentModal />
+        <ChannelGuideModal />
+        <ChannelStreamModal />
       </Suspense>
     </AppLayout>
   )

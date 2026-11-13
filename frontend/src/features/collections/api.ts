@@ -11,8 +11,26 @@ function getCollectionStatus(channelNumber: number): Promise<CollectionStatus> {
 }
 
 interface GenerateCollectionsResult {
-  movie?: { name: string; created: boolean; added: number; removed: number; total: number }
-  show?: { name: string; created: boolean; added: number; removed: number; total: number }
+  movie?: {
+    name: string | null
+    created: boolean
+    added: number
+    removed: number
+    total: number
+    /** Present when the type was not built — e.g. its slot references one of
+     *  your own collections, which a build deliberately leaves alone. */
+    skipped?: string
+  }
+  show?: {
+    name: string | null
+    created: boolean
+    added: number
+    removed: number
+    total: number
+    /** Present when the type was not built — e.g. its slot references one of
+     *  your own collections, which a build deliberately leaves alone. */
+    skipped?: string
+  }
   tunarr?: { synced: boolean; error: string | null }
 }
 

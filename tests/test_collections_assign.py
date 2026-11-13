@@ -250,7 +250,13 @@ def test_get_channel_collections_exposes_source_and_is_smart(auth_client):
 # ── generate_collections interaction ──────────────────────────────────────────
 
 @respx.mock
-def test_generate_flips_assigned_slot_back_to_owned(auth_client):
+def test_generate_leaves_an_assigned_slot_alone(auth_client):
+    """A build must NOT convert an assigned slot back to owned.
+
+    It used to, which made a mixed channel — an existing collection referenced
+    for movies while Linearr generates the shows — impossible to keep: one build
+    silently discarded the assignment.
+    """
     _seed_channel(920, "FlipBack")
     auth_client.post("/api/channel-collections/920/assign", json={
         "plex_type": "movie", "collection_rating_key": "777",
@@ -265,10 +271,32 @@ def test_generate_flips_assigned_slot_back_to_owned(auth_client):
     assert resp.status_code == 200, resp.text
 
     row = _slot(920, "movie")
+    assert row["source"] == "assigned", "a build converted an assigned slot"
+    assert row["collection_rating_key"] == "777"
+    assert row["collection_title"] == "User Sci-Fi"
+    assert resp.json()["movie"].get("skipped"), "the skip should be reported, not silent"
+
+
+@respx.mock
+def test_take_over_assigned_converts_the_slot(auth_client):
+    """The explicit opt-in — the old unconditional behaviour, now opt-in."""
+    _seed_channel(924, "TakeOver")
+    auth_client.post("/api/channel-collections/924/assign", json={
+        "plex_type": "movie", "collection_rating_key": "777",
+        "collection_title": "User Sci-Fi", "is_smart": True})
+
+    r = respx.mock
+    _base_plex_routes(r, section_collections=[{"title": "TakeOver Movies", "ratingKey": "500"}], children=[])
+    r.put(url__regex=rf"{PLEX}/library/collections/500/items").mock(return_value=httpx.Response(200, json={}))
+
+    resp = auth_client.post("/api/collections/generate/924?take_over_assigned=true")
+    assert resp.status_code == 200, resp.text
+
+    row = _slot(924, "movie")
     assert row["source"] == "owned"
     assert row["is_smart"] == 0
     assert row["collection_rating_key"] == "500"
-    assert row["collection_title"] == "FlipBack Movies"
+    assert row["collection_title"] == "TakeOver Movies"
     assert row["managed"] == 1
 
 
@@ -310,7 +338,7 @@ def test_generate_never_touches_assigned_collection(auth_client):
     assigned_wipe = r.delete(f"{PLEX}/library/collections/777").mock(
         return_value=httpx.Response(200, json={}))
 
-    resp = auth_client.post("/api/collections/generate/921")
+    resp = auth_client.post("/api/collections/generate/921?take_over_assigned=true")
     assert resp.status_code == 200, resp.text
 
     # Only the owned, name-resolved collection was written to.
@@ -371,7 +399,7 @@ def test_generate_can_never_prune_a_lookalike_collection(auth_client):
 
     # Step 3 — build repeatedly. The old code pruned on the second build.
     for build in range(1, 4):
-        resp = auth_client.post("/api/collections/generate/923")
+        resp = auth_client.post("/api/collections/generate/923?take_over_assigned=true")
         assert resp.status_code == 200, resp.text
         movie = resp.json()["movie"]
         assert movie["additive_only"] is True, f"build {build} entered the pruning path"
@@ -616,7 +644,9 @@ def test_sync_collections_pushes_an_assigned_collection(auth_client):
         201, json={"uuid": "sc-9", "name": "User Sci-Fi",
                    "filter": {"type": "value"}, "filterString": 'tags = "User Sci-Fi"'}))
 
-    resp = auth_client.post("/api/tunarr/channel-links/960/sync-collections")
+    # `rebuild=false`: this test is about what gets PUSHED, and the default
+    # rebuild would drag the whole Plex generation path (and its mocks) in.
+    resp = auth_client.post("/api/tunarr/channel-links/960/sync-collections?rebuild=false")
     assert resp.status_code == 200, resp.text
     assert created.called
     body = resp.json()

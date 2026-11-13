@@ -83,7 +83,10 @@ export function BlockCard({ block }: BlockCardProps) {
         tabIndex={0}
         aria-expanded={isExpanded}
         aria-label={`${block.name} — ${isExpanded ? 'collapse' : 'expand'} block`}
-        className={`border-l-4 ${borderColor} px-4 py-3 flex items-center gap-3 cursor-pointer select-none focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset`}
+        // Wraps on mobile: the info block, the fill counter and up to four
+        // action buttons do not fit on one 375px line, and `shrink-0` on the
+        // actions meant the block NAME was what got crushed.
+        className={`border-l-4 ${borderColor} flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3 select-none focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset sm:flex-nowrap sm:px-4`}
         onClick={() => expandBlock(block.id)}
         onKeyDown={(e) => {
           if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
@@ -93,8 +96,8 @@ export function BlockCard({ block }: BlockCardProps) {
         }}
       >
         {/* Block info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-semibold text-slate-100">{block.name}</span>
             <span className="text-xs text-slate-400">
               {to12h(block.start_time)} – {to12h(block.end_time)}
@@ -122,7 +125,10 @@ export function BlockCard({ block }: BlockCardProps) {
         </div>
 
         {/* Action buttons */}
-        <div className="shrink-0 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="ml-auto flex shrink-0 items-center gap-1"
+          onClick={(e) => e.stopPropagation()}
+        >
           {isGeneric && selectedChannel && (
             <Button
               size="xs"

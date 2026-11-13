@@ -50,7 +50,53 @@ function importFromTunarr(): Promise<{ ok: boolean; imported: number; assigned: 
   return post<{ ok: boolean; imported: number; assigned: number }>('/api/icons/import-from-tunarr')
 }
 
+/**
+ * The channel icon, and the URL Tunarr is given for it.
+ *
+ * Two different things: `icon` is the data URI Linearr renders itself, while
+ * `icon_url` is the absolute HTTP URL Tunarr publishes in the guide and Plex
+ * clients fetch. `manual` means it was set by hand and will not be re-derived.
+ */
+export interface ChannelIcon {
+  icon: string | null
+  icon_url: string | null
+  manual: boolean
+}
+
+function getChannelIcon(channelNumber: number): Promise<ChannelIcon> {
+  return get<ChannelIcon>(`/api/channels/${channelNumber}/icon`)
+}
+
+/** `{url}` to set one verbatim, `{image}` to upload bytes, `{}` to re-derive. */
+function setChannelIconImage(
+  channelNumber: number,
+  body: { url?: string; image?: string },
+): Promise<{ ok: boolean; icon_url: string; manual: boolean }> {
+  return post(`/api/channels/${channelNumber}/icon/image`, body)
+}
+
+/** Inputs for a server-rendered house-style icon (see `icon_render.py`). */
+export interface IconRenderBody {
+  name?: string
+  tier?: string
+  brand?: string
+  text?: string
+  /** Plex rating key — its clear logo replaces the text line. */
+  plex_logo?: string
+  scale?: number
+}
+
+/**
+ * Render an icon on the server. The server owns the house style — measured
+ * from the logos on air — so the form, the channel view, the API and the MCP
+ * tools all get the same PNG.
+ */
+function renderIcon(body: IconRenderBody): Promise<{ icon: string }> {
+  return post<{ icon: string }>('/api/icons/render', body)
+}
+
 export const iconsApi = {
+  renderIcon,
   listIcons,
   saveIcon,
   updateIcon,
@@ -58,4 +104,6 @@ export const iconsApi = {
   assignToChannel,
   seedPack,
   importFromTunarr,
+  getChannelIcon,
+  setChannelIconImage,
 }

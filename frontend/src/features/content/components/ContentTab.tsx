@@ -4,7 +4,7 @@ import {
   useChannelCollections,
   useCollectionStatus,
   useDeletePlexCollection,
-  useGenerateCollections,
+  useBuildChannelCollections,
   useUnlinkCollection,
 } from '@/features/collections/hooks'
 import { useSyncCollections, useTunarrCollectionLinks } from '@/features/tunarr/hooks'
@@ -154,7 +154,9 @@ function CollectionTypeStatus({
   onImportItems,
   onUnassign,
   onPushToTunarr,
+  onBuildToPlex,
   pushPending,
+  buildPending,
   busy,
 }: {
   label: string
@@ -169,7 +171,9 @@ function CollectionTypeStatus({
   onImportItems: () => void
   onUnassign: () => void
   onPushToTunarr: () => void
+  onBuildToPlex: () => void
   pushPending: boolean
+  buildPending: boolean
   busy: boolean
 }) {
   const plexExists = Boolean(status?.exists)
@@ -187,8 +191,10 @@ function CollectionTypeStatus({
   const title = isAssigned ? collection!.collection_title : (status?.name ?? '—')
 
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="flex items-center gap-1 text-slate-300 font-medium">
+    // Wraps within itself: this row is ~380px of chips, which is wider than a
+    // phone, and letting it overflow pushed the actions menu off-screen.
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <span className="flex items-center gap-1 font-medium text-slate-300">
         {icon}
         {label}
       </span>
@@ -221,21 +227,29 @@ function CollectionTypeStatus({
         {!isAssigned && <span className="text-slate-600">(generated)</span>}
       </span>
 
-      {/* Plex existence */}
-      <span
-        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 rounded-sm px-1.5 py-0.5"
+      {/* Plex existence — the counterpart of the Tunarr chip beside it, and a
+          button for the same reason: the two are styled identically, so a
+          static one reads as a dead button. Building is the Plex-side push. */}
+      <button
+        onClick={onBuildToPlex}
+        disabled={buildPending}
         title={
           plexExists
-            ? `Collection exists on Plex (${plexCount} item${plexCount !== 1 ? 's' : ''})`
-            : 'No Plex collection yet'
+            ? `Collection exists on Plex (${plexCount} item${plexCount !== 1 ? 's' : ''}) — click to rebuild it from this channel's assignments`
+            : 'No Plex collection yet — click to build it from this channel’s assignments'
         }
+        className="flex items-center gap-1 bg-slate-800/60 border border-slate-700 hover:border-slate-500 rounded-sm px-1.5 py-0.5 transition-colors disabled:opacity-50 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500"
       >
         <img src="/plex.svg" alt="Plex" className="w-3 h-3 rounded-xs" />
-        <StatusDot state={plexExists ? 'ok' : 'unknown'} pulse={false} />
+        {buildPending ? (
+          <Spinner size="sm" />
+        ) : (
+          <StatusDot state={plexExists ? 'ok' : 'unknown'} pulse={false} />
+        )}
         <span className={plexExists ? 'text-slate-300' : 'text-slate-500'}>
-          {plexExists ? plexCount : 'none'}
+          {plexExists ? plexCount : 'build'}
         </span>
-      </span>
+      </button>
 
       {/* Tunarr linkage */}
       <button
@@ -418,13 +432,18 @@ function PurgeMenu({
 
 export function ContentTab({ channelNumber }: ContentTabProps) {
   const [subTab, setSubTab] = useState<ContentSubTab>('assigned')
-  const [barOpen, setBarOpen] = useState(true)
+  // Collapsed by default on a phone. Expanded it is three stacked rows of
+  // chips, which pushed the actual content — the posters people came for —
+  // most of the way off a 375px screen before anything loaded.
+  const [barOpen, setBarOpen] = useState(
+    () => typeof window === 'undefined' || window.innerWidth >= 768,
+  )
 
   const { data: assignments = [] } = useChannelAssignments(channelNumber)
   const { data: channelCollections } = useChannelCollections(channelNumber)
   const { data: collectionStatus } = useCollectionStatus(channelNumber)
   const { data: tunarrCollectionLinks = [] } = useTunarrCollectionLinks()
-  const generateCollections = useGenerateCollections()
+  const buildCollections = useBuildChannelCollections()
   const unlinkCollection = useUnlinkCollection()
   const deletePlexCollection = useDeletePlexCollection()
   const syncCollections = useSyncCollections()
@@ -441,7 +460,7 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
   )
 
   const busy =
-    generateCollections.isPending || unlinkCollection.isPending || deletePlexCollection.isPending
+    buildCollections.isPending || unlinkCollection.isPending || deletePlexCollection.isPending
 
   function openAssign(plexType: 'movie' | 'show') {
     openModal('assignCollection', {
@@ -497,26 +516,21 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
   }
 
   async function handleBuild() {
-    // Generating resolves the target purely by owned name, so an assigned slot
-    // is switched back to owned. Say so before it happens.
-    const switching = [movieCollection, showCollection].filter((c) => c?.source === 'assigned')
-    if (switching.length > 0) {
-      const names = switching.map((c) => `“${c!.collection_title}”`).join(' and ')
-      const confirmed = await confirmDialog({
-        title: 'Switch back to Linearr’s own collections?',
-        text: `This channel currently uses ${names} by reference. Building rebuilds “{Channel} Movies/TV” from the assigned items and makes that the active source again. ${switching.length > 1 ? 'Those collections' : 'That collection'} stays in Plex, untouched.`,
-        confirmText: 'Build collections',
-      })
-      if (!confirmed) return
-    }
-    generateCollections.mutate(channelNumber)
+    // Shared with the channel actions menu (ChannelDetail) so both entry points
+    // warn about the assigned -> owned switch identically.
+    await buildCollections.build(channelNumber, {
+      movie: movieCollection,
+      show: showCollection,
+    })
   }
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Collection status bar — slim + collapsible */}
       <div className="shrink-0 bg-slate-900/60 border-b border-slate-800">
-        <div className="flex items-center gap-2 px-3 py-1.5 flex-wrap">
+        {/* Column on mobile so each collection slot gets its own line; the
+            desktop single wrapping row is unchanged from md up. */}
+        <div className="flex flex-col items-stretch gap-2 px-3 py-1.5 md:flex-row md:flex-wrap md:items-center">
           <button
             onClick={() => setBarOpen((v) => !v)}
             className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
@@ -564,9 +578,13 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 onImportItems={() => setSubTab('browse')}
                 onUnassign={() => movieCollection && void handleUnassign('movie', movieCollection)}
                 onPushToTunarr={() => syncCollections.mutate(channelNumber)}
+                onBuildToPlex={() => void handleBuild()}
+                buildPending={buildCollections.isPending}
               />
 
-              <span className="text-slate-700">|</span>
+              {/* Separator only makes sense when the two slots share a line. */}
+              <span className="hidden text-slate-700 md:inline">|</span>
+              <span className="h-px bg-slate-800 md:hidden" />
 
               <CollectionTypeStatus
                 label="Shows"
@@ -596,15 +614,17 @@ export function ContentTab({ channelNumber }: ContentTabProps) {
                 onImportItems={() => setSubTab('browse')}
                 onUnassign={() => showCollection && void handleUnassign('show', showCollection)}
                 onPushToTunarr={() => syncCollections.mutate(channelNumber)}
+                onBuildToPlex={() => void handleBuild()}
+                buildPending={buildCollections.isPending}
               />
 
               <button
                 onClick={() => void handleBuild()}
-                disabled={generateCollections.isPending}
-                title="Builds Linearr's own “{Channel} Movies/TV” collections from the assigned items and syncs them to Plex + Tunarr. Your own collections are never modified — but any assigned slot switches back to the owned collection."
-                className="ml-auto flex items-center gap-1.5 text-xs px-2.5 py-1 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700 text-indigo-300 hover:text-indigo-200 rounded-lg transition-colors disabled:opacity-50"
+                disabled={buildCollections.isPending}
+                title="Rebuilds Linearr's own “{Channel} Movies/TV” collections from this channel's assigned items — adding what's new and removing what you've taken off the channel. A slot that references one of your own collections is left alone; unassign it first if you want Linearr to generate that type instead."
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-indigo-700 bg-indigo-900/40 px-2.5 py-2 text-xs text-indigo-300 transition-colors hover:bg-indigo-900/70 hover:text-indigo-200 disabled:opacity-50 md:ml-auto md:py-1"
               >
-                {generateCollections.isPending ? (
+                {buildCollections.isPending ? (
                   <Spinner size="sm" />
                 ) : (
                   <svg

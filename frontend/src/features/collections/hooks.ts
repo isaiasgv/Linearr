@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useToastStore } from '@/shared/store/toast.store'
-import type { SmartCollectionInput, SmartCollectionUpdateInput } from '@/shared/types'
+import type {
+  ChannelCollection,
+  SmartCollectionInput,
+  SmartCollectionUpdateInput,
+} from '@/shared/types'
 import { collectionsApi, type AssignCollectionBody } from './api'
 
 /** Every collection mutation moves the same three caches. */
@@ -26,6 +30,30 @@ export function useChannelCollections(channelNumber: number) {
   })
 }
 
+/**
+ * "Build/update this channel's own Plex collections."
+ *
+ * The two types are independent: a slot referencing an existing collection is
+ * left alone and reported as skipped, so a channel can keep an assigned movie
+ * collection while Linearr generates its shows. Building used to convert BOTH
+ * slots to owned, which made that mixed setup impossible to hold — one build
+ * discarded the assignment — so there is no longer a switch-back to warn about.
+ *
+ * `isPending` is exposed so callers can disable their control while it runs.
+ */
+export function useBuildChannelCollections() {
+  const generate = useGenerateCollections()
+
+  async function build(
+    channelNumber: number,
+    _collections?: { movie?: ChannelCollection; show?: ChannelCollection },
+  ): Promise<void> {
+    generate.mutate(channelNumber)
+  }
+
+  return { build, isPending: generate.isPending }
+}
+
 export function useGenerateCollections() {
   const queryClient = useQueryClient()
   const addToast = useToastStore((s) => s.addToast)
@@ -34,9 +62,23 @@ export function useGenerateCollections() {
     mutationFn: (channelNumber: number) => collectionsApi.generateCollections(channelNumber),
     onSuccess: (data, channelNumber) => {
       invalidateCollections(queryClient, channelNumber)
+      // Removals are reported explicitly. "N added" alone gave no sign that a
+      // removal had happened — or, when the type was being skipped, that it
+      // had not — which is what made this look like it wasn't working.
       const parts: string[] = []
-      if (data.movie) parts.push(`Movies: ${data.movie.added} added, ${data.movie.total} total`)
-      if (data.show) parts.push(`Shows: ${data.show.added} added, ${data.show.total} total`)
+      for (const [label, entry] of [
+        ['Movies', data.movie],
+        ['Shows', data.show],
+      ] as const) {
+        if (!entry) continue
+        if (entry.skipped) {
+          parts.push(`${label}: skipped`)
+          continue
+        }
+        const bits = [`${entry.added} added`]
+        if (entry.removed) bits.push(`${entry.removed} removed`)
+        parts.push(`${label}: ${bits.join(', ')}, ${entry.total} total`)
+      }
       addToast(parts.length > 0 ? parts.join(' | ') : 'Collections generated')
     },
     onError: (error: Error) => {

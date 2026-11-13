@@ -13,6 +13,7 @@ import {
   defaultComposition,
   newTextLayer500,
   newTextLayer400,
+  normalizeComposition,
   type Composition,
 } from '@/features/icons/editor/types'
 import {
@@ -74,7 +75,9 @@ export function IconEditorModal() {
   useEffect(() => {
     if (open) {
       if (incomingComposition && typeof incomingComposition === 'object') {
-        const comp = incomingComposition as Composition
+        // Stored projects predate the resizable canvas and carry a square
+        // `size` instead of width/height, so never trust the shape directly.
+        const comp = normalizeComposition(incomingComposition)
         if (comp.layers && comp.layers.length > 0) {
           setComposition(comp)
           setSelectedId(comp.layers[0].id)
@@ -186,7 +189,7 @@ export function IconEditorModal() {
         for (const v of COLOR_VARIANTS) {
           const recolored = applyColorMode(composition, v.id)
           const svg = await renderSVGWithFonts(recolored)
-          const blob = await rasterizeToPng(svg, composition.size)
+          const blob = await rasterizeToPng(svg, composition.width, composition.height)
           const dataUrl = await blobToDataUrl(blob)
           await iconsApi.saveIcon({
             name: `${baseName}${v.suffix}`,

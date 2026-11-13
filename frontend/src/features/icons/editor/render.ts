@@ -63,10 +63,10 @@ function escapeXml(s: string): string {
 
 function renderBackground(comp: Composition): string {
   const { type, value } = comp.background
-  const size = comp.size
+  const { width, height } = comp
   if (type === 'transparent') return ''
   if (type === 'solid') {
-    return `<rect width="${size}" height="${size}" fill="${escapeXml(value)}"/>`
+    return `<rect width="${width}" height="${height}" fill="${escapeXml(value)}"/>`
   }
   if (type === 'gradient') {
     // value: "angle|color1|color2"
@@ -78,16 +78,20 @@ function renderBackground(comp: Composition): string {
     const y1 = 50 + Math.sin(rad + Math.PI) * 50
     const x2 = 50 + Math.cos(rad) * 50
     const y2 = 50 + Math.sin(rad) * 50
-    return `<defs><linearGradient id="bg" x1="${x1}%" y1="${y1}%" x2="${x2}%" y2="${y2}%"><stop offset="0%" stop-color="${escapeXml(c1 || '#6366f1')}"/><stop offset="100%" stop-color="${escapeXml(c2 || '#a855f7')}"/></linearGradient></defs><rect width="${size}" height="${size}" fill="url(#bg)"/>`
+    return `<defs><linearGradient id="bg" x1="${x1}%" y1="${y1}%" x2="${x2}%" y2="${y2}%"><stop offset="0%" stop-color="${escapeXml(c1 || '#6366f1')}"/><stop offset="100%" stop-color="${escapeXml(c2 || '#a855f7')}"/></linearGradient></defs><rect width="${width}" height="${height}" fill="url(#bg)"/>`
   }
   return ''
 }
 
-function renderTextLayer(layer: TextLayer, embedMode = false): string {
+function renderTextLayer(layer: TextLayer): string {
   if (layer.visible === false) return ''
-  // When embedding fonts in SVG for export, use the exact Google Font name
-  // (matches the @font-face declaration). For DOM rendering, use the full CSS family.
-  const family = embedMode ? `'${layer.font}'` : familyFor(layer.font)
+  // The SAME family string in both paths — preview and export. The export used
+  // to emit the bare face name while the preview used the full CSS stack, which
+  // meant the two could resolve differently and only the export would be wrong.
+  // The inlined @font-face declares exactly this family's first entry, so it is
+  // still preferred; what the fallbacks buy is that a missing glyph degrades
+  // identically on screen and on disk instead of only in the exported file.
+  const family = familyFor(layer.font)
   const lines = layer.text.split('\n')
   const lineHeight = layer.size * 1.1
   const totalHeight = lines.length * lineHeight
@@ -144,12 +148,11 @@ function renderImageLayer(layer: ImageLayer, idx: number): string {
 }
 
 export function renderSVG(comp: Composition, embeddedFontCSS?: string): string {
-  const embed = Boolean(embeddedFontCSS)
   const layers = comp.layers
-    .map((l, i) => (l.kind === 'text' ? renderTextLayer(l, embed) : renderImageLayer(l, i)))
+    .map((l, i) => (l.kind === 'text' ? renderTextLayer(l) : renderImageLayer(l, i)))
     .join('')
   const fontStyle = embeddedFontCSS ? `<defs><style>${embeddedFontCSS}</style></defs>` : ''
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${comp.size}" height="${comp.size}" viewBox="0 0 ${comp.size} ${comp.size}">${fontStyle}${renderBackground(comp)}${layers}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${comp.width}" height="${comp.height}" viewBox="0 0 ${comp.width} ${comp.height}">${fontStyle}${renderBackground(comp)}${layers}</svg>`
 }
 
 /** Collect embedded @font-face CSS for all Google Fonts used in the composition. */
@@ -168,22 +171,22 @@ export async function renderSVGWithFonts(comp: Composition): Promise<string> {
 
 // ── PNG rasterization ───────────────────────────────────────────────────────
 
-export function rasterizeToPng(svgString: string, size: number): Promise<Blob> {
+export function rasterizeToPng(svgString: string, width: number, height = width): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const img = new Image()
     img.onload = () => {
       const canvas = document.createElement('canvas')
-      canvas.width = size
-      canvas.height = size
+      canvas.width = width
+      canvas.height = height
       const ctx = canvas.getContext('2d')
       if (!ctx) {
         URL.revokeObjectURL(url)
         reject(new Error('Canvas context unavailable'))
         return
       }
-      ctx.drawImage(img, 0, 0, size, size)
+      ctx.drawImage(img, 0, 0, width, height)
       URL.revokeObjectURL(url)
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png')
     }
@@ -195,9 +198,15 @@ export function rasterizeToPng(svgString: string, size: number): Promise<Blob> {
   })
 }
 
-export async function compositionToPngDataUrl(comp: Composition, size = 512): Promise<string> {
-  const svg = await renderSVGWithFonts({ ...comp, size })
-  const blob = await rasterizeToPng(svg, size)
+/**
+ * Rasterize at the composition's own dimensions.
+ *
+ * This used to force 512×512 regardless, which silently squashed anything
+ * non-square back into a square the moment it was exported.
+ */
+export async function compositionToPngDataUrl(comp: Composition): Promise<string> {
+  const svg = await renderSVGWithFonts(comp)
+  const blob = await rasterizeToPng(svg, comp.width, comp.height)
   return await blobToDataUrl(blob)
 }
 
@@ -234,7 +243,7 @@ export async function exportAllVariants(comp: Composition, baseName: string) {
     const recolored = applyColorMode(comp, m.id)
     const svg = renderSVG(recolored, fontCSS)
     downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${baseName}-${m.label}.svg`)
-    const png = await rasterizeToPng(svg, comp.size)
+    const png = await rasterizeToPng(svg, comp.width, comp.height)
     downloadBlob(png, `${baseName}-${m.label}.png`)
   }
 }

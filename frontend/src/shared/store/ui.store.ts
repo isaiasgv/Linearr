@@ -73,6 +73,10 @@ interface UIState {
   aiContentAdvisorChannel: number | null
   /** Channel the add-content picker adds to (carried, never inferred). */
   addContentChannel: number | null
+  /** Channel whose Tunarr guide row the guide modal shows. */
+  channelGuideChannel: number | null
+  /** Channel the stream player plays. */
+  channelStreamChannel: number | null
   tunarrPreviewData: unknown | null
   iconPickerCallback: ((dataUrl: string) => void) | null
   iconEditorCallback: ((dataUrl: string, composition?: unknown) => void) | null
@@ -96,9 +100,12 @@ interface UIState {
   // Cable Plex view preferences (persisted) — defaults to the expanded layout,
   // but a previously persisted choice always wins.
   cablePlexViewMode: CablePlexViewMode
+  /** Which Tunarr sub-tab is open. Persisted, like the Cable Plex view mode. */
+  tunarrTab: TunarrTab
   setCablePlexViewMode: (mode: CablePlexViewMode) => void
   cablePlexPosterSize: BrowsePosterSize
   setCablePlexPosterSize: (size: BrowsePosterSize) => void
+  setTunarrTab: (tab: TunarrTab) => void
 
   openModal: (name: ModalName, data?: Partial<UIState>) => void
   closeModal: (name: ModalName) => void
@@ -127,10 +134,19 @@ const BROWSE_VIEW_KEY = 'linearr:browseViewMode'
 const BROWSE_SIZE_KEY = 'linearr:browsePosterSize'
 const CABLE_PLEX_VIEW_KEY = 'linearr:cablePlexViewMode'
 const CABLE_PLEX_SIZE_KEY = 'linearr:cablePlexPosterSize'
+const TUNARR_TAB_KEY = 'linearr:tunarrTab'
 
 type BrowseViewMode = 'wall' | 'grid' | 'list'
 type BrowsePosterSize = 'small' | 'medium' | 'large'
 export type CablePlexViewMode = 'compact' | 'expanded'
+export type TunarrTab = 'channels' | 'guide' | 'collections' | 'build' | 'system'
+export const TUNARR_TABS: readonly TunarrTab[] = [
+  'channels',
+  'guide',
+  'collections',
+  'build',
+  'system',
+]
 
 function readLS<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -161,9 +177,13 @@ const defaultModals: Record<ModalName, boolean> = {
   assignCollection: false,
   smartCollectionBuilder: false,
   iconEditor: false,
+  iconGenerator: false,
+  channelIconUrl: false,
   iconPicker: false,
   watermarkEditor: false,
   addContent: false,
+  channelGuide: false,
+  channelStream: false,
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -212,6 +232,8 @@ export const useUIStore = create<UIState>((set) => ({
   itemDetailRatingKey: null,
   aiContentAdvisorChannel: null,
   addContentChannel: null,
+  channelGuideChannel: null,
+  channelStreamChannel: null,
   tunarrPreviewData: null,
   iconPickerCallback: null,
   iconEditorCallback: null,
@@ -265,6 +287,12 @@ export const useUIStore = create<UIState>((set) => ({
   setCablePlexPosterSize: (cablePlexPosterSize) => {
     writeLS(CABLE_PLEX_SIZE_KEY, cablePlexPosterSize)
     set({ cablePlexPosterSize })
+  },
+
+  tunarrTab: readLS<TunarrTab>(TUNARR_TAB_KEY, TUNARR_TABS, 'channels'),
+  setTunarrTab: (tunarrTab) => {
+    writeLS(TUNARR_TAB_KEY, tunarrTab)
+    set({ tunarrTab })
   },
 
   openModal: (name, data) =>

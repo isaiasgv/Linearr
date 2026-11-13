@@ -215,8 +215,22 @@ def test_changing_the_icon_leaves_a_pasted_watermark_url_alone(monkeypatch, auth
     r = auth_client.put(f"/api/channels/{n}/icon", json={"icon": _PNG_DATA_URI})
     assert r.status_code == 200, r.text
 
-    assert not any(c.url.path == "/api/upload/image" for c in calls)
+    # The icon IS uploaded — it is pushed to Tunarr as an HTTP asset now, since
+    # Tunarr copies whatever it is given into XMLTV and a data: URI there is
+    # unreadable to remote Plex clients. That upload is `linearr-icon-*`.
+    # What must not happen is the WATERMARK being re-pointed at it: this channel
+    # carries a hand-pasted third-party URL, and clobbering it would silently
+    # swap the user's chosen overlay.
+    uploads = [c for c in calls if c.url.path == "/api/upload/image"]
+    assert all(b"linearr-icon-ch" in (c.content or b"") for c in uploads), \
+        "only the icon upload is expected here, never a watermark re-upload"
     assert _watermark_image_url(n) == "https://cdn.example.com/logo.png"
+
+    # ...and the pushed watermark still carries the pasted URL untouched.
+    put_req = next(c for c in calls
+                   if c.method == "PUT" and c.url.path == f"/api/channels/{_ICON_CH_UUID}")
+    put_body = _json.loads(put_req.content or b"{}")
+    assert put_body["watermark"]["url"] == "https://cdn.example.com/logo.png"
 
 
 def test_icon_change_survives_a_failed_watermark_re_upload(monkeypatch, auth_client):
