@@ -1,3 +1,41 @@
+## [0.0.2](https://github.com/isaiasgv/Linearr/compare/v0.0.1...v0.0.2) (2026-11-13)
+
+### Features
+
+* **auth:** sliding sessions, and a "keep me signed in" choice ([08caa5e](https://github.com/isaiasgv/Linearr/commit/08caa5e78524eb08d078fcd527491258be713d7a))
+* **channels:** watch a channel, see its guide, and build its collections in place ([35c5f35](https://github.com/isaiasgv/Linearr/commit/35c5f35320e6650c43103edbd861a77571be864f))
+* **icons:** render channel icons on the server, in the house style ([d3bb964](https://github.com/isaiasgv/Linearr/commit/d3bb96416537f745118932f84a493b429f2145ab))
+* **icons:** resizable canvas, generated icons, and an upload path ([9d868e4](https://github.com/isaiasgv/Linearr/commit/9d868e486becc223d346ce9d771ee4b34119f24b))
+* **icons:** server-side channel icons in the Galaxy house style ([#45](https://github.com/isaiasgv/Linearr/issues/45)) ([15e5352](https://github.com/isaiasgv/Linearr/commit/15e53527e52eda80c377df3e84f1c28686a105f7))
+* **icons:** the channel icon URL is settable, and the watermark reuses it ([afb4c35](https://github.com/isaiasgv/Linearr/commit/afb4c3541510f4633ac3f3120e1dceeca5db49f3))
+* **mcp:** annotate every tool and add toolset selection ([5550627](https://github.com/isaiasgv/Linearr/commit/5550627dc2758ea6b9f266b3eb5cb9ebfeb369f0))
+* **mcp:** blocks, tunarr, ai and system toolsets ([b308c5b](https://github.com/isaiasgv/Linearr/commit/b308c5baa675f975d6c9f95acda908eb13df9c16))
+* **mcp:** channel reorder, packages, icons and the icon library ([6eff184](https://github.com/isaiasgv/Linearr/commit/6eff18463ec06c51581b4636ada29b35ee6e33d6))
+* **mcp:** four resources and a server-instructions rewrite ([e682b15](https://github.com/isaiasgv/Linearr/commit/e682b156ad0df6bad9bcd7c02dba68d5a7aeb7f8))
+* **mcp:** watermark toolset, Plex discovery, and collection editing ([c3b98e2](https://github.com/isaiasgv/Linearr/commit/c3b98e2e974ee4abfecdef5ab9e27f801e8f2b42))
+* **tunarr:** channel icons become real HTTP assets, on a public base URL ([7deaea4](https://github.com/isaiasgv/Linearr/commit/7deaea4d520376b217fb9e02a69d75841c869165))
+* **tunarr:** map tiers to guide groups with an optional tunarr_group_map setting ([d615999](https://github.com/isaiasgv/Linearr/commit/d6159997fff9c6cd29b7d33326c6b498869d3f9a))
+* **tunarr:** now-playing on the channel view, and split TunarrView into tabs ([64ae047](https://github.com/isaiasgv/Linearr/commit/64ae0471f185640002044ad93bbfc1ea96a69a18))
+
+### Bug Fixes
+
+* **auth,collections:** an expired Plex token was logging you out of Linearr ([22e51d9](https://github.com/isaiasgv/Linearr/commit/22e51d9a91a28515b94b4ec2a53611f5b3577acb))
+* **auth:** stop regenerating the session secret on every restart ([d64a9cb](https://github.com/isaiasgv/Linearr/commit/d64a9cba06be6d12ff2b44f4d47178622399d596))
+* **branding:** Oribion footer logo never rendered — CSP blocked the remote image ([8182662](https://github.com/isaiasgv/Linearr/commit/81826623bc6a23fb6165cdb84bec427459119408))
+* **branding:** stop duplicating the Oribion name in the footer ([9fe973e](https://github.com/isaiasgv/Linearr/commit/9fe973e20ae425461799a9add1b4d1bc954b4ec8))
+* **collections,tunarr:** keep channels on air when Plex re-keys files ([d5080a7](https://github.com/isaiasgv/Linearr/commit/d5080a7f2a3872b0685bc267d662ec088b951882))
+* **fonts,mobile:** self-host the editor fonts, and make the channel view work on a phone ([006e8d3](https://github.com/isaiasgv/Linearr/commit/006e8d34c234d893bbdc06b30e5f52ccde13b189))
+* **icons:** exported icons rendered in a substitute font ([5007dba](https://github.com/isaiasgv/Linearr/commit/5007dba6910bf01f7595e7ebedccdae420a8b780))
+* **tunarr:** programming always starts at 12:00AM ([dce4eab](https://github.com/isaiasgv/Linearr/commit/dce4eabcf50cd32fd6ce422a75f80676c12e2ddf))
+* **watermark,channels,collections:** opacity 30, image upload, delete cascade ([7c25aea](https://github.com/isaiasgv/Linearr/commit/7c25aea9cd890e7b63994db6b72cc33d0d3cc3c1))
+* **watermark,guide:** one image per channel, and real programme titles ([2337bc2](https://github.com/isaiasgv/Linearr/commit/2337bc2f54108a8618b39c98b4e97bff4b615d6f))
+* **watermark:** an imageless watermark can no longer take a channel off the air ([aaf8488](https://github.com/isaiasgv/Linearr/commit/aaf8488ab16a8b1889850d0b02720270331ee860))
+* **watermark:** leave the image blank and Tunarr draws the channel icon ([9830269](https://github.com/isaiasgv/Linearr/commit/98302690ea989db2f5852be5589cddb223d1ccb2))
+
+### Refactoring
+
+* **mcp:** extract the MCP server into a linearr_mcp package ([4351982](https://github.com/isaiasgv/Linearr/commit/435198284df9f9570e8637d986aa39e8d087d46b))
+
 ## [0.0.1](https://github.com/isaiasgv/Linearr/compare/v0.0.0...v0.0.1) (2026-07-26)
 
 ### Features
