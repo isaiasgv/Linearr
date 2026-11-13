@@ -38,16 +38,15 @@ export interface IconBrandDefaults {
  * Used when the server has not answered yet. Mirrors `_ICON_BRAND_DEFAULTS` in
  * `main.py`; the server's copy is authoritative once loaded.
  *
- * `brand_weight` is 400, not 500, because **Baloo Thambi ships exactly one
- * weight**. Asking for 500 does not fail — the browser synthesizes a faux bold,
- * which is close enough to look intentional and wrong enough to never match the
- * design. Baloo Thambi 2 is the variable sibling (400–800) if a heavier brand
- * line is wanted.
+ * Baloo Thambi 2 Bold over Baloo Thambi 2 Regular — the faces measured from
+ * the logos on air, and what the server renderer draws. (Baloo Thambi, the
+ * older family, ships one weight only, so a heavier brand line has to come
+ * from the variable Baloo Thambi 2.)
  */
 export const FALLBACK_BRAND_DEFAULTS: IconBrandDefaults = {
   brand_line: 'Galaxy',
-  brand_font: 'Baloo Thambi',
-  brand_weight: 400,
+  brand_font: 'Baloo Thambi 2',
+  brand_weight: 700,
   name_font: 'Baloo Thambi 2',
   name_weight: 400,
   color: '#ffffff',
@@ -148,9 +147,15 @@ export function splitChannelName(
 ): { brandLine: string; channelLine: string } {
   const trimmed = (name ?? '').trim()
   const b = (brand ?? '').trim()
-  if (b && trimmed.toLowerCase().startsWith(b.toLowerCase())) {
-    const rest = trimmed.slice(b.length).trim()
-    if (rest) return { brandLine: b, channelLine: rest }
+  // "Galaxy+" before "Galaxy", and only on a word boundary: "Galaxy+ Premieres"
+  // used to come out as "Galaxy" over "+ Premieres". Mirrors
+  // `split_channel_name` in icon_render.py.
+  for (const candidate of b ? [`${b}+`, b] : []) {
+    const head = trimmed.slice(0, candidate.length)
+    const rest = trimmed.slice(candidate.length)
+    if (head.toLowerCase() === candidate.toLowerCase() && /^\s+\S/.test(rest)) {
+      return { brandLine: head, channelLine: rest.trim() }
+    }
   }
   return { brandLine: b, channelLine: trimmed }
 }

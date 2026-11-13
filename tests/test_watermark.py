@@ -523,7 +523,7 @@ async def test_sync_without_watermark_does_not_send_the_key(monkeypatch, client)
     seen: list[dict] = []
     real_save = main._tunarr_save_channel
 
-    async def _spy(client_, url, tunarr_id, changes):
+    async def _spy(client_, url, tunarr_id, changes, **_kw):
         seen.append(dict(changes))
         return await real_save(client_, url, tunarr_id, changes)
 

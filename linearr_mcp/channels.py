@@ -31,14 +31,18 @@ def register(reg, api):
     @reg.tool(name="create_channel", toolset="channels", open_world=True)
     async def create_channel(number: int, name: str, tier: str = "Galaxy Main",
                              vibe: str = "", mode: str = "Shuffle", style: str = "",
-                             color: str = "blue") -> dict:
+                             color: str = "blue", auto_icon: bool = True,
+                             icon_plex_logo: str | None = None) -> dict:
         """Create a channel. tier: 'Galaxy Main' | 'Classics' | 'Galaxy Premium'.
         mode: 'Shuffle' | 'Flex' | 'Sequential'. If Tunarr is configured, this also
-        CREATES a matching Tunarr channel and links it (not just a sync)."""
+        CREATES a matching Tunarr channel and links it (not just a sync).
+        `auto_icon` renders a house-style icon from the name; `icon_plex_logo`
+        (a Plex rating key) uses that title's logo under the brand line."""
         try:
             result = await api.create_channel(api.ChannelIn(
                 number=number, name=name, tier=tier, vibe=vibe, mode=mode,
-                style=style, color=color))
+                style=style, color=color, auto_icon=auto_icon,
+                icon_plex_logo=icon_plex_logo))
         except HTTPException as e:
             raise tool_error(e)
         result.pop("icon", None)
@@ -157,6 +161,25 @@ def register(reg, api):
                                               json_request({"icon": icon}))
         except HTTPException as e:
             raise tool_error(e)
+
+    @reg.tool(name="generate_channel_icon", toolset="channels",
+              idempotent=True, open_world=True)
+    async def generate_channel_icon(channel_number: int, brand: str | None = None,
+                                    text: str | None = None,
+                                    plex_logo: str | None = None) -> dict:
+        """Render a house-style icon for a channel and set it (synced to Tunarr,
+        watermark follows). With no arguments it uses the channel's name:
+        "Galaxy+ Premieres" -> "Galaxy+" over "Premieres". `brand`/`text`
+        override the two lines; `plex_logo` (a Plex rating key) puts that show's
+        or movie's clear logo under the brand instead — use it for franchise
+        channels."""
+        body = api.IconRenderIn(brand=brand, text=text, plex_logo=plex_logo)
+        try:
+            result = await api.generate_channel_icon(channel_number, body)
+        except HTTPException as e:
+            raise tool_error(e)
+        result.pop("icon", None)
+        return result
 
     @reg.tool(name="clear_channel_icon", toolset="channels",
               destructive=True, idempotent=True, open_world=True)
