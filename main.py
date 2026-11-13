@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -17,6 +18,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
+
+import icon_render
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -935,6 +938,11 @@ class ChannelIn(BaseModel):
     style: str = ""
     color: str = "blue"
     icon: str | None = None
+    # Create only: render a house-style icon when `icon` is empty. A Plex
+    # rating key puts that item's clear logo under the brand line instead of
+    # the channel name (how the franchise channels look).
+    auto_icon: bool = False
+    icon_plex_logo: str | None = None
 
 # ── Channel numbering + reorder math ─────────────────────────────────────────
 #
@@ -1438,12 +1446,19 @@ def list_channels():
 
 @app.post("/api/channels", status_code=201)
 async def create_channel(body: ChannelIn):
+    icon = body.icon
+    if not icon and body.auto_icon:
+        # Best-effort: a channel without an icon is still a channel.
+        try:
+            icon = await _render_channel_icon(body.name, body.tier, plex_logo=body.icon_plex_logo)
+        except Exception as e:
+            log.warning("Auto icon failed for CH %s: %s", body.number, e)
     with get_db() as conn:
         try:
             conn.execute(
                 "INSERT INTO channels (number, name, tier, vibe, mode, style, color, icon, uid) VALUES (?,?,?,?,?,?,?,?,?)",
                 (body.number, body.name, body.tier, body.vibe, body.mode, body.style,
-                 body.color, body.icon, _new_channel_uid())
+                 body.color, icon, _new_channel_uid())
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, f"Channel {body.number} already exists")
@@ -1541,11 +1556,15 @@ def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None,
     return changes
 
 async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: dict | None = None,
-                                  icon_override: dict | None = None):
+                                  icon_override: dict | None = None,
+                                  icon_explicit: bool = False):
     """Sync Cable Plex channel metadata to linked Tunarr channel.
     If no link exists, creates a new Tunarr channel and links it.
     `watermark_override` / `icon_override`, when given, take precedence over the
     channel row's stored value (used to push an explicit clear).
+    `icon_explicit` marks a sync that exists to change the icon. Without it, an
+    icon Linearr did not upload (one set in Tunarr's own UI) is left in place —
+    see `_tunarr_icon_is_foreign`.
     Returns {"synced": True/False, "action": "updated"|"created"|"error", ...}"""
     with get_db() as conn:
         ch = conn.execute("SELECT * FROM channels WHERE number=?", (channel_number,)).fetchone()
@@ -1574,7 +1593,9 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
         async with httpx.AsyncClient(timeout=15.0) as client:
             if link:
                 tunarr_id = link["tunarr_id"]
-                r = await _tunarr_save_channel(client, url, tunarr_id, changes)
+                r = await _tunarr_save_channel(
+                    client, url, tunarr_id, changes,
+                    keep_foreign_icon=not icon_explicit and icon_override is None)
                 if r.status_code in (200, 204):
                     with get_db() as conn:
                         conn.execute(
@@ -1597,7 +1618,11 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
                     number=ch.get("number", 0),
                     group_title=ch.get("tier", "Linearr"),
                     transcode_id=transcode_id,
-                    icon_data=icon_data if (icon_data and icon_data.startswith("data:")) else None,
+                    # The uploaded URL resolved above, never the data URI when
+                    # there is one: Tunarr copies the icon into XMLTV verbatim,
+                    # and a 200 KB data URI there is what CH 132/133 got.
+                    icon_data=ch.get("icon_url") or (
+                        icon_data if (icon_data and icon_data.startswith("data:")) else None),
                     watermark=watermark,
                 )
                 r = await _tunarr_create_channel(client, url, channel_obj)
@@ -1636,12 +1661,20 @@ async def update_channel(channel_number: int, body: ChannelIn):
         row = conn.execute("SELECT * FROM channels WHERE number=?", (body.number,)).fetchone()
     result = dict(row)
     _log_app("channel", f"Updated channel {channel_number}", metadata={"old_number": channel_number, "new_number": body.number, "name": body.name})
-    # This route can change the icon too, so an icon-following watermark has to
-    # be re-uploaded here as well (best-effort; never blocks the save).
-    if body.icon != existing["icon"]:
+    # This route can change the icon too. Same order as `set_channel_icon`:
+    # drop the cached upload of the OLD icon, upload the new one, then let the
+    # watermark follow it — re-pointing first left it on the previous icon.
+    icon_changed = body.icon != existing["icon"]
+    if icon_changed:
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE channels SET icon_url=CASE WHEN icon_url_manual THEN icon_url END "
+                "WHERE number=?", (body.number,))
+        await _resolve_channel_icon_url(body.number, body.icon)
         await _refollow_channel_icon_watermark(body.number)
+        result["icon_url"] = _channel_icon_url_of(body.number)
     # Auto-sync metadata to Tunarr (creates channel if not linked)
-    sync = await _sync_channel_to_tunarr(body.number)
+    sync = await _sync_channel_to_tunarr(body.number, icon_explicit=icon_changed)
     result["tunarr_sync"] = sync
     return result
 
@@ -1737,6 +1770,65 @@ def _channel_icon_filename(channel_number: int, raw: bytes, mime: str) -> str:
     """
     digest = hashlib.sha1(raw).hexdigest()[:10]
     return f"linearr-icon-ch{channel_number}-{digest}.{_MIME_EXT.get(mime, 'png')}"
+
+
+def _channel_icon_url_of(channel_number: int) -> str | None:
+    with get_db() as conn:
+        row = conn.execute("SELECT icon_url FROM channels WHERE number=?",
+                           (channel_number,)).fetchone()
+    return row["icon_url"] if row else None
+
+
+async def _plex_clear_logo(rating_key: str) -> bytes | None:
+    """The clear logo Plex holds for an item (show, movie or collection).
+
+    Franchise channels put the show's own logo under the brand line; Plex
+    already has that art for most titles, so nobody has to hunt it down.
+    """
+    url, token = get_plex_config()
+    if not token or not rating_key:
+        return None
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.get(f"{url}/library/metadata/{rating_key}", headers=plex_headers(token))
+        if r.status_code != 200:
+            return None
+        meta = (r.json().get("MediaContainer", {}).get("Metadata") or [{}])[0]
+        path = next((i.get("url") for i in meta.get("Image") or []
+                     if i.get("type") == "clearLogo" and i.get("url")), None)
+        if not path:
+            return None
+        img = await client.get(f"{url}{path}", headers={"X-Plex-Token": token})
+        return img.content if img.status_code == 200 and img.content else None
+
+
+async def _render_channel_icon(name: str, tier: str | None = None, *, brand: str | None = None,
+                               text: str | None = None, plex_logo: str | None = None,
+                               logo: str | None = None, scale: float | None = None) -> str:
+    """Render a house-style icon (see `icon_render`) and return it as a data URI.
+
+    `brand`/`text` override the two lines worked out from the name and tier.
+    `logo` (a data URI) or `plex_logo` (a Plex rating key) replaces the name
+    line with logo art. Raises ValueError for a missing Plex logo, so a caller
+    asking for one is told rather than silently given a text icon.
+    """
+    spec = icon_render.brand_for(name, tier)
+    if brand is not None or text is not None:
+        spec = icon_render.IconSpec(brand if brand is not None else spec.brand,
+                                    text if text is not None else spec.name)
+    art: bytes | None = None
+    if logo:
+        decoded = _decode_data_uri(logo)
+        if decoded is None:
+            raise ValueError("`logo` must be a base64 data URI")
+        art = decoded[0]
+    elif plex_logo:
+        art = await _plex_clear_logo(str(plex_logo))
+        if art is None:
+            raise ValueError(f"Plex has no clear logo for item {plex_logo}")
+    png = await asyncio.to_thread(
+        icon_render.render_icon, spec, logo=art,
+        scale=scale if scale else icon_render.DEFAULT_SCALE)
+    return "data:image/png;base64," + base64.b64encode(png).decode()
 
 
 async def _resolve_channel_icon_url(channel_number: int, icon_data: str | None) -> str | None:
@@ -1976,7 +2068,7 @@ async def set_channel_icon_image(channel_number: int, body: ChannelIconImageIn):
     # The watermark follows the icon when asked to, so it may need re-pointing
     # at the new URL before the sync carries both.
     await _refollow_channel_icon_watermark(channel_number)
-    sync = await _sync_channel_to_tunarr(channel_number)
+    sync = await _sync_channel_to_tunarr(channel_number, icon_explicit=True)
     return {"ok": True, "icon_url": icon_url, "manual": manual, "tunarr_sync": sync}
 
 
@@ -1984,7 +2076,13 @@ async def set_channel_icon_image(channel_number: int, body: ChannelIconImageIn):
 async def set_channel_icon(channel_number: int, request: Request):
     """Set channel icon (base64 PNG data URL)."""
     body = await request.json()
-    icon_data = body.get("icon", "")
+    return await _apply_channel_icon(channel_number, body.get("icon", ""))
+
+
+async def _apply_channel_icon(channel_number: int, icon_data: str) -> dict:
+    """Store a new icon and push it everywhere it shows. Every route that
+    replaces a channel's icon goes through here, so none of them can get the
+    upload / watermark / sync order wrong."""
     with get_db() as conn:
         # Clear the cached upload URL: it points at the OLD icon, and
         # `_tunarr_channel_changes` prefers it over the data URI, so leaving it
@@ -2005,8 +2103,58 @@ async def set_channel_icon(channel_number: int, request: Request):
     # then re-point the watermark; then sync, so the push carries both.
     await _resolve_channel_icon_url(channel_number, icon_data)
     await _refollow_channel_icon_watermark(channel_number)
-    sync = await _sync_channel_to_tunarr(channel_number)
-    return {"ok": True, "tunarr_sync": sync}
+    sync = await _sync_channel_to_tunarr(channel_number, icon_explicit=True)
+    return {"ok": True, "icon_url": _channel_icon_url_of(channel_number), "tunarr_sync": sync}
+
+
+class IconRenderIn(BaseModel):
+    """Inputs for a house-style icon. Only `name` is needed; the brand line
+    comes from its "Galaxy"/"Galaxy+" prefix, or from `tier`."""
+    name: str = ""
+    tier: str | None = None
+    brand: str | None = None        # override the top line ("" for none)
+    text: str | None = None         # override the bottom line
+    plex_logo: str | None = None    # Plex rating key: its clear logo replaces `text`
+    logo: str | None = None         # data URI: logo art replacing `text`
+    scale: float | None = Field(None, ge=0.5, le=16)
+
+
+async def _render_from(body: IconRenderIn, fallback_name: str = "",
+                       fallback_tier: str | None = None) -> str:
+    try:
+        return await _render_channel_icon(
+            body.name or fallback_name, body.tier or fallback_tier, brand=body.brand,
+            text=body.text, plex_logo=body.plex_logo, logo=body.logo, scale=body.scale)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/icons/render")
+async def render_icon_preview(body: IconRenderIn):
+    """Render a house-style icon without saving it — the generator's preview."""
+    if not (body.name or body.text or body.brand or body.plex_logo or body.logo):
+        raise HTTPException(400, "Give a channel name, a line of text or a logo")
+    return {"icon": await _render_from(body)}
+
+
+@app.post("/api/channels/{channel_number}/icon/generate")
+async def generate_channel_icon(channel_number: int, body: IconRenderIn | None = None):
+    """Render a house-style icon for a channel and make it the channel's icon.
+
+    Defaults to the channel's own name and tier, so an empty body is enough:
+    "Galaxy+ Premieres" becomes "Galaxy+" over "Premieres". Pass `plex_logo`
+    for a franchise channel to put the show's logo under the brand line.
+    """
+    with get_db() as conn:
+        row = conn.execute("SELECT name, tier FROM channels WHERE number=?",
+                           (channel_number,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+    icon = await _render_from(body or IconRenderIn(), row["name"], row["tier"])
+    _log_app("channel", f"Generated icon for channel {channel_number}",
+             metadata={"number": channel_number})
+    result = await _apply_channel_icon(channel_number, icon)
+    return {**result, "icon": icon}
 
 @app.delete("/api/channels/{channel_number}/icon")
 async def delete_channel_icon(channel_number: int):
@@ -2328,9 +2476,12 @@ async def import_icon_pack(request: Request):
             icon_data = data.get("icon", data) if isinstance(data, dict) else data
             if not icon_data:
                 continue
-            # icon_url follows the icon; a stale one would be pushed instead.
-            conn.execute("UPDATE channels SET icon=?, icon_url=NULL WHERE number=?",
-                         (icon_data, int(ch_num)))
+            # icon_url follows the icon; a stale one would be pushed instead. A
+            # hand-set URL stays, exactly as in `set_channel_icon` — clearing the
+            # URL but not the manual flag left a channel that never uploaded again.
+            conn.execute(
+                "UPDATE channels SET icon=?, icon_url=CASE WHEN icon_url_manual THEN icon_url END "
+                "WHERE number=?", (icon_data, int(ch_num)))
             imported += 1
     _log_app("icons", f"Imported {imported} channel icons")
     return {"ok": True, "imported": imported}
@@ -2367,7 +2518,9 @@ async def resync_channel_assets(channel_number: int | None = Query(None),
         if force:
             numbers = [r["number"] for r in rows]
             for n in numbers:
-                conn.execute("UPDATE channels SET icon_url=NULL WHERE number=?", (n,))
+                # A pinned (manual) URL is not a cache, so force leaves it.
+                conn.execute("UPDATE channels SET icon_url=NULL "
+                             "WHERE number=? AND NOT icon_url_manual", (n,))
 
     results: list[dict] = []
     for row in rows:
@@ -2376,7 +2529,8 @@ async def resync_channel_assets(channel_number: int | None = Query(None),
             n, _channel_icon_data(n))
         entry = {"channel_number": n, "icon_url": url, "uploaded": bool(url)}
         if url:
-            sync = await _sync_channel_to_tunarr(n)
+            # Only `force` may replace an icon set in Tunarr's own UI.
+            sync = await _sync_channel_to_tunarr(n, icon_explicit=force)
             entry["synced"] = bool(sync.get("synced"))
             if not sync.get("synced"):
                 entry["message"] = sync.get("message", "")
@@ -2390,10 +2544,24 @@ async def resync_channel_assets(channel_number: int | None = Query(None),
              f"Re-synced assets for {uploaded}/{len(results)} channels",
              level="warn" if uploaded < len(results) else "info",
              metadata={"asset_base": _tunarr_asset_base()})
-    return {"ok": True, "asset_base": _tunarr_asset_base(),
-            "total": len(results), "uploaded": uploaded,
-            "failed": [r for r in results if not r["uploaded"] or not r["synced"]],
-            "channels": results}
+    out = {"ok": True, "asset_base": _tunarr_asset_base(),
+           "total": len(results), "uploaded": uploaded,
+           "failed": [r for r in results if not r["uploaded"] or not r["synced"]],
+           "channels": results}
+    warning = _asset_base_warning()
+    if warning:
+        out["warning"] = warning
+    return out
+
+
+def _asset_base_warning() -> str | None:
+    """Icon URLs go into the guide, so a host only reachable inside Docker
+    (`tunarr:8000`) means every remote client loses its logos."""
+    host = _urlparse(_tunarr_asset_base()).hostname or ""
+    if host and "." not in host and host != "localhost":
+        return (f"Icon URLs use '{host}', which only resolves inside Docker. Set "
+                "Settings → Tunarr public URL so clients outside it can load logos.")
+    return None
 
 
 def _channel_icon_data(channel_number: int) -> str | None:
@@ -2614,13 +2782,14 @@ def purge_channel_assignments(channel_number: int, content_type: str = Query("bo
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 # House style for generated channel icons: a brand line over the channel line.
-# The values are the Galaxy Network defaults; every one is user-editable. Only
-# the frontend renders from these — the backend just stores and serves them, so
-# it deliberately knows nothing about fonts or canvases beyond these key names.
+# The values are the Galaxy Network defaults; every one is user-editable. They
+# drive the designer in the frontend. Generated icons come from `icon_render`,
+# whose metrics are measured from the logos on air: Baloo Thambi 2 Bold over
+# Baloo Thambi 2 Regular — so these defaults match it.
 _ICON_BRAND_DEFAULTS = {
     "brand_line": "Galaxy",
-    "brand_font": "Baloo Thambi",
-    "brand_weight": 400,   # Baloo Thambi ships ONE weight; 500 would be faked
+    "brand_font": "Baloo Thambi 2",
+    "brand_weight": 700,
     "name_font": "Baloo Thambi 2",
     "name_weight": 400,
     "color": "#ffffff",
@@ -6879,8 +7048,24 @@ _TUNARR_READONLY_CHANNEL_KEYS = frozenset(
 )
 
 
+def _tunarr_icon_is_foreign(icon: dict | None) -> bool:
+    """True when a Tunarr channel's icon was not put there by Linearr.
+
+    Linearr's uploads are all named `linearr-*` (see `_channel_icon_filename`),
+    and a `data:` icon is what older Linearr versions pushed. Anything else — a
+    `<uuid>_icon.png` from Tunarr's own upload button, a hand-picked file — is
+    somebody's deliberate logo, which a routine sync must not replace.
+    """
+    path = str((icon or {}).get("path") or "").strip()
+    if not path or path.startswith("data:"):
+        return False
+    name = _urlparse(path).path.rsplit("/", 1)[-1]
+    return not name.startswith("linearr-")
+
+
 async def _tunarr_save_channel(
-    client: "httpx.AsyncClient", url: str, tunarr_id: str, changes: dict
+    client: "httpx.AsyncClient", url: str, tunarr_id: str, changes: dict,
+    *, keep_foreign_icon: bool = False,
 ) -> "httpx.Response":
     """Update a Tunarr channel by read-modify-write.
 
@@ -6894,6 +7079,10 @@ async def _tunarr_save_channel(
 
     Returns the PUT response, or the failing GET response when the read fails
     (so the caller sees one status either way).
+
+    `keep_foreign_icon` drops the `icon` change when Tunarr's current icon was
+    not uploaded by Linearr, so a metadata sync cannot replace a hand-made logo
+    with Linearr's copy of it. Explicit icon changes pass False.
     """
     r = await client.get(f"{url}/api/channels/{tunarr_id}")
     if r.status_code != 200:
@@ -6909,6 +7098,8 @@ async def _tunarr_save_channel(
             request=r.request,
         )
 
+    if keep_foreign_icon and "icon" in changes and _tunarr_icon_is_foreign(current.get("icon")):
+        changes = {k: v for k, v in changes.items() if k != "icon"}
     payload = {**current, **changes}
     payload = {k: v for k, v in payload.items() if k not in _TUNARR_READONLY_CHANNEL_KEYS}
     payload.setdefault("id", tunarr_id)
@@ -7045,7 +7236,16 @@ async def import_icons_from_tunarr():
                     # Auto-assign if this Tunarr channel is linked to a Linearr channel
                     link = links.get(tunarr_id)
                     if link:
-                        conn.execute("UPDATE channels SET icon=? WHERE number=?", (data_url, link["channel_number"]))
+                        # The icon came FROM Tunarr, so Tunarr's own file is its
+                        # URL. Pinning it (manual) means a later sync keeps that
+                        # file instead of uploading a `linearr-icon-*` copy over a
+                        # logo someone made by hand. A data-URI icon has no file
+                        # to pin, and gets a normal upload on its next sync.
+                        is_file = icon_path.startswith(("http", "/"))
+                        conn.execute(
+                            "UPDATE channels SET icon=?, icon_url=?, icon_url_manual=? WHERE number=?",
+                            (data_url, _tunarr_asset_url(icon_url) if is_file else None,
+                             1 if is_file else 0, link["channel_number"]))
                         assigned += 1
             except Exception as e:
                 log.warning("Failed to import icon for Tunarr channel %s: %s", tunarr_id, e)

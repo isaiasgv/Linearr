@@ -75,7 +75,28 @@ function setChannelIconImage(
   return post(`/api/channels/${channelNumber}/icon/image`, body)
 }
 
+/** Inputs for a server-rendered house-style icon (see `icon_render.py`). */
+export interface IconRenderBody {
+  name?: string
+  tier?: string
+  brand?: string
+  text?: string
+  /** Plex rating key — its clear logo replaces the text line. */
+  plex_logo?: string
+  scale?: number
+}
+
+/**
+ * Render an icon on the server. The server owns the house style — measured
+ * from the logos on air — so the form, the channel view, the API and the MCP
+ * tools all get the same PNG.
+ */
+function renderIcon(body: IconRenderBody): Promise<{ icon: string }> {
+  return post<{ icon: string }>('/api/icons/render', body)
+}
+
 export const iconsApi = {
+  renderIcon,
   listIcons,
   saveIcon,
   updateIcon,

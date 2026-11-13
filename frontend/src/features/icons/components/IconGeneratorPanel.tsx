@@ -15,7 +15,7 @@ import {
   splitChannelName,
   type IconBrandDefaults,
 } from '../generate'
-import { compositionToPngDataUrl } from '../editor/render'
+import { iconsApi } from '../api'
 import type { Composition } from '../editor/types'
 
 interface Props {
@@ -48,7 +48,6 @@ export function IconGeneratorPanel({
   // Once either field is edited by hand, the channel name stops driving them.
   const [touched, setTouched] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
-  const [composition, setComposition] = useState<Composition | null>(null)
   const [busy, setBusy] = useState(false)
 
   // Follow the channel name until the user takes over.
@@ -59,35 +58,33 @@ export function IconGeneratorPanel({
     setChannelLine(split.channelLine)
   }, [channelName, defaults.brand_line, touched])
 
-  // Render on a debounce. The generation counter guards against an earlier,
-  // slower render (a first font load is much slower than the ones after)
-  // resolving last and painting a stale preview over a newer one.
+  // Render on a debounce, on the server — it owns the house style, so this
+  // preview is byte-for-byte what the API and MCP tools produce. The
+  // generation counter guards against an earlier, slower request resolving
+  // last and painting a stale preview over a newer one.
   const runId = useRef(0)
-  const render = useCallback(
-    async (brand: string, name: string) => {
-      if (!brand.trim() && !name.trim()) {
-        setPreview(null)
-        setComposition(null)
-        return
-      }
-      const id = ++runId.current
-      setBusy(true)
-      try {
-        const comp = await generateIconComposition(brand, name, defaults)
-        const dataUrl = await compositionToPngDataUrl(comp)
-        if (id !== runId.current) return
-        setComposition(comp)
-        setPreview(dataUrl)
-      } catch {
-        if (id === runId.current) {
-          setPreview(null)
-          setComposition(null)
-        }
-      } finally {
-        if (id === runId.current) setBusy(false)
-      }
-    },
-    [defaults],
+  const render = useCallback(async (brand: string, name: string) => {
+    if (!brand.trim() && !name.trim()) {
+      setPreview(null)
+      return
+    }
+    const id = ++runId.current
+    setBusy(true)
+    try {
+      const { icon } = await iconsApi.renderIcon({ brand, text: name })
+      if (id === runId.current) setPreview(icon)
+    } catch {
+      if (id === runId.current) setPreview(null)
+    } finally {
+      if (id === runId.current) setBusy(false)
+    }
+  }, [])
+
+  // The layered version, for the designer and for saving alongside the PNG.
+  // Built on demand: the preview no longer needs it.
+  const composition = useCallback(
+    () => generateIconComposition(brandLine, channelLine, defaults),
+    [brandLine, channelLine, defaults],
   )
 
   useEffect(() => {
@@ -155,7 +152,9 @@ export function IconGeneratorPanel({
           <Button
             size="sm"
             disabled={!preview || busy}
-            onClick={() => preview && composition && onGenerated(preview, composition)}
+            onClick={async () => {
+              if (preview) onGenerated(preview, await composition())
+            }}
           >
             Use this icon
           </Button>
@@ -163,17 +162,16 @@ export function IconGeneratorPanel({
             <Button
               size="sm"
               variant="secondary"
-              disabled={!composition || busy}
-              onClick={() => composition && onEditInDesigner(composition)}
+              disabled={!preview || busy}
+              onClick={async () => onEditInDesigner(await composition())}
             >
               Edit in designer
             </Button>
           )}
           {footer}
           <p className="w-full text-[11px] text-slate-500">
-            {defaults.brand_font} {defaults.brand_weight} over {defaults.name_font}{' '}
-            {defaults.name_weight}, {defaults.width}×{defaults.height}. Change the house style in
-            Settings → Icons.
+            Galaxy house style: Baloo Thambi 2 Bold over Regular, sized like the logos on air.
+            “Galaxy+” names keep their plus.
           </p>
         </div>
       </div>

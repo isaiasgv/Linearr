@@ -105,7 +105,7 @@ Every tool call — success or failure, with a redacted argument summary and a d
 
 ## Tool reference
 
-**132 tools**, grouped by toolset. Arguments marked `?` are optional; **⚠** marks a destructive tool.
+**133 tools**, grouped by toolset. Arguments marked `?` are optional; **⚠** marks a destructive tool.
 
 #### `channels` (11)
 
@@ -113,7 +113,7 @@ Every tool call — success or failure, with a redacted argument summary and a d
 |---|---|---|
 | `list_channels` | — | List all channels in the lineup (number, name, tier, vibe, mode, style, color). |
 | `get_channel` | `number` | Get one channel plus everything assigned to it (titles, types, years). |
-| `create_channel` | `number`, `name`, `tier`?, `vibe`?, `mode`?, `style`?, `color`? | Create a channel. tier: 'Galaxy Main' \| 'Classics' \| 'Galaxy Premium'. mode: 'Shuffle' \| 'Flex' \| 'Sequential'. If Tunarr is configured, this also CREATES a matching Tunarr channel and links it (not just a sync). |
+| `create_channel` | `number`, `name`, `tier`?, `vibe`?, `mode`?, `style`?, `color`?, `auto_icon`?, `icon_plex_logo`? | Create a channel. tier: 'Galaxy Main' \| 'Classics' \| 'Galaxy Premium'. mode: 'Shuffle' \| 'Flex' \| 'Sequential'. If Tunarr is configured, this also CREATES a matching Tunarr channel and links it (not just a sync). `auto_icon` renders a house-style icon from the name; `icon_plex_logo` (a Plex rating key) uses that title's logo under the brand line. |
 | `update_channel` | `number`, `new_number`?, `name`?, `tier`?, `vibe`?, `mode`?, `style`?, `color`? | Update a channel. Only the fields you pass change; pass new_number to renumber (assignments, blocks and links follow the channel). If Tunarr is configured and no link exists yet, a matching Tunarr channel may be created. |
 | `delete_channel` | `number`, `delete_tunarr`? | **⚠** Delete a channel. DESTRUCTIVE: also removes its assignments, schedule blocks, collection links and Tunarr links. Cannot be undone. By default this ALSO deletes the linked Tunarr channel and its programming; pass delete_tunarr=false to keep it and only unlink. |
 | `reorder_channel` | `moved_number`, `target_index`, `target_tier`? | Move a channel to a new position in the lineup. This RENUMBERS it — `number` is the primary key, so ordering is by number and there is no separate order column. `target_index` is the 0-based index the channel should occupy in the RESULTING lineup. Pass `target_tier` only for a cross-tier move. Assignments, blocks, collection links, Tunarr links and AI logs all follow the channel. Tunarr is renumbered after the local commit; entries in `tunarr.failed` mean Tunarr is out of step, NOT that the reorder failed. |
@@ -121,6 +121,7 @@ Every tool call — success or failure, with a redacted argument summary and a d
 | `create_channel_package` | `channels` | Create several channels at once. Each entry needs `number` and `name`; `tier`, `vibe`, `mode`, `description`, `color` are optional. Numbers that already exist are skipped, not errors. Local only — unlike `create_channel` this does NOT create matching Tunarr channels; call `export_channels_to_tunarr` afterwards if you want them. |
 | `suggest_247_channels` | — | Analyse the Plex library and suggest 24/7 single-show or franchise channels worth creating. Library analysis, not an AI call — no API key needed. |
 | `set_channel_icon` | `channel_number`, `icon`?, `icon_id`? | Set a channel's icon, from a base64 data URI (`icon`) or an entry in the icon library (`icon_id`). Also re-syncs the channel — and any icon-following watermark — to Tunarr. |
+| `generate_channel_icon` | `channel_number`, `brand`?, `text`?, `plex_logo`? | Render a house-style icon for a channel and set it (synced to Tunarr, watermark follows). With no arguments it uses the channel's name: "Galaxy+ Premieres" -> "Galaxy+" over "Premieres". `brand`/`text` override the two lines; `plex_logo` (a Plex rating key) puts that show's or movie's clear logo under the brand instead — use it for franchise channels. |
 | `clear_channel_icon` | `channel_number` | **⚠** Remove a channel's icon, clearing it in Tunarr too. |
 
 #### `icons` (8)
