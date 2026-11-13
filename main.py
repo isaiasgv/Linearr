@@ -743,6 +743,8 @@ class SettingsIn(BaseModel):
     # than eight settings rows — it is read and written as a unit, and the
     # renderer that consumes it lives entirely in the frontend.
     icon_brand_defaults: dict | None = None
+    # Tier -> Tunarr guide group, see `_tunarr_group_for`. `{}` clears it.
+    tunarr_group_map: dict[str, str] | None = None
 
 class TunarrChannelLinkIn(BaseModel):
     channel_number: int
@@ -1518,6 +1520,28 @@ def _disabled_watermark_for_tunarr() -> dict:
     """
     return _watermark_to_tunarr({"enabled": False}, None)
 
+def _json_dict(raw: str | None) -> dict:
+    try:
+        parsed = json.loads(raw) if raw else {}
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+def _tunarr_group_for(tier: str) -> str:
+    """The Tunarr guide group for a Linearr tier.
+
+    Tiers are Linearr's own classification (the UI filters and numbers by
+    them), while the group is what viewers see in the guide — and an install
+    may group differently, e.g. Galaxy shows "Galaxy" / "Galaxy+" rather than
+    the three tier names. The optional `tunarr_group_map` setting (a JSON
+    object, tier -> group) bridges the two; without it the tier is the group.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key='tunarr_group_map'").fetchone()
+    group = _json_dict(row["value"] if row else None).get(tier)
+    return group if isinstance(group, str) and group.strip() else tier
+
 def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None,
                             icon_override: dict | None = None) -> dict:
     """The SaveableChannel keys Linearr owns, for a `channels` row.
@@ -1535,7 +1559,7 @@ def _tunarr_channel_changes(ch: dict, watermark_override: dict | None = None,
     changes = {
         "name": ch.get("name", ""),
         "number": ch.get("number", 0),
-        "groupTitle": ch.get("tier", "Linearr"),
+        "groupTitle": _tunarr_group_for(ch.get("tier", "Linearr")),
     }
     icon_data = ch.get("icon")
     # `icon_url` is the icon uploaded to Tunarr as an ordinary HTTP asset, and is
@@ -1616,7 +1640,7 @@ async def _sync_channel_to_tunarr(channel_number: int, *, watermark_override: di
                 channel_obj = _tunarr_channel_obj(
                     name=ch.get("name", ""),
                     number=ch.get("number", 0),
-                    group_title=ch.get("tier", "Linearr"),
+                    group_title=_tunarr_group_for(ch.get("tier", "Linearr")),
                     transcode_id=transcode_id,
                     # The uploaded URL resolved above, never the data URI when
                     # there is one: Tunarr copies the icon into XMLTV verbatim,
@@ -2840,6 +2864,7 @@ def get_settings():
         "tunarr_url": rows.get("tunarr_url", "http://tunarr:8000"),
         "tunarr_public_url": rows.get("tunarr_public_url", ""),
         "icon_brand_defaults": _icon_brand_defaults(rows.get("icon_brand_defaults")),
+        "tunarr_group_map": _json_dict(rows.get("tunarr_group_map")),
         "plex_webhook_path": f"/api/plex/webhook?token={webhook_secret}" if webhook_secret else "",
     }
 
@@ -2870,6 +2895,11 @@ def save_settings(body: SettingsIn):
             merged = _icon_brand_defaults(json.dumps(body.icon_brand_defaults))
             conn.execute("INSERT OR REPLACE INTO settings VALUES ('icon_brand_defaults', ?)",
                          (json.dumps(merged),))
+        if body.tunarr_group_map is not None:
+            clean = {k.strip(): v.strip() for k, v in body.tunarr_group_map.items()
+                     if k.strip() and v.strip()}
+            conn.execute("INSERT OR REPLACE INTO settings VALUES ('tunarr_group_map', ?)",
+                         (json.dumps(clean),))
     _log_app("settings", "Settings saved")
     return {"ok": True}
 
@@ -7856,7 +7886,7 @@ async def tunarr_export_channels(body: TunarrExportRequest):
             channel_obj = _tunarr_channel_obj(
                 name=cp.get("name", f"Channel {cp_num}"),
                 number=cp_num,
-                group_title=cp.get("tier", "Linearr"),
+                group_title=_tunarr_group_for(cp.get("tier", "Linearr")),
                 transcode_id=transcode_id,
             )
             async with httpx.AsyncClient(timeout=10.0) as client:
